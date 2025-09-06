@@ -20,10 +20,11 @@ embedding模型：输出向量，用于相似度搜索
 
 rerank模型：输出相关性分数，用于排序
 
-### Transformer架构：
+# vllm框架内容
 
-**Encoder编码器组成**
-将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。">
+### vllm框架架构
+
+vLLM 采用分层架构设计，主要包括控制面和执行面。">
 <meta property="og:title" content="推理基础">
 <meta property="og:description" content="Qwen
 
@@ -35,10 +36,11 @@ embedding模型：输出向量，用于相似度搜索
 
 rerank模型：输出相关性分数，用于排序
 
-### Transformer架构：
+# vllm框架内容
 
-**Encoder编码器组成**
-将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。">
+### vllm框架架构
+
+vLLM 采用分层架构设计，主要包括控制面和执行面。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/tui-li-ji-chu.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -104,6 +106,118 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p>chatglm</p>
 <p>embedding模型：输出向量，用于相似度搜索</p>
 <p>rerank模型：输出相关性分数，用于排序</p>
+<h1>vllm框架内容</h1>
+<h3>vllm框架架构</h3>
+<p>vLLM 采用分层架构设计，主要包括控制面和执行面。</p>
+<ul>
+<li>控制面负责请求调度、显存管理和资源分配，核心是 <em>Scheduler</em> 和 <em>BlockSpaceManager</em>。</li>
+<li>执行面负责模型计算和推理任务执行，核心是 <em>Worker</em>（内含 ModelRunner 负责模型前向传播，CacheEngine 管理 KV Cache）</li>
+</ul>
+<h3>请求调度</h3>
+<p>vLLM 的调度器 (Scheduler) 是大脑，其核心策略是 Continuous Batching (连续批处理)</p>
+<details><summary>Details</summary>
+<p>
+- 基于 Token 调度：以 Token 为最小调度单位
+- 调度过程：Scheduler 维护 waiting（新请求）、running（正在处理）、swapped（因资源不足被换出的请求）队列。其调度优先级通常是：swapped &gt; waiting &gt; running，优先处理已被换出的请求以避免资源浪费，并在资源足够时从 waiting 队列加入新请求。
+- 工作流程：
+1. 新请求进入 waiting 队列。
+2. Scheduler 根据调度策略（如 FCFS）、当前 running 队列的负载、空闲物理块等因素，决定将哪些 waiting 或 swapped 队列中的请求加入 running 队列以进行下一批计算。
+3. Worker 执行 running 队列中请求的推理计算。
+4. 生成 Token 后，更新序列状态。若请求完成则释放资源，否则根据情况放回 running 或换出到 swapped 队列。
+5. 循环上述过程。
+</p>
+</details> 
+<h3>vllm中相关KV的数学公式</h3>
+<p>KV Cache 大小 = 批大小 (batch_size) * 序列长度 (seq_len) * 层数 (n_layers) * 头数 (n_heads) * 头维度 (d_head) * 2</p>
+<p>Kv_memory = gpu-memory-util (0.95) * total_memory - peak_memory<br>
+peak_memory = weights_memory + activation_memory静态部分 动态部分<br>
+hidden_state = 7168 * 128K * 2 = 1.75G<br>
+MLP intermediate hidden = 18432*128K = 4.5G<br>
+MOE_hidden_state= 7168 * 8 * 128K * 2 = 14G<br>
+Kv_block = kv_memory / bytes_pretoken / token_preblock<br>
+bytes_pretoken = num_layer * kv_heads * head_size * 2   (deepseek_v3 = 0.067MB)<br>
+128K = 8.58GB</p>
+<ul>
+<li>
+<p><strong>Matmul耗时：</strong></p>
+<p>[ [M, K] *[K, N] = [M, N] ]</p>
+<ul>
+<li>( M=	ext{num_tokens} ); ( K, N=7168 )</li>
+<li>计算量: (2MKKN)</li>
+<li>计算耗时:
+<ul>
+<li>(2MKKN / 376T) flops = 7.95us (M=32)；1018us (M=4096)</li>
+</ul>
+</li>
+<li>访存量:
+<ul>
+<li>(M<em>K + K</em>N);</li>
+</ul>
+</li>
+<li>访存耗时：
+<ul>
+<li>((M<em>K + K</em>N))/(2T) = 46.9us (M=32); 73us (M=4096)</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h3>vllm推理整体流程</h3>
+<p>vLLM推理整体流程 -- 启动阶段1、初始化engine、加载权重</p>
+<details><summary>Details</summary>
+<p>
+</p><ul>
+<li>LLMEngine (x N)
+<ul>
+<li>vllm/engine/llm_engine.py</li>
+</ul>
+</li>
+</ul>
+<p>一个节点或一个DR是一个engine(AsyncLLM, Engine Core)，每个engine是单独的process。</p>
+<ul>
+<li>Worker (x N)
+<ul>
+<li>vllm/worker/worker.py</li>
+</ul>
+</li>
+</ul>
+<p>一个卡一个worker，例如8TP对应8个worker，一个process。</p>
+<ul>
+<li>Worker.model
+<ul>
+<li>vllm/model_executor/models</li>
+</ul>
+</li>
+</ul>
+<p>初始化模型结构。</p>
+<ul>
+<li>model.load_weights
+<ul>
+<li>vllm/model_executor/models</li>
+</ul>
+</li>
+</ul>
+<p>加载权重；以DeepSeek V3为例：671B(int8) = 40GB*16TP.</p>
+<p></p>
+</details>
+<h3>推理任务的调度与抢占：</h3>
+<p>vllm采用了 FCFS（first-come-first-serve） 的策略；<br>
+vllm中块回收策略：All-or-Nothing</p>
+<h3>块恢复策略：Swapping 与 Recomputation</h3>
+<p><strong>Swapping（交换）</strong>：将被抢占请求的 KV Cache 块从 GPU 移动到 CPU 内存。当有空闲 GPU 块时再从 CPU 恢复回来继续执行。为了控制资源使用，被交换（swapped）到 CPU 内存中的 KV Cache 块数量，永远不会超过 GPU 中物理块的总数。<br>
+<strong>Recomputation（重计算）</strong>：直接丢弃已生成的 KV Cache，待请求恢复后重新计算。<br>
+根据论文中的实验结果，Swapping 更适用于 block size 较大的场景，而 Recomputation 则在不同 block size 下的表现更为稳定。在中等 block size（16 到 64）范围内，两种方式的端到端性能基本相当。</p>
+<h3>分布式架构</h3>
+<p>vLLM 构建了一套面向分布式推理的执行架构，原生支持 Megatron-LM 风格的张量并行策略，并通过统一调度与基于分页的 KV Cache 管理机制，实现了跨 GPU 的高效协同推理与资源共享。</p>
+<details><summary>Details</summary>
+<p>
+在每一步 decode 过程中，调度器首先为每个 batch 中的请求准备控制信息，其中包括：
+输入 token 的 ID；
+以及该请求的块表（block table，即逻辑块到物理块的映射信息）。
+接下来，调度器会将这些控制信息广播给所有的 GPU worker。
+</p><p>然后，worker （理解是一张卡）开始使用这些输入 token ID 执行模型推理。在注意力层中，worker 会根据控制信息中提供的块表，读取对应的 KV Cache。在执行过程中，worker 会通过 <strong>all-reduce 通信</strong>原语同步中间计算结果，这一过程无需调度器参与协调。最后，worker 会将本轮生成的 token（采样结果）发送回调度器。</p>
+<p></p>
+</details>
 <h3>Transformer架构：</h3>
 <p><strong>Encoder编码器组成</strong><br>
 将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。</p>

@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Sat, 06 Sep 2025 13:46:35 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>推理基础</title><link>https://naphjohn.github.io/post/tui-li-ji-chu.html</link><description>Qwen
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Sat, 06 Sep 2025 13:57:46 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>推理基础</title><link>https://naphjohn.github.io/post/tui-li-ji-chu.html</link><description>Qwen
 
 Llama
 
@@ -9,10 +9,11 @@ embedding模型：输出向量，用于相似度搜索
 
 rerank模型：输出相关性分数，用于排序
 
-### Transformer架构：
+# vllm框架内容
 
-**Encoder编码器组成**
-将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。</description><guid isPermaLink="true">https://naphjohn.github.io/post/tui-li-ji-chu.html</guid><pubDate>Sat, 06 Sep 2025 13:42:06 +0000</pubDate></item><item><title>推理加速算法</title><link>https://naphjohn.github.io/post/tui-li-jia-su-suan-fa.html</link><description># 大模型优化方式包含以下内容
+### vllm框架架构
+
+vLLM 采用分层架构设计，主要包括控制面和执行面。</description><guid isPermaLink="true">https://naphjohn.github.io/post/tui-li-ji-chu.html</guid><pubDate>Sat, 06 Sep 2025 13:42:06 +0000</pubDate></item><item><title>推理加速算法</title><link>https://naphjohn.github.io/post/tui-li-jia-su-suan-fa.html</link><description># 大模型优化方式包含以下内容
 
 1. 框架测优化
 比如PD分离；
