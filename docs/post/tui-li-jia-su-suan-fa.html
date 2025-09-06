@@ -10,10 +10,70 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="**量化：**
+<meta name="description" content="# 大模型优化方式包含以下内容
+
+1. 框架测优化
+比如PD分离；
+比如model和后处理异步化，来提升吞吐；
+针对embedding模型只进行全量推理的特点，跳过kv cache相关tensor等的计算；
+针对离线大批量处理场景，优化非必要cpu操作耗时，如array转list、list转tuple等；
+2.低精度加速
+量化的方式
+3.分布式优化，比如TP，DP
+2. 服务话schedule
+连续batch
+3. 算子测优化
+-flashattention （算子融合的一种，将matmul，softmax，mask等融合）
+- bert类模型参数量非常小，当计算量较小时，算子存在下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；
+- 算子编译优化prune hidden states提前至attention算子之前，减少最后一层计算量；
+
+<details><summary>Details</summary>
+<p>
+当前最后一层流程：
+norm -> qkv_proj -> rope -> attention -> o_proj -> norm -> gate_up_proj -> gelu -> down_proj -> _prune_hidden_states
+将prune前移到attention之前：
+norm -> qkv_proj -> rope -> _prune_hidden_states -> attention -> o_proj -> norm -> gate_up_proj -> gelu -> down_proj
+</p>
+</details>
+7. 显存优化
+kvcache低精度，offload
+8. 其它方式
+比如NZ优化，tensor.cpu同步消除
+
+**量化：**
 量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。">
 <meta property="og:title" content="推理加速算法">
-<meta property="og:description" content="**量化：**
+<meta property="og:description" content="# 大模型优化方式包含以下内容
+
+1. 框架测优化
+比如PD分离；
+比如model和后处理异步化，来提升吞吐；
+针对embedding模型只进行全量推理的特点，跳过kv cache相关tensor等的计算；
+针对离线大批量处理场景，优化非必要cpu操作耗时，如array转list、list转tuple等；
+2.低精度加速
+量化的方式
+3.分布式优化，比如TP，DP
+2. 服务话schedule
+连续batch
+3. 算子测优化
+-flashattention （算子融合的一种，将matmul，softmax，mask等融合）
+- bert类模型参数量非常小，当计算量较小时，算子存在下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；
+- 算子编译优化prune hidden states提前至attention算子之前，减少最后一层计算量；
+
+<details><summary>Details</summary>
+<p>
+当前最后一层流程：
+norm -> qkv_proj -> rope -> attention -> o_proj -> norm -> gate_up_proj -> gelu -> down_proj -> _prune_hidden_states
+将prune前移到attention之前：
+norm -> qkv_proj -> rope -> _prune_hidden_states -> attention -> o_proj -> norm -> gate_up_proj -> gelu -> down_proj
+</p>
+</details>
+7. 显存优化
+kvcache低精度，offload
+8. 其它方式
+比如NZ优化，tensor.cpu同步消除
+
+**量化：**
 量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/tui-li-jia-su-suan-fa.html">
@@ -75,7 +135,38 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><p><strong>量化：</strong><br>
+<div class="markdown-body" id="postBody"><h1>大模型优化方式包含以下内容</h1>
+<ol>
+<li>框架测优化<br>
+比如PD分离；<br>
+比如model和后处理异步化，来提升吞吐；<br>
+针对embedding模型只进行全量推理的特点，跳过kv cache相关tensor等的计算；<br>
+针对离线大批量处理场景，优化非必要cpu操作耗时，如array转list、list转tuple等；<br>
+2.低精度加速<br>
+量化的方式<br>
+3.分布式优化，比如TP，DP</li>
+<li>服务话schedule<br>
+连续batch</li>
+<li>算子测优化<br>
+-flashattention （算子融合的一种，将matmul，softmax，mask等融合）</li>
+</ol>
+<ul>
+<li>bert类模型参数量非常小，当计算量较小时，算子存在下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；</li>
+<li>算子编译优化prune hidden states提前至attention算子之前，减少最后一层计算量；</li>
+</ul>
+<details><summary>Details</summary>
+<p>
+当前最后一层流程：
+norm -&gt; qkv_proj -&gt; rope -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj -&gt; _prune_hidden_states
+将prune前移到attention之前：
+norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj
+</p>
+</details>
+7. 显存优化
+kvcache低精度，offload
+8. 其它方式
+比如NZ优化，tensor.cpu同步消除
+<p><strong>量化：</strong><br>
 量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。</p>
 <details><summary>Details</summary>
 <p>

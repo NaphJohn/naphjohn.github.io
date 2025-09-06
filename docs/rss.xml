@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Sat, 06 Sep 2025 13:42:32 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>推理基础</title><link>https://naphjohn.github.io/post/tui-li-ji-chu.html</link><description>Qwen
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Sat, 06 Sep 2025 13:46:35 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>推理基础</title><link>https://naphjohn.github.io/post/tui-li-ji-chu.html</link><description>Qwen
 
 Llama
 
@@ -12,7 +12,37 @@ rerank模型：输出相关性分数，用于排序
 ### Transformer架构：
 
 **Encoder编码器组成**
-将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。</description><guid isPermaLink="true">https://naphjohn.github.io/post/tui-li-ji-chu.html</guid><pubDate>Sat, 06 Sep 2025 13:42:06 +0000</pubDate></item><item><title>推理加速算法</title><link>https://naphjohn.github.io/post/tui-li-jia-su-suan-fa.html</link><description>**量化：**
+将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。</description><guid isPermaLink="true">https://naphjohn.github.io/post/tui-li-ji-chu.html</guid><pubDate>Sat, 06 Sep 2025 13:42:06 +0000</pubDate></item><item><title>推理加速算法</title><link>https://naphjohn.github.io/post/tui-li-jia-su-suan-fa.html</link><description># 大模型优化方式包含以下内容
+
+1. 框架测优化
+比如PD分离；
+比如model和后处理异步化，来提升吞吐；
+针对embedding模型只进行全量推理的特点，跳过kv cache相关tensor等的计算；
+针对离线大批量处理场景，优化非必要cpu操作耗时，如array转list、list转tuple等；
+2.低精度加速
+量化的方式
+3.分布式优化，比如TP，DP
+2. 服务话schedule
+连续batch
+3. 算子测优化
+-flashattention （算子融合的一种，将matmul，softmax，mask等融合）
+- bert类模型参数量非常小，当计算量较小时，算子存在下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；
+- 算子编译优化prune hidden states提前至attention算子之前，减少最后一层计算量；
+
+&lt;details&gt;&lt;summary&gt;Details&lt;/summary&gt;
+&lt;p&gt;
+当前最后一层流程：
+norm -&gt; qkv_proj -&gt; rope -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj -&gt; _prune_hidden_states
+将prune前移到attention之前：
+norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj
+&lt;/p&gt;
+&lt;/details&gt;
+7. 显存优化
+kvcache低精度，offload
+8. 其它方式
+比如NZ优化，tensor.cpu同步消除
+
+**量化：**
 量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。</description><guid isPermaLink="true">https://naphjohn.github.io/post/tui-li-jia-su-suan-fa.html</guid><pubDate>Sat, 06 Sep 2025 13:36:25 +0000</pubDate></item><item><title>训练</title><link>https://naphjohn.github.io/post/xun-lian.html</link><description>### 强化学习中一些基本概念：
 
 **人类反馈强化学习(Reinforcement Learning from Human Feedback, RLHF)**：
