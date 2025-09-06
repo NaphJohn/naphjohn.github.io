@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    
+    <link rel="icon" href="https://avatars.githubusercontent.com/u/46772304?v=4"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="Qwen
+
+Llama
+
+chatglm
+
+embedding模型：输出向量，用于相似度搜索
+
+rerank模型：输出相关性分数，用于排序
+
+### Transformer架构：
+
+**Encoder编码器组成**
+将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。">
+<meta property="og:title" content="推理基础">
+<meta property="og:description" content="Qwen
+
+Llama
+
+chatglm
+
+embedding模型：输出向量，用于相似度搜索
+
+rerank模型：输出相关性分数，用于排序
+
+### Transformer架构：
+
+**Encoder编码器组成**
+将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://naphjohn.github.io/post/tui-li-ji-chu.html">
+<meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
+<title>推理基础</title>
+
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">推理基础</h1>
+<div class="title-right">
+    <a href="https://naphjohn.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/NaphJohn/naphjohn.github.io/issues/3" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><p>Qwen</p>
+<p>Llama</p>
+<p>chatglm</p>
+<p>embedding模型：输出向量，用于相似度搜索</p>
+<p>rerank模型：输出相关性分数，用于排序</p>
+<h3>Transformer架构：</h3>
+<p><strong>Encoder编码器组成</strong><br>
+将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。</p>
+<details><summary>Details</summary>
+<p>
+</p><ol>
+<li>多头自注意力机制 (Multi-Head Self-Attention)</li>
+</ol>
+<ul>
+<li>“自” (Self) 的含义：输入序列自身内部元素之间进行注意力计算。例如，句子中的每个词都会与句子中的所有词（包括自己）进行关联，从而捕捉词与词之间的语义和语法关系。</li>
+<li>attention核心公式：Attention(Q, K, V) = softmax(QK^T / √d_k) V</li>
+<li>让模型能够“同时看到”整个序列，并理解每个词在上下文中的真正含义。</li>
+</ul>
+<ol>
+<li>前馈神经网络 (Feed-Forward Network, FFN)</li>
+</ol>
+<ul>
+<li>一个简单的全连接网络，通常包含一个隐藏层和激活函数（如 ReLU）。</li>
+<li>对自注意力层的输出进行非线性变换和空间映射，增强模型的表达能力。</li>
+</ul>
+<ol>
+<li>残差连接 (Add) 和层归一化 (Norm)</li>
+</ol>
+<ul>
+<li>残差连接 (Residual Connection)：将子层的输入直接加到其输出上（Output = Sublayer(input) + input）。这有效地缓解了深层网络中的梯度消失问题，使得模型可以堆叠得很深。</li>
+<li>层归一化 (Layer Normalization)：对残差相加后的结果进行归一化，稳定训练过程，加快收敛<br>
+公式表示一个 Encoder Layer：<br>
+EncoderOutput = LayerNorm( SelfAttention(Input) + Input )<br>
+FinalOutput = LayerNorm( FFN(EncoderOutput) + EncoderOutput )</li>
+</ul>
+<p></p>
+</details>
+<p><strong>Decoder解码器组成</strong><br>
+根据 Encoder 产生的中间表示，自回归地（一个一个地）生成输出序列（如翻译后的句子）。</p>
+<details><summary>Details</summary>
+<p>
+</p><ol>
+<li>掩码多头自注意力机制 (Masked Multi-Head Self-Attention)</li>
+</ol>
+<ul>
+<li>“掩码” (Masked) 的含义：为了防止在训练时“偷看”未来信息（即解码第 t 个词时只能看到 1 到 t-1 的词），通过一个掩码矩阵将当前位置之后的所有信息屏蔽掉（设置为负无穷，softmax 后变为 0）。</li>
+</ul>
+<ol>
+<li>多头交叉注意力机制 (Multi-Head Cross-Attention)</li>
+</ol>
+<ul>
+<li>“交叉” (Cross) 的含义：Decoder 的表示 与 Encoder 的最终输出 进行注意力计算。</li>
+<li>Query (Q) 来自 Masked Self-Attention 的输出。</li>
+<li>Key (K) 和 Value (V) 来自 Encoder 的最终输出。</li>
+<li>这是 Encoder 和 Decoder 之间信息交互的桥梁，让 Decoder 在生成每一个词时都能有针对性地关注输入序列中最相关的部分。</li>
+</ul>
+<ol>
+<li>前馈神经网络 (Feed-Forward Network, FFN)<br>
+每个子层都伴随着残差连接和层归一化。</li>
+</ol>
+<p></p>
+</details>
+<p><strong>位置编码positional encoding</strong><br>
+为模型提供单词在序列中的绝对或相对位置信息，使 Transformer 能够理解顺序。</p>
+<details><summary>Details</summary>
+<p>
+为什么要位置编码？
+Self-Attention 机制本身是置换不变 (Permutation Invariant) 的。即打乱输入序列的顺序，输出的结果（不考虑位置编码）是一样的，因为它计算的是两两向量之间的相似度。这显然不符合语言的有序性。
+</p><p>常用方式 ：</p>
+<ol>
+<li>正弦余弦编码 (Sinusoidal Positional Encoding) - 原版 Transformer<br>
+使用不同频率的正弦和余弦函数来生成每个位置独一无二的编码向量。</li>
+<li>学习式位置编码 (Learned Positional Embedding) - 如 BERT<br>
+将位置也视为一个可学习的参数，随机初始化一个位置嵌入矩阵（例如，最大长度 512 x 模型维度 768），随模型一起训练。</li>
+<li>相对位置编码 (Relative Positional Encoding) - 如 T5, DeBERTa</li>
+</ol>
+<p></p>
+</details>
+<p><strong>MHA/GQA)原理</strong><br>
+Multi-Head Attention多头注意力原理：</p>
+<ol>
+<li>拆分：将输入序列的表示矩阵 X 通过线性变换，为每个头生成不同的 Q, K, V。</li>
+<li>并行计算：每个头在各自的子空间（不同的权重矩阵）中独立计算 Scaled Dot-Product Attention。</li>
+<li>合并：将所有头的输出拼接（Concat）起来，再通过一个线性层融合信息。<br>
+公式：MultiHead(Q, K, V) = Concat(head₁, head₂, ..., head_h) * W^O<br>
+where head_i = Attention(Q * W_i^Q, K * W_i^K, V * W_i^V)<br>
+KV Cache 大小 = 批大小 (batch_size) * 序列长度 (seq_len) * 层数 (n_layers) * 头数 (n_heads) * 头维度 (d_head) * 2<br>
+优点：允许模型同时关注来自不同表示子空间的信息。例如，一个头关注语法关系，另一个头关注语义关系，等等。</li>
+</ol>
+<p>分组查询注意力 (Grouped-Query Attention, GQA)/原理：</p>
+<ol>
+<li>分组：将 n_heads 个查询头 (Query Heads) 分成 g 个组。</li>
+<li>共享：每组内的所有查询头共享同一套 K 和 V。</li>
+<li>操作：<br>
+Q 的个数不变（仍是 n_heads）。<br>
+K 和 V 的个数减少到 g 个（n_heads &gt;= g）。<br>
+如过 g = n_heads，GQA 退化为 MHA。<br>
+如果 g = 1，GQA 退化为 MQA（所有头共享一套 K, V），也就是多头查询注意力 (Multi-Query Attention, MQA)</li>
+</ol>
+<p><strong>MOE架构：</strong><br>
+共享专家，若干路由专家组成，由门控网络选择top-k个专家</p>
+<details><summary>Details</summary>
+<p>
+moe中一个重要的点是控制负载均衡损失 (Load Balancing Loss)：为了解决这个问题，会在损失函数中加入一个辅助损失项，鼓励所有专家都能被均衡地使用。
+</p><p>优势：<br>
+每次只计算少数专家，减少了内存，加快了计算</p>
+<p>参考链接：<br>
+[<a href="https://fancyerii.github.io/2019/03/09/transformer-illustrated/#%E6%AE%8B%E5%B7%AE%E8%BF%9E%E6%8E%A5" rel="nofollow">https://fancyerii.github.io/2019/03/09/transformer-illustrated/#残差连接</a>](<a href="https://fancyerii.github.io/2019/03/09/transformer-illustrated/#%E6%AE%8B%E5%B7%AE%E8%BF%9E%E6%8E%A5" rel="nofollow">https://fancyerii.github.io/2019/03/09/transformer-illustrated/#%E6%AE%8B%E5%B7%AE%E8%BF%9E%E6%8E%A5</a>)</p>
+<p></p>
+</details>
+<p><strong>Mask</strong><br>
+确保解码器的自回归特性，防止信息泄露。</p>
+<details><summary>Details</summary>
+<p>
+在编码器（Encoder）中：通常只需要 Padding Mask，因为Encoder是一次性看到整个输入序列的。
+</p><p>在解码器（Decoder）中：需要同时使用 Padding Mask 和 Causal Mask（两者相加），既不能看Pad token，也不能看未来的token。</p>
+<p></p>
+</details></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://naphjohn.github.io">kaikai的博客</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if(""!=""){
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","NaphJohn/naphjohn.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+
+
+</script>
+
+
+</html>

@@ -1,5 +1,18 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Sat, 06 Sep 2025 13:36:52 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>推理加速算法</title><link>https://naphjohn.github.io/post/tui-li-jia-su-suan-fa.html</link><description>**量化：**
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Sat, 06 Sep 2025 13:42:32 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>推理基础</title><link>https://naphjohn.github.io/post/tui-li-ji-chu.html</link><description>Qwen
+
+Llama
+
+chatglm
+
+embedding模型：输出向量，用于相似度搜索
+
+rerank模型：输出相关性分数，用于排序
+
+### Transformer架构：
+
+**Encoder编码器组成**
+将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。</description><guid isPermaLink="true">https://naphjohn.github.io/post/tui-li-ji-chu.html</guid><pubDate>Sat, 06 Sep 2025 13:42:06 +0000</pubDate></item><item><title>推理加速算法</title><link>https://naphjohn.github.io/post/tui-li-jia-su-suan-fa.html</link><description>**量化：**
 量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。</description><guid isPermaLink="true">https://naphjohn.github.io/post/tui-li-jia-su-suan-fa.html</guid><pubDate>Sat, 06 Sep 2025 13:36:25 +0000</pubDate></item><item><title>训练</title><link>https://naphjohn.github.io/post/xun-lian.html</link><description>### 强化学习中一些基本概念：
 
 **人类反馈强化学习(Reinforcement Learning from Human Feedback, RLHF)**：
