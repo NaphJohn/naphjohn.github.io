@@ -10,9 +10,17 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="测试。">
+<meta name="description" content="### 强化学习中一些基本概念：
+
+**人类反馈强化学习(Reinforcement Learning from Human Feedback, RLHF)**：
+核心思想:让LLM的输出能够符合人类偏好(即人类反馈),主要通过人类偏好数据集(例如针对一个response,会
+有人类手工标注对其打分)训练一个奖励模型,通过奖励模型计算奖励,以此来判断LLM的输出是否符合人类偏好。">
 <meta property="og:title" content="训练">
-<meta property="og:description" content="测试。">
+<meta property="og:description" content="### 强化学习中一些基本概念：
+
+**人类反馈强化学习(Reinforcement Learning from Human Feedback, RLHF)**：
+核心思想:让LLM的输出能够符合人类偏好(即人类反馈),主要通过人类偏好数据集(例如针对一个response,会
+有人类手工标注对其打分)训练一个奖励模型,通过奖励模型计算奖励,以此来判断LLM的输出是否符合人类偏好。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/xun-lian.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -73,7 +81,56 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><p>测试</p></div>
+<div class="markdown-body" id="postBody"><h3>强化学习中一些基本概念：</h3>
+<p><strong>人类反馈强化学习(Reinforcement Learning from Human Feedback, RLHF)</strong>：<br>
+核心思想:让LLM的输出能够符合人类偏好(即人类反馈),主要通过人类偏好数据集(例如针对一个response,会<br>
+有人类手工标注对其打分)训练一个奖励模型,通过奖励模型计算奖励,以此来判断LLM的输出是否符合人类偏好。</p>
+<p>早期的RLHF主要涉及到四个模型:<br>
+Actor:主模型,即需要更新的策略模型,负责输入prompt,输出token<br>
+Ref(reference model) 微调前的模型,负责防止actor模型在更新过程中偏离原模型过大<br>
+RM(reward model): 奖励模型,提前训练好的模型,负责为actor的输出打分,主要目标为是否符合人类偏好<br>
+Critic (也叫value model):评估模型,负责根据状态来估计按照当前策略进行能够带来多少期望回报,进而计算优势,优势用于更新actor模型,而critic本身也会更新,更新目标是更准确地估计期望回报。<br>
+备注：<br>
+ref模型，和rm模型都是不会更新，更新的只有critic模型，ref模型（主要防止偏离），现在考虑去掉，因为大模型能力变强</p>
+<p><strong>利用 (Exploitation)</strong>: 选择当前已知能带来高奖励的行动。即“吃老本”，利用现有知识最大化短期收益。<br>
+<strong>探索 (Exploration)</strong>: 尝试新的或不确定奖励的行动，以收集更多信息，可能发现长期收益更高的策略。即“冒险”，为了长期利益牺牲短期收益。</p>
+<p><strong>熵 (Entropy)</strong>： 对于一个概率分布，熵越高，表示分布越均匀，随机性越大，越不确定；熵越低，表示分布越集中（某个行动概率接近1），确定性越强。</p>
+<p>公式: 对于离散策略 π(a|s)，其熵 H 的计算公式为：H(π(·|s)) = -Σ π(a|s) * log π(a|s)<br>
+在RL中的作用:<br>
+鼓励探索: 在损失函数中加入熵奖励 (Entropy Bonus)，即 +β * H(π(·|s))，可以鼓励策略保持一定的随机性，防止其过早地收敛到一个局部最优的确定性策略，从而探索更多可能的行为。</p>
+<p>平衡方法:<br>
+ε-贪婪 (ε-Greedy): 以 (1-ε) 的概率选择当前最优行动（利用），以 ε 的概率随机选择行动（探索）。<br>
+上置信界算法 (UCB): 为每个行动的期望奖励增加一个不确定性bonus，优先选择期望奖励高或不确定性大的行动。<br>
+基于策略的方法 (Policy-based Methods): 直接学习一个随机策略（如输出行动的概率分布），策略本身的随机性就天然地提供了探索。熵是衡量这种随机性的关键指标</p>
+<p><strong>优势函数</strong> (Advantage Function) A(s, a) = Q(s, a) - V(s)：<br>
+使用优势函数而不是纯奖励Q，可以降低方差，使学习更稳定。</p>
+<p><strong>Lora</strong>：核心是低秩适应，通过引入少量可训练参数高效微调模型；<br>
+<strong>QLoRA</strong>：在LoRA的基础上，通过对预训练模型进行量化压缩，显著降低了微调对显存的需求</p>
+<h3>强化学习中用到算法：</h3>
+<p><strong>PPO原理</strong>：<br>
+核心思想: 在更新策略时，避免步长太长（更新幅度太大）导致策略崩溃（性能急剧下降）</p>
+<p>关键机制:<br>
+比率 (Ratio): r(θ) = π_θ(a|s) / π_θ_old(a|s)。新策略概率除以旧策略概率。<br>
+裁剪 (Clipping): PPO的损失函数会裁剪这个比率，将其限制在区间 [1 - ε, 1 + ε] 内（ε是一个小超参数，如0.1或0.2）。这确保了每次更新都是“小幅且安全的”。<br>
+目标函数: L = min( r(θ) * A, clip(r(θ), 1-ε, 1+ε) * A )。其中A是优势函数（见下文）。通过取最小值，算法忽略了那些会导致策略发生巨大变化且对性能有负面影响的更新。</p>
+<p><strong>GRPO (Group Relative Policy Optimization)</strong><br>
+核心思想: 在有多个人类标注者偏好（可能存在分歧）的场景下，不学习一个单一的奖励模型，而是学习一个奖励模型组。</p>
+<p>原理: 训练多个奖励模型 {RM_i}，每个代表不同的人类偏好子群体。在RL优化时，策略的更新要考虑到整个模型组的共识，而不是单个模型。例如，目标函数可能是最小化策略相对于所有奖励模型的最差情况性能（类似于鲁棒优化），或者是根据模型组的平均奖励进行优化。这提高了策略的鲁棒性和公平性。</p>
+<p><strong>DAPO (Distributional Advantage Policy Optimization)</strong><br>
+核心思想: 标准PPO使用优势函数的点估计（一个值），DAPO则使用优势函数的完整分布。</p>
+<p>原理: 它建模优势函数的不确定性。通过考虑优势的分布，智能体可以更智能地平衡探索与利用：对于那些优势估计不确定性很高的行动，即使其均值略低，也可能值得探索。这可以带来更稳定、更高效的学习。</p>
+<p><strong>VAPO (Value-Augmented Policy Optimization)</strong></p>
+<p>原理 : 可能通过增加价值函数损失的权重，或使用价值函数来更好地估计优势，以减少方差，提升PPO的稳定性。</p>
+<p>训练框架###<br>
+verl框架：verl 是一个专为大语言模型（LLM） 设计的强化学习（RL）训练框架</p>
+<p>核心创新：HybridFlow 与 3D-HybridEngine<br>
+verl 的核心是其 HybridFlow 架构和 3D-HybridEngine。</p>
+<p>HybridFlow 通过混合编程模型解耦了RLHF训练中的控制流（高层逻辑，如多个模型角色的交互）和计算流（底层执行，如单个模型的前向/反向传播）。这使得算法工程师可以更专注于高层逻辑的设计，而无需过度纠缠于底层的分布式执行细节。</p>
+<p><strong>工作流程（以PPO为例）：</strong><br>
+一个典型的RL训练循环（例如PPO）在verl中大致包含以下步骤：<br>
+生成 (Generation): Actor模型 接收一批提示词（prompts），生成回应（responses）。<br>
+准备 (Preparation): 生成的回应会交由Critic模型（评估状态价值）、奖励模型(RM)（计算即时奖励）和参考模型(Reference Model)（计算与初始模型的KL散度，防止策略偏离太远）进行评估。<br>
+训练 (Training): 利用步骤2中计算出的优势函数和损失，更新Actor和Critic模型的参数。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
