@@ -113,10 +113,42 @@ node3 = node2.next
 https://leetcode.cn/problems/intersection-of-two-linked-lists-lcci/solutions/1190240/mian-shi-ti-0207-lian-biao-xiang-jiao-sh-b8hn/
 
 环形链表，142题
+<details><summary>Details</summary>
+<p>
 [[https://leetcode.cn/problems/intersection-of-two-linked-lists-lcci/solutions/1190240/mian-shi-ti-0207-lian-biao-xiang-jiao-sh-b8hn/；](https://leetcode.cn/problems/intersection-of-two-linked-lists-lcci/solutions/1190240/mian-shi-ti-0207-lian-biao-xiang-jiao-sh-b8hn/%EF%BC%9B)](https://leetcode.cn/problems/intersection-of-two-linked-lists-lcci/solutions/1190240/mian-shi-ti-0207-lian-biao-xiang-jiao-sh-b8hn/%EF%BC%9B)https://leetcode.cn/problems/linked-list-cycle-ii/solutions/12616/linked-list-cycle-ii-kuai-man-zhi-zhen-shuang-zhi-/
+</p>
+</details> 
 
-### 哈希表
+## 哈希表
 
 一般哈希表都是用来快速判断一个元素是否出现集合里。
 
 两个数组的交集，349，考虑使用一次遍历的方式，https://leetcode.cn/problems/intersection-of-two-arrays/solutions/3053420/yi-ci-bian-li-pythonjavacgojsrust-by-end-jstx/
+
+快乐数，202
+
+四数相加，454
+
+
+## 字符串
+
+最长回文子串，5
+
+## 双指针法
+
+
+## 栈与队列
+
+
+## 二叉树
+
+## 回溯算法
+
+
+## 贪心算法
+
+
+## 动态规划
+
+
+## 数学
