@@ -118,3 +118,5 @@ https://leetcode.cn/problems/intersection-of-two-linked-lists-lcci/solutions/119
 ### 哈希表
 
 一般哈希表都是用来快速判断一个元素是否出现集合里。
+
+两个数组的交集，349，考虑使用一次遍历的方式，https://leetcode.cn/problems/intersection-of-two-arrays/solutions/3053420/yi-ci-bian-li-pythonjavacgojsrust-by-end-jstx/
