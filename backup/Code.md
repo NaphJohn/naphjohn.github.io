@@ -171,9 +171,9 @@ https://leetcode.cn/problems/intersection-of-two-linked-lists-lcci/solutions/119
 那么从深度优先遍历和广度优先遍历进一步拓展，才有如下遍历方式：
 
 深度优先遍历
-前序遍历（递归法，迭代法）中左右
-中序遍历（递归法，迭代法）左中右
-后序遍历（递归法，迭代法）左右中
+前序遍历（递归法，迭代法）中左右  144
+中序遍历（递归法，迭代法）左中右  94
+后序遍历（递归法，迭代法）左右中  145
 
 <img width="1352" height="490" alt="Image" src="https://github.com/user-attachments/assets/64f45643-3f8b-40f1-91ca-f3e1c7e059b9" />
 
