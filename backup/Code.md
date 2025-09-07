@@ -129,6 +129,9 @@ https://leetcode.cn/problems/intersection-of-two-linked-lists-lcci/solutions/119
 
 四数相加，454
 
+三数之和，15，排序加双指针https://leetcode.cn/problems/3sum/solutions/11525/3sumpai-xu-shuang-zhi-zhen-yi-dong-by-jyd/
+
+四数之和，18
 
 ## 字符串
 
