@@ -10,17 +10,11 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="### 数组
-
-### 链表
-
-链表是一种通过指针串联在一起的线性结构，每一个节点由两部分组成，一个是数据域一个是指针域（存放指向下一个节点的指针），最后一个节点的指针域指向null（空指针的意思）。">
+<meta name="description" content="## 数组
+数组是存放在连续内存空间上的相同类型数据的集合。">
 <meta property="og:title" content="Code">
-<meta property="og:description" content="### 数组
-
-### 链表
-
-链表是一种通过指针串联在一起的线性结构，每一个节点由两部分组成，一个是数据域一个是指针域（存放指向下一个节点的指针），最后一个节点的指针域指向null（空指针的意思）。">
+<meta property="og:description" content="## 数组
+数组是存放在连续内存空间上的相同类型数据的集合。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/Code.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -91,8 +85,19 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><h3>数组</h3>
-<h3>链表</h3>
+<div class="markdown-body" id="postBody"><h2>数组</h2>
+<p>数组是存放在连续内存空间上的相同类型数据的集合。数组的元素是不能删的，只能覆盖。<br>
+需要两点注意的是</p>
+<ul>
+<li>数组下标都是从0开始的。</li>
+<li>数组内存空间的地址是连续的</li>
+</ul>
+<p>移除元素，27(考虑双指针：<a href="https://leetcode.cn/problems/remove-element/%EF%BC%9B%E6%88%96%E8%80%85%E7%94%A8%E6%A0%88%E7%9A%84%E6%80%9D%E6%83%B3https://leetcode.cn/problems/remove-element/solutions/2802809/jian-dan-ti-jian-dan-zuo-pythonjavaccgoj-72bn/" rel="nofollow">https://leetcode.cn/problems/remove-element/；或者用栈的思想https://leetcode.cn/problems/remove-element/solutions/2802809/jian-dan-ti-jian-dan-zuo-pythonjavaccgoj-72bn/</a>)</p>
+<p>有序数组的平方，977(两边向中间合并：<a href="https://leetcode.cn/problems/squares-of-a-sorted-array/%EF%BC%9Bhttps://leetcode.cn/problems/squares-of-a-sorted-array/solutions/2908673/python3javacgorustjavascript-yi-ti-yi-ji-v8im/" rel="nofollow">https://leetcode.cn/problems/squares-of-a-sorted-array/；https://leetcode.cn/problems/squares-of-a-sorted-array/solutions/2908673/python3javacgorustjavascript-yi-ti-yi-ji-v8im/</a>)</p>
+<p>长度最小的字数组，209，使用滑动窗口思想</p>
+<p>螺旋矩阵，59</p>
+<p>前缀和，58</p>
+<h2>链表</h2>
 <p>链表是一种通过指针串联在一起的线性结构，每一个节点由两部分组成，一个是数据域一个是指针域（存放指向下一个节点的指针），最后一个节点的指针域指向null（空指针的意思）。</p>
 <p><strong>类型</strong></p>
 <p>链表的入口节点称为链表的头结点也就是head。<br>

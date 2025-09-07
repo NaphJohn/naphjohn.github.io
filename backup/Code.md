@@ -1,6 +1,20 @@
-### 数组
+## 数组
+数组是存放在连续内存空间上的相同类型数据的集合。数组的元素是不能删的，只能覆盖。
+需要两点注意的是
+- 数组下标都是从0开始的。
+- 数组内存空间的地址是连续的
 
-### 链表
+移除元素，27(考虑双指针：https://leetcode.cn/problems/remove-element/；或者用栈的思想https://leetcode.cn/problems/remove-element/solutions/2802809/jian-dan-ti-jian-dan-zuo-pythonjavaccgoj-72bn/)
+
+有序数组的平方，977(两边向中间合并：https://leetcode.cn/problems/squares-of-a-sorted-array/；https://leetcode.cn/problems/squares-of-a-sorted-array/solutions/2908673/python3javacgorustjavascript-yi-ti-yi-ji-v8im/)
+
+长度最小的字数组，209，使用滑动窗口思想
+
+螺旋矩阵，59
+
+前缀和，58
+
+## 链表
 
 链表是一种通过指针串联在一起的线性结构，每一个节点由两部分组成，一个是数据域一个是指针域（存放指向下一个节点的指针），最后一个节点的指针域指向null（空指针的意思）。
 
