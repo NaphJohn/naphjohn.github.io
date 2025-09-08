@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Mon, 08 Sep 2025 07:22:41 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>linux</title><link>https://naphjohn.github.io/post/linux.html</link><description>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Mon, 08 Sep 2025 07:24:51 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>linux</title><link>https://naphjohn.github.io/post/linux.html</link><description>
 初始化设置
 ```python
 vim ~/.bashrc
@@ -66,7 +66,17 @@ git config --global http.sslVerify false
 #支持自动迁移代码
  from torch_npu.contrib import transfer_to_npu
 ``` 
-。</description><guid isPermaLink="true">https://naphjohn.github.io/post/linux.html</guid><pubDate>Mon, 08 Sep 2025 07:22:10 +0000</pubDate></item><item><title>CLIP模型</title><link>https://naphjohn.github.io/post/CLIP-mo-xing.html</link><description># CLIP
+
+### 其它
+```powershell
+#查看cann包版本
+cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg
+#去除所有进程
+ps -ef | grep python| grep -v grep | awk '{print $2}' | xargs kill -9
+#pytorch中查看日志的两行命令
+export ASCEND_GLOBAL_LOG_LEVEL=1
+export ASCEND_SLOG_PRINT_TO_STDOUT=1
+``` 。</description><guid isPermaLink="true">https://naphjohn.github.io/post/linux.html</guid><pubDate>Mon, 08 Sep 2025 07:22:10 +0000</pubDate></item><item><title>CLIP模型</title><link>https://naphjohn.github.io/post/CLIP-mo-xing.html</link><description># CLIP
 
 
 ## CLIP训练

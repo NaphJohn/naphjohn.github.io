@@ -77,7 +77,17 @@ git config --global http.sslVerify false
 #支持自动迁移代码
  from torch_npu.contrib import transfer_to_npu
 ``` 
-。">
+
+### 其它
+```powershell
+#查看cann包版本
+cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg
+#去除所有进程
+ps -ef | grep python| grep -v grep | awk '{print $2}' | xargs kill -9
+#pytorch中查看日志的两行命令
+export ASCEND_GLOBAL_LOG_LEVEL=1
+export ASCEND_SLOG_PRINT_TO_STDOUT=1
+``` 。">
 <meta property="og:title" content="linux">
 <meta property="og:description" content="
 初始化设置
@@ -146,7 +156,17 @@ git config --global http.sslVerify false
 #支持自动迁移代码
  from torch_npu.contrib import transfer_to_npu
 ``` 
-。">
+
+### 其它
+```powershell
+#查看cann包版本
+cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg
+#去除所有进程
+ps -ef | grep python| grep -v grep | awk '{print $2}' | xargs kill -9
+#pytorch中查看日志的两行命令
+export ASCEND_GLOBAL_LOG_LEVEL=1
+export ASCEND_SLOG_PRINT_TO_STDOUT=1
+``` 。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/linux.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -270,7 +290,15 @@ ssh<span class="pl-k">-</span>keygen <span class="pl-k">-</span>t ed25519 <span 
 git config <span class="pl-k">--</span>global http.sslVerify false
 
 <span class="pl-c"><span class="pl-c">#</span>支持自动迁移代码</span>
- <span class="pl-k">from</span> torch_npu.contrib import transfer_to_npu</pre></div></div>
+ <span class="pl-k">from</span> torch_npu.contrib import transfer_to_npu</pre></div>
+<h3>其它</h3>
+<div class="highlight highlight-source-powershell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span>查看cann包版本</span>
+cat <span class="pl-k">/</span>usr<span class="pl-k">/</span>local<span class="pl-k">/</span>Ascend<span class="pl-k">/</span>ascend<span class="pl-k">-</span>toolkit<span class="pl-k">/</span>latest<span class="pl-k">/</span>version.cfg
+<span class="pl-c"><span class="pl-c">#</span>去除所有进程</span>
+ps <span class="pl-k">-</span>ef <span class="pl-k">|</span> grep python<span class="pl-k">|</span> grep <span class="pl-k">-</span>v grep <span class="pl-k">|</span> awk <span class="pl-s"><span class="pl-pds">'</span>{print $2}<span class="pl-pds">'</span></span> <span class="pl-k">|</span> xargs kill <span class="pl-c1">-9</span>
+<span class="pl-c"><span class="pl-c">#</span>pytorch中查看日志的两行命令</span>
+export ASCEND_GLOBAL_LOG_LEVEL<span class="pl-k">=</span><span class="pl-c1">1</span>
+export ASCEND_SLOG_PRINT_TO_STDOUT<span class="pl-k">=</span><span class="pl-c1">1</span></pre></div></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>

@@ -65,3 +65,14 @@ git config --global http.sslVerify false
 #支持自动迁移代码
  from torch_npu.contrib import transfer_to_npu
 ``` 
+
+### 其它
+```powershell
+#查看cann包版本
+cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg
+#去除所有进程
+ps -ef | grep python| grep -v grep | awk '{print $2}' | xargs kill -9
+#pytorch中查看日志的两行命令
+export ASCEND_GLOBAL_LOG_LEVEL=1
+export ASCEND_SLOG_PRINT_TO_STDOUT=1
+``` 
