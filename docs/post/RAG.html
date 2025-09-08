@@ -14,13 +14,23 @@
 2. rag流程？
 3.rag优化点？
 4.基座选取标准？
-手撕算法：1.并查集 2.最大二叉树宽度。">
+手撕算法：1.并查集 2.最大二叉树宽度
+
+
+### RAG 怎么解决模型幻觉？
+1. grounding（ grounding 生成过程）
+- 原理：RAG在让模型生成答案之前，会先从外部知识库（如文档、数据库、网页）中检索出与问题最相关的信息片段（Context）。">
 <meta property="og:title" content="RAG">
 <meta property="og:description" content="1. 什么是rag？
 2. rag流程？
 3.rag优化点？
 4.基座选取标准？
-手撕算法：1.并查集 2.最大二叉树宽度。">
+手撕算法：1.并查集 2.最大二叉树宽度
+
+
+### RAG 怎么解决模型幻觉？
+1. grounding（ grounding 生成过程）
+- 原理：RAG在让模型生成答案之前，会先从外部知识库（如文档、数据库、网页）中检索出与问题最相关的信息片段（Context）。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/RAG.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -87,6 +97,22 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 3.rag优化点？<br>
 4.基座选取标准？<br>
 手撕算法：1.并查集 2.最大二叉树宽度</li>
+</ol>
+<h3>RAG 怎么解决模型幻觉？</h3>
+<ol>
+<li>grounding（ grounding 生成过程）</li>
+</ol>
+<ul>
+<li>原理：RAG在让模型生成答案之前，会先从外部知识库（如文档、数据库、网页）中检索出与问题最相关的信息片段（Context）。</li>
+<li>如何解决幻觉：模型不再仅仅依赖其内部参数化知识（可能过时、不准确或不存在）来生成回答，而是被要求主要基于检索到的、事实性的文档片段进行回答。这将其“创作”范围限制在已有证据之上。</li>
+</ul>
+<ol start="2">
+<li>提供可验证的参考来源<br>
+原理：RAG系统通常会将检索到的文档片段作为生成答案的依据，并可以附带引用来源。</li>
+<li>减少对模型记忆的依赖<br>
+RAG允许模型访问最新的、经过验证的外部知识库。对于知识库中已有的信息，模型不需要去“记忆”，只需要学会“阅读理解”和“归纳总结”，极大降低了因记忆模糊或错误而产生幻觉的概率。</li>
+<li>将生成问题转化为理解问题<br>
+原理：对于事实性问题，RAG将任务从“无中生有地生成答案”转变为了“根据给定材料回答问题”。这更接近于阅读理解任务。</li>
 </ol></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 

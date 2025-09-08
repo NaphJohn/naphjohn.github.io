@@ -1,9 +1,14 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Mon, 08 Sep 2025 03:01:58 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>RAG</title><link>https://naphjohn.github.io/post/RAG.html</link><description>1. 什么是rag？
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Mon, 08 Sep 2025 03:04:44 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>RAG</title><link>https://naphjohn.github.io/post/RAG.html</link><description>1. 什么是rag？
 2. rag流程？
 3.rag优化点？
 4.基座选取标准？
-手撕算法：1.并查集 2.最大二叉树宽度。</description><guid isPermaLink="true">https://naphjohn.github.io/post/RAG.html</guid><pubDate>Mon, 08 Sep 2025 02:54:13 +0000</pubDate></item><item><title>Code</title><link>https://naphjohn.github.io/post/Code.html</link><description>## 数组
+手撕算法：1.并查集 2.最大二叉树宽度
+
+
+### RAG 怎么解决模型幻觉？
+1. grounding（ grounding 生成过程）
+- 原理：RAG在让模型生成答案之前，会先从外部知识库（如文档、数据库、网页）中检索出与问题最相关的信息片段（Context）。</description><guid isPermaLink="true">https://naphjohn.github.io/post/RAG.html</guid><pubDate>Mon, 08 Sep 2025 02:54:13 +0000</pubDate></item><item><title>Code</title><link>https://naphjohn.github.io/post/Code.html</link><description>## 数组
 数组是存放在连续内存空间上的相同类型数据的集合。</description><guid isPermaLink="true">https://naphjohn.github.io/post/Code.html</guid><pubDate>Sat, 06 Sep 2025 13:59:33 +0000</pubDate></item><item><title>推理基础</title><link>https://naphjohn.github.io/post/tui-li-ji-chu.html</link><description>Qwen
 
 Llama
