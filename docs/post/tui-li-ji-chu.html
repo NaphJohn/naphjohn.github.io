@@ -11,11 +11,11 @@
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
 <meta name="description" content="# 模型架构
-### Qwen
+## Qwen
 核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。">
 <meta property="og:title" content="推理基础">
 <meta property="og:description" content="# 模型架构
-### Qwen
+## Qwen
 核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/tui-li-ji-chu.html">
@@ -78,10 +78,10 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h1>模型架构</h1>
-<h3>Qwen</h3>
+<h2>Qwen</h2>
 <p>核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。</p>
 <ol>
-<li>RMSNorm (Root Mean Square Normalization)： 取代了传统的LayerNorm，计算更简单，减少了计算量和激活值，训练更稳定。 RMSNorm去除了LayerNorm中的<strong>均值中心化</strong>（减去均值）操作，只进行方差缩放。</li>
+<li>RMSNorm (Root Mean Square Normalization)： 取代了传统的LayerNorm，计算更简单，减少了计算量和激活值，训练更稳定。 RMSNorm去除了LayerNorm中的<strong>均值中心化</strong>（减去均值）操作，只进行方差缩放。在实践中，RMSNorm被证明可以达到与LayerNorm相当甚至更好的效果，同时训练更稳定。</li>
 <li></li>
 <li>SwiGLU激活函数： 取代了传统的ReLU或GELU激活函数。SwiGLU是GLU（Gated Linear Unit）的一种，引入了门控机制，被证明在语言模型中能带来更好的性能。</li>
 <li>旋转位置编码 (RoPE, Rotary Position Embedding)： 取代了绝对或相对位置编码。RoPE通过旋转矩阵的方式将位置信息编码到注意力计算中，能更好地处理长序列，并具有很好的外推性（ extrapolation）。</li>
@@ -89,7 +89,34 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li>更长的上下文长度： Qwen2支持128K token的上下文长度，这得益于RoPE和相关的工程优化。</li>
 <li>Tokenizer改进： 使用了更高效的分词器，词汇表大小扩大到152K，压缩率更高（特别是对中文和代码），减少了序列长度，提升了处理效率。</li>
 </ol>
-<h3>Llama</h3>
+<p><strong>RMSNorm以及LayerNorm公式</strong><br>
+LayerNorm：<br>
+$\text{LayerNorm}(\mathbf{x}) = \frac{\mathbf{x} - \mu}{\sigma} \odot \mathbf{g} + \mathbf{b}$<br>
+其中 $\mu = \frac{1}{H}\sum_{i=1}^H x_i$, $\sigma = \sqrt{\frac{1}{H}\sum_{i=1}^H (x_i - \mu)^2 + \epsilon}$, $\mathbf{g}$ 和 $\mathbf{b}$ 是可学习的增益和偏置参数。</p>
+<p>RMSNorm：<br>
+$\text{RMSNorm}(\mathbf{x}) = \frac{\mathbf{x}}{\text{RMS}(\mathbf{x})} \odot \mathbf{g}$<br>
+其中 $\text{RMS}(\mathbf{x}) = \sqrt{\frac{1}{H}\sum_{i=1}^H x_i^2 + \epsilon}$， 通常省略偏置 $\mathbf{b}$。</p>
+<p>SwiGLU的公式是什么？<br>
+SwiGLU是Swish激活函数和GLU（Gated Linear Unit）结构的结合。</p>
+<p>公式：<br>
+$\text{SwiGLU}(x, W, V, b, c) = \text{Swish}(xW + b) \odot (xV + c)$<br>
+其中：</p>
+<ul>
+<li>
+$x$ 是输入</li>
+<li>
+$W, V$ 是权重矩阵</li>
+<li>
+$b, c$ 是偏置（可选）</li>
+<li>
+$\odot$ 是逐元素乘法（Hadamard product）</li>
+<li>
+$\text{Swish}(x) = x \cdot \sigma(x)$， $\sigma$ 是sigmoid函数。</li>
+</ul>
+<p>在Transformer的FFN层中，通常用SwiGLU取代原来的ReLU激活：<br>
+$\text{FFN}<em>{\text{SwiGLU}}(x) = \text{SwiGLU}(x, W_1, V_1, b_1, c_1) W_2 + b_2$<br>
+注意：由于引入了额外的线性变换 $xV$，SwiGLU的参数数量是原始ReLU FFN的 $\frac{2}{3} \times 2 = \frac{4}{3}$ 倍。为了保持参数量一致，通常会将隐藏层维度 $d</em>{ff}$ 缩小为原来的 $\frac{2}{3}$。</p>
+<h2>Llama</h2>
 <p>chatglm</p>
 <p>embedding模型：输出向量，用于相似度搜索</p>
 <p>rerank模型：输出相关性分数，用于排序</p>
@@ -423,6 +450,6 @@ function iFrameLoading(){
 
 
 </script>
-
+<script>MathJax = {tex: {inlineMath: [["$", "$"]]}};</script><script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
 </html>
