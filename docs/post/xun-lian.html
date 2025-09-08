@@ -92,10 +92,16 @@ RM(reward model): 奖励模型,提前训练好的模型,负责为actor的输出�
 Critic (也叫value model):评估模型,负责根据状态来估计按照当前策略进行能够带来多少期望回报,进而计算优势,优势用于更新actor模型,而critic本身也会更新,更新目标是更准确地估计期望回报。<br>
 备注：<br>
 ref模型，和rm模型都是不会更新，更新的只有critic模型，ref模型（主要防止偏离），现在考虑去掉，因为大模型能力变强</p>
-<p><strong>利用 (Exploitation)</strong>: 选择当前已知能带来高奖励的行动。即“吃老本”，利用现有知识最大化短期收益。<br>
-<strong>探索 (Exploration)</strong>: 尝试新的或不确定奖励的行动，以收集更多信息，可能发现长期收益更高的策略。即“冒险”，为了长期利益牺牲短期收益。</p>
-<p><strong>熵 (Entropy)</strong>： 对于一个概率分布，熵越高，表示分布越均匀，随机性越大，越不确定；熵越低，表示分布越集中（某个行动概率接近1），确定性越强。</p>
-<p>公式: 对于离散策略 π(a|s)，其熵 H 的计算公式为：H(π(·|s)) = -Σ π(a|s) * log π(a|s)<br>
+<p><strong>KL散度（Kullback–Leibler Divergence）公式：</strong><br>
+用于衡量两个概率分布P和Q之间的差异。<br>
+离散分布： $D_{KL}(P \parallel Q) = \sum_{i} P(i) \log \frac{P(i)}{Q(i)}$<br>
+连续分布： $D_{KL}(P \parallel Q) = \int_{-\infty}^{\infty} p(x) \log \frac{p(x)}{q(x)} dx$<br>
+为什么在RLHF中使用KL散度？<br>
+在RLHF中，KL散度被用作奖励函数的一部分：<br>
+$R_{\text{total}} = R_{\text{Human}}(x, y) - \beta D_{KL}(\pi_\theta(y|x) \parallel \pi_{\text{SFT}}(y|x))$<br>
+KL散度惩罚项强制新策略 $\pi_\theta$ 的输出分布不要偏离原始的SFT模型 $\pi_{\text{SFT}}$ 太远。</p>
+<p><strong>熵 (Entropy)</strong>： 对于一个概率分布，熵越高，表示分布越均匀，随机性越大，越不确定；熵越低，表示分布越集中（某个行动概率接近1）。<br>
+公式: 对于离散策略 π(a|s)，其熵 H 的计算公式为：H(π(·|s)) = -Σ π(a|s) * log π(a|s)<br>
 在RL中的作用:<br>
 鼓励探索: 在损失函数中加入熵奖励 (Entropy Bonus)，即 +β * H(π(·|s))，可以鼓励策略保持一定的随机性，防止其过早地收敛到一个局部最优的确定性策略，从而探索更多可能的行为。</p>
 <p>平衡方法:<br>
@@ -103,7 +109,14 @@ ref模型，和rm模型都是不会更新，更新的只有critic模型，ref模
 上置信界算法 (UCB): 为每个行动的期望奖励增加一个不确定性bonus，优先选择期望奖励高或不确定性大的行动。<br>
 基于策略的方法 (Policy-based Methods): 直接学习一个随机策略（如输出行动的概率分布），策略本身的随机性就天然地提供了探索。熵是衡量这种随机性的关键指标</p>
 <p><strong>优势函数</strong> (Advantage Function) A(s, a) = Q(s, a) - V(s)：<br>
-使用优势函数而不是纯奖励Q，可以降低方差，使学习更稳定。</p>
+使用优势函数而不是纯奖励Q，可以降低方差，使学习更稳定。<br>
+常见的改进方法：</p>
+<ol>
+<li>GAE (Generalized Advantage Estimation)： 这是最常用的方法。GAE通过引入一个权衡偏差和方差的参数 $\lambda$，综合了k步TD误差的优势估计，使得估计更加平滑可靠。</li>
+<li>Value Function优化： 一个训练良好的价值函数（Critic）是准确估计Advantage的基础。确保价值函数有足够的容量和训练步数。</li>
+<li>Normalization： 对一个batch内的Advantage进行归一化（减去均值，除以标准差），可以稳定策略的更新。</li>
+<li>Clipping Advantages： 类似价值损失，也可以对Advantage进行裁剪，防止极端值的影响。</li>
+</ol>
 <p><strong>Lora</strong>：核心是低秩适应，通过引入少量可训练参数高效微调模型；<br>
 <strong>QLoRA</strong>：在LoRA的基础上，通过对预训练模型进行量化压缩，显著降低了微调对显存的需求</p>
 <h3>Reward奖励获取方式分别是什么</h3>
@@ -113,6 +126,16 @@ ref模型，和rm模型都是不会更新，更新的只有critic模型，ref模
 <li>奖励模型（Reward Model - RM） 首先用1人工标注训练一个单独的奖励模型</li>
 <li>对抗训练（Adversarial Training）训练一个判别器</li>
 </ol>
+<h2>LLM中损失函数</h2>
+<p>LLM的损失函数是标准的交叉熵损失（Cross-Entropy Loss），具体是语言建模损失。</p>
+<p>对于一个样本（序列 $x_1, x_2, ..., x_T$），损失函数为：<br>
+$L = -\frac{1}{T} \sum_{t=1}^{T} \log P(x_t | x_{&amp;lt;t})$<br>
+其中 $P(x_t | x_{&amp;lt;t})$ 是模型在给定上文 $x_{&amp;lt;t}$ 的条件下，预测下一个词是 $x_t$ 的概率</p>
+<p>交叉熵损失计算为：<br>
+$L_t = -\sum_{i=1}^{V} y_i \log(p_i) = -\log(p_{x_t})$<br>
+因为只有 $y_{x_t}=1$，其他 $y_i=0$。<br>
+所以，对于这一个token的损失就是其负对数概率。整个序列的损失是所有token损失的平均。<br>
+举例：如果模型对某个目标词预测的概率是 0.01，那么该token的损失就是 -log(0.01) ≈ 4.605。如果模型非常确信（概率为 0.99），损失就是 -log(0.99) ≈ 0.01。</p>
 <h2>强化学习中用到算法：</h2>
 <p><strong>PPO原理</strong>：<br>
 核心思想: 在更新策略时，避免步长太长（更新幅度太大）导致策略崩溃（性能急剧下降）<br>
@@ -130,7 +153,7 @@ $\epsilon$： 超参数（如0.2），限制更新幅度。</li>
 </ul>
 <p>关键机制:<br>
 比率 (Ratio): r(θ) = π_θ(a|s) / π_θ_old(a|s)。新策略概率除以旧策略概率。<br>
-稳定性--裁剪 (Clipping): PPO的损失函数会裁剪这个比率，将其限制在区间 [1 - ε, 1 + ε] 内（ε是一个小超参数，如0.1或0.2）。这确保了每次更新都是“小幅且安全的”。<br>
+稳定性：因为_直接用sft后的模型会非常不稳定_。裁剪 (Clipping)就是为了稳定性。PPO的损失函数会裁剪这个比率，将其限制在区间 [1 - ε, 1 + ε] 内（ε是一个小超参数，如0.1或0.2）。这确保了每次更新都是“小幅且安全的”。<br>
 目标函数: L = min( r(θ) * A, clip(r(θ), 1-ε, 1+ε) * A )。其中A是优势函数。通过取最小值，算法忽略了那些会导致策略发生巨大变化且对性能有负面影响的更新。<br>
 性能： 相比于传统的策略梯度方法（如TRPO，虽然理论严谨但计算复杂），PPO用这种简单的裁剪机制达到了相当甚至更好的性能，同时实现更简单、计算更高效。</p>
 <p><strong>GRPO (Group Relative Policy Optimization)</strong><br>
@@ -150,7 +173,17 @@ verl 的核心是其 HybridFlow 架构和 3D-HybridEngine。</p>
 一个典型的RL训练循环（例如PPO）在verl中大致包含以下步骤：<br>
 生成 (Generation): Actor模型 接收一批提示词（prompts），生成回应（responses）。<br>
 准备 (Preparation): 生成的回应会交由Critic模型（评估状态价值）、奖励模型(RM)（计算即时奖励）和参考模型(Reference Model)（计算与初始模型的KL散度，防止策略偏离太远）进行评估。<br>
-训练 (Training): 利用步骤2中计算出的优势函数和损失，更新Actor和Critic模型的参数。</p></div>
+训练 (Training): 利用步骤2中计算出的优势函数和损失，更新Actor和Critic模型的参数。</p>
+<p>一些训练中可能遇到问题：<br>
+8. 为什么你要用GRPO？GPRO结果比之前好多少？显存开销多大？训练一个Step需要多久？奖励函数如何设置的，为什么？有没有想过为什么一开始Reward出现大幅度震荡？GRPO是否一定有效，还有什么解决方法？<br>
+9. Post-Training 的工作机制，为什么要做三阶段训练？什么情况下应该用GRPO？为什么DeepSeek用了GRPO？如何从V3到R1？<br>
+10. 微调是如何进行微调的？为什么LoRA能够work？除了LoRA外，还了解哪些微调方法？<br>
+11. 后训练用的哪个框架？你用过什么框架？如何使用deepspeed进行分布式训练？脚本是你自己写的吗？<br>
+12. 知道什么Linux命令？<br>
+13. 用过C++，Java吗？平时用什么多?<br>
+14. 如何去评价你工作的产出和质量（基本上每个面试官都会问）<br>
+15. FLUX的工作原理，LoRA在这个地方起到了什么作用？<br>
+链接：<a href="https://www.nowcoder.com/feed/main/detail/cb3c1bff8b9d40f0a5431b26ebcc6042?sourceSSR=search" rel="nofollow">https://www.nowcoder.com/feed/main/detail/cb3c1bff8b9d40f0a5431b26ebcc6042?sourceSSR=search</a></p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
