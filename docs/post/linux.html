@@ -78,7 +78,7 @@ git config --global http.sslVerify false
  from torch_npu.contrib import transfer_to_npu
 ``` 
 
-### 其它
+### 查看cann包
 ```powershell
 #查看cann包版本
 cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg
@@ -87,6 +87,21 @@ ps -ef | grep python| grep -v grep | awk '{print $2}' | xargs kill -9
 #pytorch中查看日志的两行命令
 export ASCEND_GLOBAL_LOG_LEVEL=1
 export ASCEND_SLOG_PRINT_TO_STDOUT=1
+``` 
+
+### 可视化数据
+```powershell
+# 使用 pip3 (推荐)
+pip3 install visidata
+
+# Ubuntu/Debian
+sudo apt-get install visidata
+
+# macOS (使用Homebrew)
+brew install visidata
+
+
+vd + csv文件
 ``` 。">
 <meta property="og:title" content="linux">
 <meta property="og:description" content="
@@ -157,7 +172,7 @@ git config --global http.sslVerify false
  from torch_npu.contrib import transfer_to_npu
 ``` 
 
-### 其它
+### 查看cann包
 ```powershell
 #查看cann包版本
 cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg
@@ -166,6 +181,21 @@ ps -ef | grep python| grep -v grep | awk '{print $2}' | xargs kill -9
 #pytorch中查看日志的两行命令
 export ASCEND_GLOBAL_LOG_LEVEL=1
 export ASCEND_SLOG_PRINT_TO_STDOUT=1
+``` 
+
+### 可视化数据
+```powershell
+# 使用 pip3 (推荐)
+pip3 install visidata
+
+# Ubuntu/Debian
+sudo apt-get install visidata
+
+# macOS (使用Homebrew)
+brew install visidata
+
+
+vd + csv文件
 ``` 。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/linux.html">
@@ -291,14 +321,26 @@ git config <span class="pl-k">--</span>global http.sslVerify false
 
 <span class="pl-c"><span class="pl-c">#</span>支持自动迁移代码</span>
  <span class="pl-k">from</span> torch_npu.contrib import transfer_to_npu</pre></div>
-<h3>其它</h3>
+<h3>查看cann包</h3>
 <div class="highlight highlight-source-powershell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span>查看cann包版本</span>
 cat <span class="pl-k">/</span>usr<span class="pl-k">/</span>local<span class="pl-k">/</span>Ascend<span class="pl-k">/</span>ascend<span class="pl-k">-</span>toolkit<span class="pl-k">/</span>latest<span class="pl-k">/</span>version.cfg
 <span class="pl-c"><span class="pl-c">#</span>去除所有进程</span>
 ps <span class="pl-k">-</span>ef <span class="pl-k">|</span> grep python<span class="pl-k">|</span> grep <span class="pl-k">-</span>v grep <span class="pl-k">|</span> awk <span class="pl-s"><span class="pl-pds">'</span>{print $2}<span class="pl-pds">'</span></span> <span class="pl-k">|</span> xargs kill <span class="pl-c1">-9</span>
 <span class="pl-c"><span class="pl-c">#</span>pytorch中查看日志的两行命令</span>
 export ASCEND_GLOBAL_LOG_LEVEL<span class="pl-k">=</span><span class="pl-c1">1</span>
-export ASCEND_SLOG_PRINT_TO_STDOUT<span class="pl-k">=</span><span class="pl-c1">1</span></pre></div></div>
+export ASCEND_SLOG_PRINT_TO_STDOUT<span class="pl-k">=</span><span class="pl-c1">1</span></pre></div>
+<h3>可视化数据</h3>
+<div class="highlight highlight-source-powershell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span> 使用 pip3 (推荐)</span>
+pip3 install visidata
+
+<span class="pl-c"><span class="pl-c">#</span> Ubuntu/Debian</span>
+sudo apt<span class="pl-k">-</span>get install visidata
+
+<span class="pl-c"><span class="pl-c">#</span> macOS (使用Homebrew)</span>
+brew install visidata
+
+
+vd <span class="pl-k">+</span> csv文件</pre></div></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>

@@ -66,7 +66,7 @@ git config --global http.sslVerify false
  from torch_npu.contrib import transfer_to_npu
 ``` 
 
-### 其它
+### 查看cann包
 ```powershell
 #查看cann包版本
 cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg
@@ -75,4 +75,19 @@ ps -ef | grep python| grep -v grep | awk '{print $2}' | xargs kill -9
 #pytorch中查看日志的两行命令
 export ASCEND_GLOBAL_LOG_LEVEL=1
 export ASCEND_SLOG_PRINT_TO_STDOUT=1
+``` 
+
+### 可视化数据
+```powershell
+# 使用 pip3 (推荐)
+pip3 install visidata
+
+# Ubuntu/Debian
+sudo apt-get install visidata
+
+# macOS (使用Homebrew)
+brew install visidata
+
+
+vd + csv文件
 ``` 
