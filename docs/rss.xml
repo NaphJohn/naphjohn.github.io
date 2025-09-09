@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Tue, 09 Sep 2025 08:49:41 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>算子测精度差异</title><link>https://naphjohn.github.io/post/suan-zi-ce-jing-du-cha-yi.html</link><description>## 不同硬件精度不同底层原因（如NPU VS GPU）
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Tue, 09 Sep 2025 09:10:05 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>算子测精度差异</title><link>https://naphjohn.github.io/post/suan-zi-ce-jing-du-cha-yi.html</link><description>## 不同硬件精度不同底层原因（如NPU VS GPU）
 1. 浮点数计算的非确定性 现代处理器为追求极致性能，广泛采用并行计算与融合运算（FMA），导致浮点运算顺序不固定 由于浮点数运算不满足严格的结合律 (a+b)+c ≠ a+(b+c)，不同的计算顺序会导致微小的舍入误差累积，最终造成结果差异。</description><guid isPermaLink="true">https://naphjohn.github.io/post/suan-zi-ce-jing-du-cha-yi.html</guid><pubDate>Tue, 09 Sep 2025 07:05:38 +0000</pubDate></item><item><title>深度学习基础</title><link>https://naphjohn.github.io/post/shen-du-xue-xi-ji-chu.html</link><description># CNN
 
 **关键组件：**
@@ -115,39 +115,7 @@ CLIP（Contrastive Language–Image Pre-training）的训练方式非常巧妙�
 ## LLM 推理的推理过程
 重复pd两个步骤直到生成 EOS token 或达到用户设定的停止条件（stop token 或最大 token 数）。</description><guid isPermaLink="true">https://naphjohn.github.io/post/da-mo-xing-tui-li-ji-chu.html</guid><pubDate>Sat, 06 Sep 2025 13:42:06 +0000</pubDate></item><item><title>大模型推理加速算法</title><link>https://naphjohn.github.io/post/da-mo-xing-tui-li-jia-su-suan-fa.html</link><description># 大模型优化方式包含以下内容
 
-1. 框架测优化
-比如PD分离；
-比如model和后处理异步化，来提升吞吐；
-针对embedding模型只进行全量推理的特点，跳过kv cache相关tensor等的计算；
-针对离线大批量处理场景，优化非必要cpu操作耗时，如array转list、list转tuple等；
-2.低精度加速
-量化的方式
-3.分布式优化，比如TP，DP
-2. 服务话schedule
-连续batch
-3. 算子测优化
--flashattention （算子融合的一种，将matmul，softmax，mask等融合）
-- bert类模型参数量非常小，当计算量较小时，算子存在下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；
-- 算子编译优化prune hidden states提前至attention算子之前，减少最后一层计算量；
-
-&lt;details&gt;&lt;summary&gt;Details&lt;/summary&gt;
-&lt;p&gt;
-当前最后一层流程：
-norm -&gt; qkv_proj -&gt; rope -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj -&gt; _prune_hidden_states
-将prune前移到attention之前：
-norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj
-&lt;/p&gt;
-&lt;/details&gt;
-7. 显存优化
-kvcache低精度，offload，或者缓存优化
-- lru缓存
-    已有的样本字符不需要再计算，直接返回，比如vllm/entrypoints/chat_utils.py中  _detect_content_format中增加@lru_cache(maxsize=128)
-
-
-8. 其它方式
-比如NZ优化，tensor.cpu同步消除
-
-**量化：**
+### 量化
 量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。</description><guid isPermaLink="true">https://naphjohn.github.io/post/da-mo-xing-tui-li-jia-su-suan-fa.html</guid><pubDate>Sat, 06 Sep 2025 13:36:25 +0000</pubDate></item><item><title>训练</title><link>https://naphjohn.github.io/post/xun-lian.html</link><description>## 强化学习中一些基本概念：
 
 **人类反馈强化学习(Reinforcement Learning from Human Feedback, RLHF)**：
