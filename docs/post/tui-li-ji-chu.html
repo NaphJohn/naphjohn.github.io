@@ -130,18 +130,18 @@ FFN_ReLU(x) = ReLU(xW1 + b1) W2 + b2
   - 总参数量 ≈ 2 * d_model * d_ff (忽略偏置项b)
 </p>
 </details> 
-1. 原始ReLU FFN参数量： W1 + W2 = d_model * d_ff + d_ff * d_model = 2 * d_model * d_ff,标准的Transformer FFN层公式如上
-SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_model = 3 * d_model * d_ff
-参数量比值： (3 * d_model * d_ff) / (2 * d_model * d_ff) = 3/2
-所以，直接使用相同 d_ff 的SwiGLU，其参数量是原始FFN的 **1.5 倍**（即 3/2 倍）。
-2. 如何保持参数量一致？缩放 d_ff
-为了在改用SwiGLU后不增加模型的总参数量，需要一个“补偿”策略。最有效的方法是减小中间维度 d_ff。
-我们的目标是：SwiGLU参数量 = ReLU FFN参数量
-设新的中间维度为 d_ff_new。
-等式为： 3 * d_model * d_ff_new = 2 * d_model * d_ff_old
-两边同时除以 d_model： 3 * d_ff_new = 2 * d_ff_old
-解得： d_ff_new = (2/3) * d_ff_old
-结论： 将SwiGLU FFN的**隐藏层维度 d_ff 设置为原始ReLU FFN维度的 2/3**，可以使两者的参数量几乎保持一致。
+<p><strong>原始ReLU FFN参数量</strong>： W1 + W2 = d_model * d_ff + d_ff * d_model = 2 * d_model * d_ff,标准的Transformer FFN层公式如上<br>
+SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_model = 3 * d_model * d_ff<br>
+参数量比值： (3 * d_model * d_ff) / (2 * d_model * d_ff) = 3/2<br>
+所以，直接使用相同 d_ff 的SwiGLU，其参数量是原始FFN的 <strong>1.5 倍</strong>（即 3/2 倍）。<br>
+如何<strong>保持参数量一致</strong>？<br>
+缩放 d_ff为了在改用SwiGLU后不增加模型的总参数量，需要一个“补偿”策略。最有效的方法是减小中间维度 d_ff。<br>
+我们的目标是：SwiGLU参数量 = ReLU FFN参数量<br>
+设新的中间维度为 d_ff_new。<br>
+等式为： 3 * d_model * d_ff_new = 2 * d_model * d_ff_old<br>
+两边同时除以 d_model： 3 * d_ff_new = 2 * d_ff_old<br>
+解得： d_ff_new = (2/3) * d_ff_old<br>
+结论： 将SwiGLU FFN的<strong>隐藏层维度 d_ff 设置为原始ReLU FFN维度的 2/3</strong>，可以使两者的参数量几乎保持一致。</p>
 <h2>Llama</h2>
 <p>chatglm</p>
 <p>embedding模型：输出向量，用于相似度搜索</p>
