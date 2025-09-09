@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Tue, 09 Sep 2025 08:23:34 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>算子测精度差异</title><link>https://naphjohn.github.io/post/suan-zi-ce-jing-du-cha-yi.html</link><description>## 不同硬件精度不同底层原因（如NPU VS GPU）
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Tue, 09 Sep 2025 08:26:52 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>算子测精度差异</title><link>https://naphjohn.github.io/post/suan-zi-ce-jing-du-cha-yi.html</link><description>## 不同硬件精度不同底层原因（如NPU VS GPU）
 1. 浮点数计算的非确定性 现代处理器为追求极致性能，广泛采用并行计算与融合运算（FMA），导致浮点运算顺序不固定 由于浮点数运算不满足严格的结合律 (a+b)+c ≠ a+(b+c)，不同的计算顺序会导致微小的舍入误差累积，最终造成结果差异。</description><guid isPermaLink="true">https://naphjohn.github.io/post/suan-zi-ce-jing-du-cha-yi.html</guid><pubDate>Tue, 09 Sep 2025 07:05:38 +0000</pubDate></item><item><title>深度学习基础</title><link>https://naphjohn.github.io/post/shen-du-xue-xi-ji-chu.html</link><description># CNN
 
 **关键组件：**
@@ -138,7 +138,11 @@ norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; 
 &lt;/p&gt;
 &lt;/details&gt;
 7. 显存优化
-kvcache低精度，offload
+kvcache低精度，offload，或者缓存优化
+- lru缓存
+    已有的样本字符不需要再计算，直接返回，比如vllm/entrypoints/chat_utils.py中  _detect_content_format中增加@lru_cache(maxsize=128)
+
+
 8. 其它方式
 比如NZ优化，tensor.cpu同步消除
 
