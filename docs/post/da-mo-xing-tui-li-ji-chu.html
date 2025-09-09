@@ -10,11 +10,11 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="# 模型架构
+<meta name="description" content="# 大模型架构
 ## Qwen
 核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。">
 <meta property="og:title" content="大模型推理基础">
-<meta property="og:description" content="# 模型架构
+<meta property="og:description" content="# 大模型架构
 ## Qwen
 核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。">
 <meta property="og:type" content="article">
@@ -77,7 +77,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><h1>模型架构</h1>
+<div class="markdown-body" id="postBody"><h1>大模型架构</h1>
 <h2>Qwen</h2>
 <p>核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。</p>
 <ol>
@@ -147,13 +147,13 @@ SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_
 <p>embedding模型：输出向量，用于相似度搜索</p>
 <p>rerank模型：输出相关性分数，用于排序</p>
 <h1>vllm框架内容</h1>
-<h3>vllm框架架构</h3>
+<h2>vllm框架架构</h2>
 <p>vLLM 采用分层架构设计，主要包括控制面和执行面。</p>
 <ul>
 <li>控制面负责请求调度、显存管理和资源分配，核心是 <em>Scheduler</em> 和 <em>BlockSpaceManager</em>。</li>
 <li>执行面负责模型计算和推理任务执行，核心是 <em>Worker</em>（内含 ModelRunner 负责模型前向传播，CacheEngine 管理 KV Cache）</li>
 </ul>
-<h3>请求调度</h3>
+<h2>请求调度</h2>
 <p>vLLM 的调度器 (Scheduler) 是大脑，其核心策略是 Continuous Batching (连续批处理)</p>
 <details><summary>Details</summary>
 <p>
@@ -167,7 +167,7 @@ SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_
 5. 循环上述过程。
 </p>
 </details> 
-<h3>vllm中相关KV的数学公式</h3>
+<h2>vllm中相关KV的数学公式</h2>
 <p>KV Cache 大小 = 批大小 (batch_size) * 序列长度 (seq_len) * 层数 (n_layers) * 头数 (n_heads) * 头维度 (d_head) * 2</p>
 <p>Kv_memory = gpu-memory-util (0.95) * total_memory - peak_memory<br>
 peak_memory = weights_memory + activation_memory静态部分 动态部分<br>
@@ -258,7 +258,11 @@ vllm中块回收策略：All-or-Nothing</p>
 </p><p>然后，worker （理解是一张卡）开始使用这些输入 token ID 执行模型推理。在注意力层中，worker 会根据控制信息中提供的块表，读取对应的 KV Cache。在执行过程中，worker 会通过 <strong>all-reduce 通信</strong>原语同步中间计算结果，这一过程无需调度器参与协调。最后，worker 会将本轮生成的 token（采样结果）发送回调度器。</p>
 <p></p>
 </details>
-<h3>Transformer架构：</h3>
+<h1>Transformer架构：</h1>
+<p>核心是<strong>自注意力机制</strong>： “它的目的是让序列中的任何一个元素都能直接与所有元素交互，从而捕获长程依赖关系。计算过程是：对于输入序列，通过三个线性变换得到Query（Q）， Key（K）， Value（V） 三个矩阵。”</p>
+<ul>
+<li>计算过程： “我用我的Q去和所有信息的K做匹配（点积），得到一个注意力权重（权重高的K对应的信息与我这个Q更相关）。然后用这个权重对所有V做一个加权求和，得到的就是最终对我这个Q最有用的信息。”</li>
+</ul>
 <p><strong>Encoder编码器组成</strong><br>
 将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。</p>
 <details><summary>Details</summary>
