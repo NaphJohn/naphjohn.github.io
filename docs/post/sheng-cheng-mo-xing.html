@@ -121,8 +121,96 @@ $\alpha_t$ 是预先定义好的噪声调度（Noise Schedule），控制每一�
 </li>
 <li>最终得到生成的高清图像 $\mathbf{x}_0$。</li>
 </ol>
-<h3>与vae区别</h3>
-<p>Diffusion Model 相对于 VAE 的最大优势在于生成质量。它牺牲了生成速度。</p></div>
+<h3>与vae/GAN区别</h3>
+<p>Diffusion Model 相对于 VAE 的最大优势在于生成质量。它牺牲了生成速度。</p>
+<h2>DDPM 与 DDIM 的区别</h2>
+<p>DDPM (Denoising Diffusion Probabilistic Models)：<br>
+采样随机而且慢。反向过程的每一步都遵循马尔可夫性（当前状态只依赖于前一步），并且会加入随机噪声。<br>
+DDIM (Denoising Diffusion Implicit Models)：<br>
+采样确定而且快，支持跳步采样。揭示了扩散模型的反向过程其实是一个_微分方程求解器_。它建立了扩散模型与神经ODE（Neural ODE） 的联系</p>
+<h2>Classifier Guidance 与 Classifier-Free Guidance</h2>
+<h3>Classifier Guidance（分类器引导）</h3>
+<p><strong>原理</strong>：</p>
+<ol>
+<li>需要训练一个额外的分类器。这个分类器接收带噪图像 x_t 和时间步 t，预测其条件 y（如类别标签）的概率。</li>
+<li>在反向去噪过程中，不仅使用扩散模型预测的噪声 ε_θ，还计算这个分类器关于输入 x_t 的梯度 ∇_{x_t} log p(y | x_t)。</li>
+<li>用这个梯度来“引导”下一步的生成方向，使其朝着最大化分类器置信度（即更符合条件 y）的方向移动。</li>
+</ol>
+<p><strong>公式（简化）</strong>： ε_guided = ε_θ(x_t, t) - s * σ_t * ∇_{x_t} log p(y | x_t)<br>
+s 是引导尺度（guidance scale），控制引导的强度。s 越大，生成结果与条件 y 的对齐越好，但可能会降低多样性。</p>
+<h3>Classifier-Free Guidance（无分类器引</h3>
+<p><strong>原理：</strong></p>
+<ol>
+<li>彻底省去了分类器。它通过在训练时随机地丢弃条件（例如，有 10% 的概率将文本条件置空），同时训练一个条件扩散模型 ε_θ(x_t, t, y) 和一个无条件扩散模型 ε_θ(x_t, t, ∅)。</li>
+<li>在推理采样时，将条件预测和无条件预测进行向量组合，指向更符合条件的方向。</li>
+</ol>
+<ul>
+<li>公式： ε_guided = ε_θ(x_t, t, ∅) + s * [ε_θ(x_t, t, y) - ε_θ(x_t, t, ∅)]
+<ul>
+<li>ε_θ(x_t, t, y)：有条件噪声预测（我们想要的）。</li>
+<li>ε_θ(x_t, t, ∅)：无条件噪声预测（随意的，不关心条件的）。</li>
+<li>[ε_θ(x_t, t, y) - ε_θ(x_t, t, ∅)]：这个向量指向了“使得生成图像更符合条件 y”的方向。</li>
+<li>s 同样是引导尺度，控制方向上的步长。<br>
+总结：Classifier-Free Guidance 通过巧妙的训练方式和采样时的向量运算，实现了更强大、更简单的控制引导，是目前文生图等技术的基石。</li>
+</ul>
+</li>
+</ul>
+<h2>Latent Diffusion Model (LDM) / Stable Diffusion</h2>
+<p>原理<br>
+LDM 的架构包含三个核心组件：</p>
+<ol>
+<li>自编码器 (VAE)：</li>
+</ol>
+<ul>
+<li>编码器 (Encoder E)：将高清像素图像 x (e.g., 512x512x3) 压缩到一个高度抽象的潜在表示 z (e.g., 64x64x4)，维度大大降低。</li>
+<li>解码器 (Decoder D)：在生成时，将潜在表示 z 重新解码回高清像素图像 x。</li>
+<li>注意：这个VAE是预先训练好的，在扩散训练和推理过程中是冻结（freeze）的。</li>
+</ul>
+<ol start="2">
+<li>扩散模型 (U-Net)：</li>
+</ol>
+<ul>
+<li>核心创新：扩散过程（加噪/去噪）不是在原始图像 x 上进行，而是在VAE编码后的潜在空间 z 上进行的。</li>
+<li>U-Net 的结构也进行了调整，以适应在潜在空间 z 上操作。</li>
+</ul>
+<p>3.条件机制 (Conditioning Mechanism)：</p>
+<ul>
+<li>通常使用 CLIP 文本编码器，将输入文本提示词（Prompt）编码成向量表示。</li>
+<li>通过 Cross-Attention（交叉注意力） 机制注入到 U-Net 的中间层，实现精准的文本控制生成。</li>
+</ul>
+<p><strong>工作流程：</strong><br>
+<em>训练：</em></p>
+<ol>
+<li>图像 x 通过编码器 E 得到潜在表示 z = E(x)。</li>
+<li>对 z 进行常规的DDPM扩散过程（加噪）。</li>
+<li>U-Net 学习在潜在空间中去噪，并且通过交叉注意力接受文本条件。</li>
+</ol>
+<p><em>推理（生成）</em>：</p>
+<ol>
+<li>在潜在空间中随机采样一个噪声 z_T。</li>
+<li>用U-Net和DDIM等采样器，在文本条件的引导下，逐步去噪得到 z_0。</li>
+<li>将去噪后的潜在表示 z_0 送入VAE解码器 D，得到高清图像 x = D(z_0)。</li>
+</ol>
+<p>为什么更高效？</p>
+<ol>
+<li>计算复杂度大幅降低：</li>
+</ol>
+<ul>
+<li>计算复杂度与数据维度呈指数关系。在 64x64x4 的潜在空间中进行扩散，相比在 512x512x3 的像素空间中进行，计算量和内存占用减少了数十倍。</li>
+<li>这是性能提升的最主要原因。</li>
+</ul>
+<ol start="2">
+<li>语义集中：</li>
+</ol>
+<ul>
+<li>潜在空间 z 是原始图像经过VAE编码压缩后的“精华”，它过滤掉了图像中的高频细节（纹理、噪声）等难以学习又耗费算力的信息，保留了高级的语义和概念信息。</li>
+<li>在这个更抽象、更紧凑的空间里进行扩散，模型可以更专注于语义内容的学习和生成，效率更高，效果也更好。</li>
+</ul>
+<ol start="3">
+<li>更适合与其它模态对齐：<br>
+文本、深度图等控制条件本身也是抽象表示。在潜在空间中进行融合（通过Cross-Attention）比在像素空间更自然、更高效。</li>
+</ol>
+<p>结论：Stable Diffusion (LDM) 通过将扩散过程从像素空间迁移到计算成本低得多的潜在空间，在不显著牺牲质量的前提下，极大地降低了计算需求，使得高质量文生图模型能够在消费级GPU上运行，成为了AIGC领域的里程碑。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
