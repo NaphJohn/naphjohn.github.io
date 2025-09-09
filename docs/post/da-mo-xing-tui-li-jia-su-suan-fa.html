@@ -128,6 +128,7 @@ KV Cache 被切分为固定大小的 block；通过逻辑 block 与物理 block 
 比如MQA、GQA</p>
 <h3>flash attention</h3>
 <p>原理：针对全局内存和共享存储的 I/O 速 度的不同，尽可能的避免 HBM 中读取或写入注意力矩阵。FlashAttention 目标是尽可能高效地使 用 SRAM 来加快计算速度，避免从全局内存中读取和写入注意力矩阵。</p>
+<p>同一层级falshattention 实现的方式有哪些？</p>
 <details><summary>Details</summary>
 <p>
 Flash Attention 的核心思想是 “分块计算” 和 “核融合”。
@@ -172,7 +173,8 @@ Warpanize 设计：每个Warp独立负责计算一个子块的注意力输出，
 </ul>
 <h3>其它方式</h3>
 <p>比如NZ优化，tensor.cpu同步消除</p>
-<p><strong>投机推理（MTP）</strong><br>
+<p><strong>投机推理（MTP）</strong></p>
+<p>MTP实现的算法有哪些？<br>
 本质是大模型一次稍贵但便宜得多的并行计算，再加上K次小模型的廉价计算</p>
 <details><summary>Details</summary>
 <p>
