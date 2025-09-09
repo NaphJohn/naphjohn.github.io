@@ -89,8 +89,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li>更长的上下文长度： Qwen2支持128K token的上下文长度，这得益于RoPE和相关的工程优化。</li>
 <li>Tokenizer改进： 使用了更高效的分词器，词汇表大小扩大到152K，压缩率更高（特别是对中文和代码），减少了序列长度，提升了处理效率。</li>
 </ol>
-<p><strong>RMSNorm以及LayerNorm公式</strong><br>
-LayerNorm：<br>
+<h2>RMSNorm以及LayerNorm公式</h2>
+<p>LayerNorm：<br>
 $\text{LayerNorm}(\mathbf{x}) = \frac{\mathbf{x} - \mu}{\sigma} \odot \mathbf{g} + \mathbf{b}$<br>
 其中 $\mu = \frac{1}{H}\sum_{i=1}^H x_i$, $\sigma = \sqrt{\frac{1}{H}\sum_{i=1}^H (x_i - \mu)^2 + \epsilon}$, $\mathbf{g}$ 和 $\mathbf{b}$ 是可学习的增益和偏置参数。</p>
 <p>RMSNorm：<br>
@@ -113,9 +113,35 @@ $\odot$ 是逐元素乘法（Hadamard product）</li>
 <li>
 $\text{Swish}(x) = x \cdot \sigma(x)$， $\sigma$ 是sigmoid函数。</li>
 </ul>
-<p>在Transformer的FFN层中，通常用SwiGLU取代原来的ReLU激活：<br>
-$\text{FFN}<em>{\text{SwiGLU}}(x) = \text{SwiGLU}(x, W_1, V_1, b_1, c_1) W_2 + b_2$<br>
-注意：由于引入了额外的线性变换 $xV$，SwiGLU的参数数量是原始ReLU FFN的 $\frac{2}{3} \times 2 = \frac{4}{3}$ 倍。为了保持参数量一致，通常会将隐藏层维度 $d</em>{ff}$ 缩小为原来的 $\frac{2}{3}$。</p>
+<p>GLU：这种 (A) ⊙ (B) 的结构被称为“门控线性单元”（Gated Linear Unit）。Swish(xW1) 是“门”，它控制 (xV) 哪些部分可以通过。<br>
+在Transformer的FFN层中，通常用SwiGLU取代原来的ReLU激活：</p>
+<h3>参数量计算与调整策略</h3>
+<details><summary>Details</summary>
+<p>
+标准的Transformer FFN层由两个线性变换和一个ReLU激活函数组成：
+FFN_ReLU(x) = ReLU(xW1 + b1) W2 + b2
+其中：
+1. x 是输入，维度为 [batch_size, seq_len, d_model]
+2. W1 是一个权重矩阵，将维度从 d_model 投影到 d_ff（通常 d_ff = 4 * d_model）
+3. W2 将维度从 d_ff 投影回 d_model
+4. 参数数量主要集中在 W1 和 W2：
+  - W1 的参数数量：d_model * d_ff
+  - W2 的参数数量：d_ff * d_model
+  - 总参数量 ≈ 2 * d_model * d_ff (忽略偏置项b)
+</p>
+</details> 
+1. 原始ReLU FFN参数量： W1 + W2 = d_model * d_ff + d_ff * d_model = 2 * d_model * d_ff,标准的Transformer FFN层公式如上
+SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_model = 3 * d_model * d_ff
+参数量比值： (3 * d_model * d_ff) / (2 * d_model * d_ff) = 3/2
+所以，直接使用相同 d_ff 的SwiGLU，其参数量是原始FFN的 **1.5 倍**（即 3/2 倍）。
+2. 如何保持参数量一致？缩放 d_ff
+为了在改用SwiGLU后不增加模型的总参数量，需要一个“补偿”策略。最有效的方法是减小中间维度 d_ff。
+我们的目标是：SwiGLU参数量 = ReLU FFN参数量
+设新的中间维度为 d_ff_new。
+等式为： 3 * d_model * d_ff_new = 2 * d_model * d_ff_old
+两边同时除以 d_model： 3 * d_ff_new = 2 * d_ff_old
+解得： d_ff_new = (2/3) * d_ff_old
+结论： 将SwiGLU FFN的**隐藏层维度 d_ff 设置为原始ReLU FFN维度的 2/3**，可以使两者的参数量几乎保持一致。
 <h2>Llama</h2>
 <p>chatglm</p>
 <p>embedding模型：输出向量，用于相似度搜索</p>
