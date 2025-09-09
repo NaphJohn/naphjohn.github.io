@@ -399,8 +399,9 @@ moe中一个重要的点是控制负载均衡损失 (Load Balancing Loss)：为�
 </p><p>在解码器（Decoder）中：需要同时使用 Padding Mask 和 Causal Mask（两者相加），既不能看Pad token，也不能看未来的token。</p>
 <p></p>
 </details>
-<p><strong>思维链</strong></p>
-<p>遇到问题，启动带上RC发现TTFT劣化，TPOT减少，但是QPS以及E2E时间无变化</p>
+<p><strong>思维链</strong><br>
+原理：模型开启推理步骤，生成最终答案<br>
+遇到问题，启动带上RC发现TTFT劣化，TPOT减少，但是QPS以及E2E时间无变化</p>
 <details><summary>Details</summary>
 <p>
 python -m vllm.entrypoints.openai.api_server --model=/data/model/qwen3-32b-w8a8/  --served-model-name=Qwen --dtype=auto   --host=0.0.0.0   --port=8012   --tensor-parallel-size=2   --gpu-memory-utilization=0.95   --block-size=128   --max-num-seqs=256   --max-model-len=32768   --max-num-batched-tokens=32768   --trust-remote-code   --guided-decoding-backend=xgrammar   --no-enable-prefix-caching  --additional-config='{"ascend_turbo_graph_config": {"enabled": true},"ascend_scheduler_config": {"enabled": true,"chunked_prefill_enabled": false}}'   --quantization=compressed-tensors --enable-auto-tool-choice --tool-parser-plugin /home/ma-user/AscendCloud/AscendCloud-LLM/llm_inference/ascend_vllm/ascend_vllm/tool_parsers/ascend_hermes_tool_parser.py   --tool-call-parser=ascend_hermes --chat-template=/data/whk/ascend-vllm/llm_tools/tool_chat_template_hermes.v2.jinja   --enable-reasoning  --reasoning-parser qwen3
