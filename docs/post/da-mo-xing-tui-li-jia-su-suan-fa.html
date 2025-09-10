@@ -139,16 +139,77 @@ NRMSE越小，说明量化对模型精度影响越小</p>
 比如model和后处理异步化，来提升吞吐；<br>
 针对embedding模型只进行全量推理的特点，跳过kv cache相关tensor等的计算；<br>
 针对离线大批量处理场景，优化非必要cpu操作耗时，如array转list、list转tuple等；</p>
-<h3>分布式优化（并行化）</h3>
-<p>比如TP，DP并行化，有效利用多个设备进行推理，从而提升吞吐，降低延迟。</p>
-<h3>算子融合</h3>
-<p>-fusedDispatch和fusedCombine   （新的AI矢量绕过延迟敏感的SDMA路径，替换All-to-All，改善延迟）<br>
--flashattention （算子融合的一种，将matmul，softmax，mask等融合）</p>
+<h3>算子测下发优化</h3>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/04aad337-d133-4a0e-ba14-acd6c85932a2"><img width="710" height="451" alt="Image" src="https://github.com/user-attachments/assets/04aad337-d133-4a0e-ba14-acd6c85932a2" style="max-width: 100%; height: auto; max-height: 451px;"></a></p>
 <ul>
-<li>比如Operator Fusion 算子融合<br>
-通过转换工具，将神经网络中的部分层进行融合，从而降低计算量和数据量，提高推理性能。<br>
-常见的两个框架是 FasterTransformer（TensorRT） 和 Deepseed Inference，都可以通过转换的方式，融合 Transformer 的特定层。</li>
+<li>通信-通信-计算 三流并发<br>
+现有的多机多卡分布式moe推理场景下，激活集合通信，门控权重与路由专家、共享专家计算等步骤是顺序下发，导致集群利用率低，推理时延大。</li>
 </ul>
+<details><summary>Details</summary>
+<p>
+</p><ul>
+<li>
+<p>优化思路：</p>
+<ul>
+<li>将共享专家与门控权重计算从全激活改为DP（动态规划）计算。</li>
+<li>把原先有依赖关系的计算通信转换为可以并行执行的过程。</li>
+<li>利用两种形态的通信（AIV, SDMA），实现“通信-通信-计算”的并发。</li>
+</ul>
+</li>
+<li>
+<p>收益点：</p>
+<ol>
+<li><strong>提升带宽</strong>：通过两种形态通信并行，提高有效带宽。</li>
+<li><strong>减少数据量</strong>：先量化再进行通信，使通信的数据量减半。</li>
+<li><strong>节省时间</strong>：通信与计算并行，缩短总耗时。</li>
+<li><strong>降低计算量</strong>：共享专家与门控权重计算量并行后，整体计算量降至原来的1/DP倍数。</li>
+</ol>
+</li>
+</ul>
+<p></p>
+</details> 
+<ul>
+<li>bert类模型参数量非常小，当计算量较小时，算子存在下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；</li>
+<li>算子编译优化prune hidden states提前至attention算子之前，减少最后一层计算量；</li>
+</ul>
+<details><summary>Details</summary>
+<p>
+当前最后一层流程：
+norm -&gt; qkv_proj -&gt; rope -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj -&gt; _prune_hidden_states
+将prune前移到attention之前：
+norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj
+</p>
+</details>
+<h3>算子融合</h3>
+<p>-融合算子fusedDispatch和fusedCombine   （新的AI矢量绕过延迟敏感的SDMA路径，替换All-to-All，改善延迟）</p>
+<details><summary>Details</summary>
+<p>
+</p><ol>
+<li><strong>传统NPU之间的All-to-All通信</strong>：
+<ul>
+<li>依赖于系统直接内存访问（SDMA）来传输数据。</li>
+<li>SDMA引入了较大的启动开销，在超低延迟场景中成为性能瓶颈，尤其是在解码过程中。</li>
+</ul>
+</li>
+<li><strong>AIV-Direct设计目的</strong>：
+<ul>
+<li>克服由SDMA引起的高延迟问题。</li>
+</ul>
+</li>
+<li><strong>AIV-Direct的功能</strong>：
+<ul>
+<li>AI矢量核心能够通过UB互联网络直接写入远程NPU的内存，绕过延时敏感的SDMA路径。</li>
+<li>消除了SDMA的启动开销，提供快速且轻量化点对点通信途径。</li>
+<li>显著减少传输启动延迟，并加速NPU间的数据交换，改善了解码等延迟敏感操作的性能。</li>
+</ul>
+</li>
+</ol>
+<p></p>
+</details> 
+  -flashattention （算子融合的一种，将matmul，softmax，mask等融合）
+  - 比如Operator Fusion 算子融合
+  通过转换工具，将神经网络中的部分层进行融合，从而降低计算量和数据量，提高推理性能。
+  常见的两个框架是 FasterTransformer（TensorRT） 和 Deepseed Inference，都可以通过转换的方式，融合 Transformer 的特定层。
 <h3>显存优化</h3>
 <p>压缩kvcache</p>
 <ol>
@@ -232,44 +293,6 @@ Warpanize 设计：每个Warp独立负责计算一个子块的注意力输出，
 内核启动开销：每次启动GPU内核（Kernel）进行前向传播都有固定的开销。合并成一次内核启动，就消除了两次额外的开销。<br>
 内存读写优化：一次处理长序列的数据可以更好地利用缓存，减少与慢速显存（HBM）的通信次数。</p>
 <p></p>
-</details>
-<h3>算子测下发优化</h3>
-<ul>
-<li>
-<p>通信-通信-计算 三流并发<br>
-现有的多机多卡分布式moe推理场景下，激活集合通信，门控权重与路由专家、共享专家计算等步骤是顺序下发，导致集群利用率低，推理时延大。</p>
-</li>
-<li>
-<p>优化思路：</p>
-<ul>
-<li>将共享专家与门控权重计算从全激活改为DP（动态规划）计算。</li>
-<li>把原先有依赖关系的计算通信转换为可以并行执行的过程。</li>
-<li>利用两种形态的通信（AIV, SDMA），实现“通信-通信-计算”的并发。</li>
-</ul>
-</li>
-<li>
-<p>收益点：</p>
-<ol>
-<li><strong>提升带宽</strong>：通过两种形态通信并行，提高有效带宽。</li>
-<li><strong>减少数据量</strong>：先量化再进行通信，使通信的数据量减半。</li>
-<li><strong>节省时间</strong>：通信与计算并行，缩短总耗时。</li>
-<li><strong>降低计算量</strong>：共享专家与门控权重计算量并行后，整体计算量降至原来的1/DP倍数。</li>
-</ol>
-</li>
-<li>
-<p>bert类模型参数量非常小，当计算量较小时，算子存在下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；</p>
-</li>
-<li>
-<p>算子编译优化prune hidden states提前至attention算子之前，减少最后一层计算量；</p>
-</li>
-</ul>
-<details><summary>Details</summary>
-<p>
-当前最后一层流程：
-norm -&gt; qkv_proj -&gt; rope -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj -&gt; _prune_hidden_states
-将prune前移到attention之前：
-norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj
-</p>
 </details>
 <h2>LLM中一些优化特性</h2>
 <p><strong>prefix-caching</strong><br>
