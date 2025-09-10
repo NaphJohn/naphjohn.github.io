@@ -10,11 +10,13 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="## 不同硬件精度不同底层原因（如NPU VS GPU）
-1. 浮点数计算的非确定性 现代处理器为追求极致性能，广泛采用并行计算与融合运算（FMA），导致浮点运算顺序不固定 由于浮点数运算不满足严格的结合律 (a+b)+c ≠ a+(b+c)，不同的计算顺序会导致微小的舍入误差累积，最终造成结果差异。">
+<meta name="description" content="# 算子介绍
+### reducescatter算子
+ReduceScatter 是一个在大规模并行计算（尤其是深度学习训练）中非常重要的集合通信（Collective Communication）算子。">
 <meta property="og:title" content="算子测精度差异">
-<meta property="og:description" content="## 不同硬件精度不同底层原因（如NPU VS GPU）
-1. 浮点数计算的非确定性 现代处理器为追求极致性能，广泛采用并行计算与融合运算（FMA），导致浮点运算顺序不固定 由于浮点数运算不满足严格的结合律 (a+b)+c ≠ a+(b+c)，不同的计算顺序会导致微小的舍入误差累积，最终造成结果差异。">
+<meta property="og:description" content="# 算子介绍
+### reducescatter算子
+ReduceScatter 是一个在大规模并行计算（尤其是深度学习训练）中非常重要的集合通信（Collective Communication）算子。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/suan-zi-ce-jing-du-cha-yi.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -75,7 +77,46 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><h2>不同硬件精度不同底层原因（如NPU VS GPU）</h2>
+<div class="markdown-body" id="postBody"><h1>算子介绍</h1>
+<h3>reducescatter算子</h3>
+<p>ReduceScatter 是一个在大规模并行计算（尤其是深度学习训练）中非常重要的集合通信（Collective Communication）算子。</p>
+<ol>
+<li>Reduce（归约）： 多个设备（如GPU）各自有一个数据块（例如一个Tensor）。归约操作（如求和sum、求最大值max、求平均值avg）将这些设备上对应位置的元素进行合并，最终得到一个全局归约后的数据块。这个结果通常只存在于一个设备上（如 Reduce 操作）或者被广播到所有设备上（如 AllReduce 操作）。</li>
+<li>Scatter（散射）： 一个设备（通常是根节点）拥有一个完整的数据块，它将这个数据块切分成若干份，然后将每一份发送给一个特定的设备。</li>
+</ol>
+<details><summary>Details</summary>
+<p>
+举例说明（4个设备，操作是 sum）：
+</p><p>设备0 有数据 [A0, A1, A2, A3]<br>
+设备1 有数据 [B0, B1, B2, B3]<br>
+设备2 有数据 [C0, C1, C2, C3]<br>
+设备3 有数据 [D0, D1, D2, D3]</p>
+<p>执行 ReduceScatter(sum) 后，每个设备得到的结果是：<br>
+设备0 得到：sum(A0, B0, C0, D0)<br>
+设备1 得到：sum(A1, B1, C1, D1)<br>
+设备2 得到：sum(A2, B2, C2, D2)<br>
+设备3 得到：sum(A3, B3, C3, D3)</p>
+<p>每个设备最终都只拥有全局求和结果的一个片段。</p>
+<p></p>
+</details> 
+它的主要价值在于优化性能和内存使用，特别是在后续操作需要分散后的数据时。
+<p><strong>优势：</strong></p>
+<ol>
+<li>为数据并行训练中的梯度平均优化（All-Reduce 的分解）
+<ul>
+<li>现代深度学习框架（如 PyTorch DDP）使用 All-Reduce 来同步所有设备的梯度。</li>
+<li>All-Reduce 可以被实现为 <strong>Reduce-Scatter + All-Gather</strong> 两个阶段。</li>
+<li>第一阶段（Reduce-Scatter）： 如上所述，每个设备得到全局梯度总和的一部分。</li>
+<li>第二阶段（All-Gather）： 每个设备将自己拥有的那一部分全局梯度广播给所有其他设备。所有设备收集齐所有片段后，就拼接成了完整的全局梯度。</li>
+<li>这种实现方式比朴素的 Reduce + Broadcast 更高效，能更好地利用网络带宽，是高性能 All-Reduce 算法的基石。</li>
+</ul>
+</li>
+<li>为模型并行（尤其是Tensor Parallelism）提供支持<br>
+ReduceScatter 可以高效地将部分结果进行归约并直接分发到下一个计算阶段所需的设备上，避免了不必要的内存复制和通信延迟。</li>
+<li>节省设备内存<br>
+与 All-Reduce（每个设备得到完整结果）相比，ReduceScatter 完成后，每个设备只存储结果的一部分，<strong>峰值内存使用量更低</strong>。这在处理极大模型时至关重要。</li>
+</ol>
+<h2>不同硬件精度不同底层原因（如NPU VS GPU）</h2>
 <ol>
 <li>浮点数计算的非确定性 现代处理器为追求极致性能，广泛采用并行计算与融合运算（FMA），导致浮点运算顺序不固定 由于浮点数运算不满足严格的结合律 (a+b)+c ≠ a+(b+c)，不同的计算顺序会导致微小的舍入误差累积，最终造成结果差异。</li>
 <li>算子实现的差异 不同的硬件平台和推理框架拥有各自高度优化的算子库。</li>
