@@ -187,9 +187,12 @@ MBU 定义为（实际内存带宽）/（峰值内存带宽），而（实际内
 <li>Tokenizer改进： 使用了更高效的分词器，词汇表大小扩大到152K，压缩率更高（特别是对中文和代码），减少了序列长度，提升了处理效率。</li>
 </ol>
 <h3>RMSNorm以及LayerNorm公式</h3>
-<p>LayerNorm：<br>
-$\text{LayerNorm}(\mathbf{x}) = \frac{\mathbf{x} - \mu}{\sigma} \odot \mathbf{g} + \mathbf{b}$<br>
-其中 $\mu = \frac{1}{H}\sum_{i=1}^H x_i$, $\sigma = \sqrt{\frac{1}{H}\sum_{i=1}^H (x_i - \mu)^2 + \epsilon}$, $\mathbf{g}$ 和 $\mathbf{b}$ 是可学习的增益和偏置参数。</p>
+<details><summary>Details</summary>
+<p>
+LayerNorm：
+$\text{LayerNorm}(\mathbf{x}) = \frac{\mathbf{x} - \mu}{\sigma} \odot \mathbf{g} + \mathbf{b}$
+其中 $\mu = \frac{1}{H}\sum_{i=1}^H x_i$, $\sigma = \sqrt{\frac{1}{H}\sum_{i=1}^H (x_i - \mu)^2 + \epsilon}$, $\mathbf{g}$ 和 $\mathbf{b}$ 是可学习的增益和偏置参数。
+</p>
 <p>RMSNorm：<br>
 $\text{RMSNorm}(\mathbf{x}) = \frac{\mathbf{x}}{\text{RMS}(\mathbf{x})} \odot \mathbf{g}$<br>
 其中 $\text{RMS}(\mathbf{x}) = \sqrt{\frac{1}{H}\sum_{i=1}^H x_i^2 + \epsilon}$， 通常省略偏置 $\mathbf{b}$。</p>
@@ -211,7 +214,9 @@ $\odot$ 是逐元素乘法（Hadamard product）</li>
 $\text{Swish}(x) = x \cdot \sigma(x)$， $\sigma$ 是sigmoid函数。</li>
 </ul>
 <p>GLU：这种 (A) ⊙ (B) 的结构被称为“门控线性单元”（Gated Linear Unit）。Swish(xW1) 是“门”，它控制 (xV) 哪些部分可以通过。<br>
-在Transformer的FFN层中，通常用SwiGLU取代原来的ReLU激活：</p>
+在Transformer的FFN层中，通常用SwiGLU取代原来的ReLU激活</p>
+<p></p>
+</details> 
 <h3>参数量计算与调整策略</h3>
 <details><summary>Details</summary>
 <p>
@@ -225,9 +230,7 @@ FFN_ReLU(x) = ReLU(xW1 + b1) W2 + b2
   - W1 的参数数量：d_model * d_ff
   - W2 的参数数量：d_ff * d_model
   - 总参数量 ≈ 2 * d_model * d_ff (忽略偏置项b)
-</p>
-</details> 
-<p><strong>原始ReLU FFN参数量</strong>： W1 + W2 = d_model * d_ff + d_ff * d_model = 2 * d_model * d_ff,标准的Transformer FFN层公式如上<br>
+</p><p><strong>原始ReLU FFN参数量</strong>： W1 + W2 = d_model * d_ff + d_ff * d_model = 2 * d_model * d_ff,标准的Transformer FFN层公式如上<br>
 SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_model = 3 * d_model * d_ff<br>
 参数量比值： (3 * d_model * d_ff) / (2 * d_model * d_ff) = 3/2<br>
 所以，直接使用相同 d_ff 的SwiGLU，其参数量是原始FFN的 <strong>1.5 倍</strong>（即 3/2 倍）。<br>
@@ -239,8 +242,9 @@ SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_
 两边同时除以 d_model： 3 * d_ff_new = 2 * d_ff_old<br>
 解得： d_ff_new = (2/3) * d_ff_old<br>
 结论： 将SwiGLU FFN的<strong>隐藏层维度 d_ff 设置为原始ReLU FFN维度的 2/3</strong>，可以使两者的参数量几乎保持一致。</p>
-<h2>Llama</h2>
-<p>chatglm</p>
+<p></p>
+</details> 
+<h2>其他模型</h2>
 <p>embedding模型：输出向量，用于相似度搜索</p>
 <p>rerank模型：输出相关性分数，用于排序</p>
 <h2>Transformer架构：</h2>
@@ -414,41 +418,6 @@ python -m vllm.entrypoints.openai.api_server --model=/data/model/qwen3-32b-w8a8/
 5. 循环上述过程。
 </p>
 </details> 
-<h2>vllm中相关KV的数学公式</h2>
-<p>KV Cache 大小 = 批大小 (batch_size) * 序列长度 (seq_len) * 层数 (n_layers) * 头数 (n_heads) * 头维度 (d_head) * 2</p>
-<p>Kv_memory = gpu-memory-util (0.95) * total_memory - peak_memory<br>
-peak_memory = weights_memory + activation_memory静态部分 动态部分<br>
-hidden_state = 7168 * 128K * 2 = 1.75G<br>
-MLP intermediate hidden = 18432*128K = 4.5G<br>
-MOE_hidden_state= 7168 * 8 * 128K * 2 = 14G<br>
-Kv_block = kv_memory / bytes_pretoken / token_preblock<br>
-bytes_pretoken = num_layer * kv_heads * head_size * 2   (deepseek_v3 = 0.067MB)<br>
-128K = 8.58GB</p>
-<ul>
-<li>
-<p><strong>Matmul耗时：</strong></p>
-<p>[ [M, K] *[K, N] = [M, N] ]</p>
-<ul>
-<li>( M=	ext{num_tokens} ); ( K, N=7168 )</li>
-<li>计算量: (2MKKN)</li>
-<li>计算耗时:
-<ul>
-<li>(2MKKN / 376T) flops = 7.95us (M=32)；1018us (M=4096)</li>
-</ul>
-</li>
-<li>访存量:
-<ul>
-<li>(M<em>K + K</em>N);</li>
-</ul>
-</li>
-<li>访存耗时：
-<ul>
-<li>((M<em>K + K</em>N))/(2T) = 46.9us (M=32); 73us (M=4096)</li>
-</ul>
-</li>
-</ul>
-</li>
-</ul>
 <h2>vllm推理整体流程</h2>
 <p>vLLM推理整体流程 -- 启动阶段1、初始化engine、加载权重</p>
 <details><summary>Details</summary>
@@ -508,7 +477,46 @@ vllm中块回收策略：All-or-Nothing</p>
 接下来，调度器会将这些控制信息广播给所有的 GPU worker。
 </p><p>然后，worker （理解是一张卡）开始使用这些输入 token ID 执行模型推理。在注意力层中，worker 会根据控制信息中提供的块表，读取对应的 KV Cache。在执行过程中，worker 会通过 <strong>all-reduce 通信</strong>原语同步中间计算结果，这一过程无需调度器参与协调。最后，worker 会将本轮生成的 token（采样结果）发送回调度器。</p>
 <p></p>
-</details></div>
+</details>
+<h2>vllm中相关KV的数学公式</h2>
+<p>KV Cache 大小 = 批大小 (batch_size) * 序列长度 (seq_len) * 层数 (n_layers) * 头数 (n_heads) * 头维度 (d_head) * 2</p>
+<details><summary>Details</summary>
+<p>
+Kv_memory = gpu-memory-util (0.95) * total_memory - peak_memory
+peak_memory = weights_memory + activation_memory静态部分 动态部分
+hidden_state = 7168 * 128K * 2 = 1.75G
+MLP intermediate hidden = 18432*128K = 4.5G
+MOE_hidden_state= 7168 * 8 * 128K * 2 = 14G
+Kv_block = kv_memory / bytes_pretoken / token_preblock
+bytes_pretoken = num_layer * kv_heads * head_size * 2   (deepseek_v3 = 0.067MB)
+128K = 8.58GB
+</p><ul>
+<li>
+<p><strong>Matmul耗时：</strong></p>
+<p>[ [M, K] *[K, N] = [M, N] ]</p>
+<ul>
+<li>( M=	ext{num_tokens} ); ( K, N=7168 )</li>
+<li>计算量: (2MKKN)</li>
+<li>计算耗时:
+<ul>
+<li>(2MKKN / 376T) flops = 7.95us (M=32)；1018us (M=4096)</li>
+</ul>
+</li>
+<li>访存量:
+<ul>
+<li>(M<em>K + K</em>N);</li>
+</ul>
+</li>
+<li>访存耗时：
+<ul>
+<li>((M<em>K + K</em>N))/(2T) = 46.9us (M=32); 73us (M=4096)</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p></p>
+</details> </div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
