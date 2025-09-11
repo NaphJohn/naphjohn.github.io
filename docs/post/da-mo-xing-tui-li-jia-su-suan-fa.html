@@ -308,8 +308,10 @@ KV Cache 被切分为固定大小的 block；通过逻辑 block 与物理 block 
 比如MQA、GQA</p>
 <h3>flash attention</h3>
 <p>原理：针对全局内存和共享存储的 I/O 速 度的不同，尽可能的避免 HBM 中读取或写入注意力矩阵。FlashAttention 目标是尽可能高效地使 用 SRAM 来加快计算速度，避免从全局内存中读取和写入注意力矩阵。</p>
-<p>同一层级falshattention 实现的方式有哪些？比如flashinfer</p>
-<markdown-accessiblity-table><table role="table">
+<details><summary>Details</summary>
+<p>
+同一层级falshattention 实现的方式有哪些？比如flashinfer
+</p><markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th align="left">技术名称</th>
@@ -357,13 +359,11 @@ KV Cache 被切分为固定大小的 block；通过逻辑 block 与物理 block 
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
-<details><summary>Details</summary>
-<p>
-Flash Attention 的核心思想是 “分块计算” 和 “核融合”。
-*分块（Tiling）*：将大的 Q, K, V 矩阵分割成小的块（Tiles），这些块的大小足以被加载到 GPU 的高速 SRAM 中。
-循环计算：通过双重循环，将这些小块从 HBM 加载到 SRAM，然后在 SRAM 内部进行所有的计算步骤（矩阵乘法、Softmax、矩阵乘法）。
-*核融合（Kernel Fusion）*：将整个注意力计算（MatMul -&gt; Softmax -&gt; MatMul）融合打包成一个单独的Kernel来方便快速计算
-</p><blockquote>
+<p>Flash Attention 的核心思想是 “分块计算” 和 “核融合”。<br>
+<em>分块（Tiling）</em>：将大的 Q, K, V 矩阵分割成小的块（Tiles），这些块的大小足以被加载到 GPU 的高速 SRAM 中。<br>
+循环计算：通过双重循环，将这些小块从 HBM 加载到 SRAM，然后在 SRAM 内部进行所有的计算步骤（矩阵乘法、Softmax、矩阵乘法）。<br>
+<em>核融合（Kernel Fusion）</em>：将整个注意力计算（MatMul -&gt; Softmax -&gt; MatMul）融合打包成一个单独的Kernel来方便快速计算</p>
+<blockquote>
 <p>[!CAUTION]</p>
 </blockquote>
 <p><em>重计算（Recomputation）：</em><br>
