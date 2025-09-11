@@ -142,18 +142,20 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p></p>
 </details> 
 <h2>LLM 推理的核心指标</h2>
-<ul>
-<li>Time To First Token (TTFT): 首 Token 延迟，即从输入到输出第一个 token 的延迟。在在线的流式应用中，TTFT 是最重要的指标，因为它决定了用户体验。</li>
-<li>Time Per Output Token (TPOT)： 每个输出 token 的延迟（不含首个Token）。在离线的批处理应用中，TPOT 是最重要的指标，因为它决定了整个推理过程的时间。</li>
-<li>Latency：延迟，即从输入到输出最后一个 token 的延迟。 Latency = (TTFT) + (TPOT) * (the number of tokens to be generated). Latency 可以转换为 Tokens Per Second (TPS)：TPS = (the number of tokens to be generated) / Latency。</li>
-<li>Throughput：吞吐量，即每秒针对所有请求生成的 token 数。以上三个指标都针对单个请求，而吞吐量是针对所有并发请求的。</li>
-</ul>
-<p>我们将 LLM 应用分为两种：</p>
+<details><summary>Details</summary>
+<p>
+- Time To First Token (TTFT): 首 Token 延迟，即从输入到输出第一个 token 的延迟。在在线的流式应用中，TTFT 是最重要的指标，因为它决定了用户体验。
+- Time Per Output Token (TPOT)： 每个输出 token 的延迟（不含首个Token）。在离线的批处理应用中，TPOT 是最重要的指标，因为它决定了整个推理过程的时间。
+- Latency：延迟，即从输入到输出最后一个 token 的延迟。 Latency = (TTFT) + (TPOT) * (the number of tokens to be generated). Latency 可以转换为 Tokens Per Second (TPS)：TPS = (the number of tokens to be generated) / Latency。
+- Throughput：吞吐量，即每秒针对所有请求生成的 token 数。以上三个指标都针对单个请求，而吞吐量是针对所有并发请求的。
+</p><p>我们将 LLM 应用分为两种：</p>
 <ul>
 <li>在线流式应用：对 TTFT、TPOT、Latency 敏感，需要尽可能快的生成 token。</li>
 <li>离线批量应用：对 Throughput 敏感，需要在单位时间内尽可能多的生成 token。<br>
 而实际在某种应用（如在线流式应用），我们也应该在Latency 和 Throughput 之间进行权衡，提高 Throughtput 可以提高硬件承担的并发数，从而降低推理成本。</li>
 </ul>
+<p></p>
+</details> 
 <h2>LLM 推理的性能卡点</h2>
 <ol>
 <li>KV-Cache 大小导致并发能力受限<br>
@@ -168,7 +170,11 @@ LLM推理的过程是一个自回归的过程，也就是说前i次的token会�
 <li>带宽瓶颈导致 TPOT 受限<br>
 将 LLM 托管到现代 GPU 时，计算能力一般不是瓶颈，显存带宽才是瓶颈。一般的衡量指标是 MBU（模型带宽利用率，Model Bandwidth Utilization）。</li>
 </ol>
-<p>MBU 定义为（实际内存带宽）/（峰值内存带宽），而（实际内存带宽） = （总模型参数大小 + KV 缓存大小） / TPOT。举个例子，假如 7B fp16 模型的 TPOT 是 14ms，那么它就需要在 14ms 内把 14GB 参数从显存加载到计算单元，也就是 1TB/s 的带宽使用量。假设显卡的峰值带宽为 2TB/s，那么 MBU = 0.5，即显存带宽利用率是 50%。</p>
+<details><summary>Details</summary>
+<p>
+MBU 定义为（实际内存带宽）/（峰值内存带宽），而（实际内存带宽） = （总模型参数大小 + KV 缓存大小） / TPOT。举个例子，假如 7B fp16 模型的 TPOT 是 14ms，那么它就需要在 14ms 内把 14GB 参数从显存加载到计算单元，也就是 1TB/s 的带宽使用量。假设显卡的峰值带宽为 2TB/s，那么 MBU = 0.5，即显存带宽利用率是 50%。
+</p>
+</details> 
 <h1>大模型架构Qwen、GPT系列、llama系列，Deepseek系列，Transformer</h1>
 <h2>Qwen</h2>
 <p>核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。</p>
