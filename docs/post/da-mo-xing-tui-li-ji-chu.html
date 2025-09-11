@@ -10,12 +10,12 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="# LLM的推理过程/核心指标/性能卡点
+<meta name="description" content="# LLM的推理/transformer架构/vllm
 
 ## LLM 推理的推理过程
 目前主流LLM都是基于transformer的Decoder-only架构，也就是说使用解码器层来实现自回归式的文本生成。">
 <meta property="og:title" content="大模型推理基础">
-<meta property="og:description" content="# LLM的推理过程/核心指标/性能卡点
+<meta property="og:description" content="# LLM的推理/transformer架构/vllm
 
 ## LLM 推理的推理过程
 目前主流LLM都是基于transformer的Decoder-only架构，也就是说使用解码器层来实现自回归式的文本生成。">
@@ -79,7 +79,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><h1>LLM的推理过程/核心指标/性能卡点</h1>
+<div class="markdown-body" id="postBody"><h1>LLM的推理/transformer架构/vllm</h1>
 <h2>LLM 推理的推理过程</h2>
 <p>目前主流LLM都是基于transformer的Decoder-only架构，也就是说使用解码器层来实现自回归式的文本生成。</p>
 <p>输入文本进入后，经过分词和嵌入转为向量表示，再经过多层堆叠的Decoder Block，每个block中经过Norm（LayerNorm or RMSNorm）、Attention、FFN三个部分，多层这样的 Decoder Block 堆叠后，模型会输出一个隐藏状态序列，最后通过 线性变换 和解码机制（softmax、top-K、top-P、beam serch等）。</p>
