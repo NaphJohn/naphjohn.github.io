@@ -490,6 +490,10 @@ vllm中块回收策略：All-or-Nothing</p>
 根据论文中的实验结果，Swapping 更适用于 block size 较大的场景，而 Recomputation 则在不同 block size 下的表现更为稳定。在中等 block size（16 到 64）范围内，两种方式的端到端性能基本相当。</p>
 <h3>分布式架构</h3>
 <p>vLLM 构建了一套面向分布式推理的执行架构，原生支持 Megatron-LM 风格的张量并行策略，并通过统一调度与基于分页的 KV Cache 管理机制，实现了跨 GPU 的高效协同推理与资源共享。</p>
+<ul>
+<li>V0架构: - 使用BlockManager和Scheduler作为独立组件 - 调度器直接与BlockManager交互管理KV缓存 - 在LLMEngine中集成了大量功能逻辑；</li>
+<li>V1架构: - 引入了更模块化的设计，将功能分散到专门的组件中 - 使用KVCacheManager替代BlockManager，提供更抽象的接口 - 引入EngineCoreClient和Processor等组件实现更清晰的职责分离 - 采用更统一的调度方式，不再严格区分预填充和解码阶段；</li>
+</ul>
 <details><summary>Details</summary>
 <p>
 在每一步 decode 过程中，调度器首先为每个 batch 中的请求准备控制信息，其中包括：
