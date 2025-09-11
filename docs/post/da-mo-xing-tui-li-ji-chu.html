@@ -13,12 +13,12 @@
 <meta name="description" content="# LLM的推理过程/核心指标/性能卡点
 
 ## LLM 推理的推理过程
-重复pd两个步骤直到生成 EOS token 或达到用户设定的停止条件（stop token 或最大 token 数）。">
+目前主流LLM都是基于transformer的Decoder-only架构，也就是说使用解码器层来实现自回归式的文本生成。">
 <meta property="og:title" content="大模型推理基础">
 <meta property="og:description" content="# LLM的推理过程/核心指标/性能卡点
 
 ## LLM 推理的推理过程
-重复pd两个步骤直到生成 EOS token 或达到用户设定的停止条件（stop token 或最大 token 数）。">
+目前主流LLM都是基于transformer的Decoder-only架构，也就是说使用解码器层来实现自回归式的文本生成。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/da-mo-xing-tui-li-ji-chu.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -81,12 +81,66 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     <div id="content">
 <div class="markdown-body" id="postBody"><h1>LLM的推理过程/核心指标/性能卡点</h1>
 <h2>LLM 推理的推理过程</h2>
-<p>重复pd两个步骤直到生成 EOS token 或达到用户设定的停止条件（stop token 或最大 token 数）。</p>
+<p>目前主流LLM都是基于transformer的Decoder-only架构，也就是说使用解码器层来实现自回归式的文本生成。</p>
+<p>输入文本进入后，经过分词和嵌入转为向量表示，再经过多层堆叠的Decoder Block，每个block中经过Norm（LayerNorm or RMSNorm）、Attention、FFN三个部分，多层这样的 Decoder Block 堆叠后，模型会输出一个隐藏状态序列，最后通过 线性变换 和解码机制（softmax、top-K、top-P、beam serch等）。</p>
+<p>也就是重复pd两个步骤直到生成 EOS token 或达到用户设定的停止条件（stop token 或最大 token 数）。</p>
 <p>让我们以 Llama2-7B（4096 序列长度，float16精度）为例，计算一下 batch_size = 1的理想推理速度。</p>
 <ol>
 <li>prefill（预填充，并行处理输入的 tokens）：假设 prompt 的长度是 350 token，那么预填充所需要的时间 = number of tokens * ( number of parameters / accelerator compute bandwidth) = 350 * (2 * 7B) FLOP / 125 TFLOP/s = 39 ms（A10)。这个阶段主要是<strong>计算瓶颈。</strong></li>
 <li>decoding（解码，逐个生成下一个 token。）：time/token = total number of bytes moved (the model weights) / accelerator memory bandwidth = (2 * 7B) bytes / (600 GB/s) = 23 ms/token（A10)。这个阶段的瓶颈是<strong>带宽。</strong></li>
 </ol>
+<p>kv cache节省了那部分计算？</p>
+<details><summary>Details</summary>
+<p>
+1. FFN阶段本质上是两个矩阵乘计算，token之前互不影响，因此使用kv cache可以将计算量节省为原来的1/S
+2. RMSNorm本质是对每一个token的隐状态做归一化，token之间是互相独立的，因此计算量为原来的1/S
+3. Attention阶段由于Q和K做gemm，会得到一个shape为[S，S]的向量，在seqlen比较大的情况下，计算复杂度为O(S^2)，使用kv cache之后，Attention计算复杂度变为O(S)，计算Q、K、V的GEMM运算降为GEMV运算，整体计算量为原来的1/S;
+4. 其他的Embedding等计算量比较小，大约也为原来计算量的1/S；
+</p><h3>Transformer 中典型的 Token-wise 操作：</h3>
+<p>对于 Token-wise 操作（如FFN、Norm、新token的QKV投影），它们天然地只需要处理新 token 即可。计算量是固定的，与生成长度 S 无关</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th align="left">操作名称</th>
+<th align="left">功能</th>
+<th align="left">为什么是 Token-wise？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>词嵌入 (Embedding)</strong></td>
+<td align="left">将离散的 token ID 转换为高维向量。</td>
+<td align="left">查表操作，每个 token ID 独立地映射为一个向量。</td>
+</tr>
+<tr>
+<td align="left"><strong>线性投影/层 (Linear Layer)</strong></td>
+<td align="left">如计算 Q, K, V 的投影层或 FFN 中的两个大矩阵乘。</td>
+<td align="left">矩阵乘法 <code class="notranslate">X * W</code> 可以看作是对 <code class="notranslate">X</code> 的每一行（即每个 token 的向量）进行独立的线性变换。</td>
+</tr>
+<tr>
+<td align="left"><strong>前馈网络 (FFN)</strong></td>
+<td align="left">对每个 token 的特征进行非线性变换和增强。</td>
+<td align="left">本质上是两个连续的线性投影层加上激活函数，所以也是 token-wise 的。</td>
+</tr>
+<tr>
+<td align="left"><strong>层归一化 (LayerNorm)</strong></td>
+<td align="left">对每个 token 的特征向量进行标准化。</td>
+<td align="left">计算一个 token 向量的均值和方差，然后用其来标准化这个<strong>同一token</strong>的向量。</td>
+</tr>
+<tr>
+<td align="left"><strong>残差连接 (Add)</strong></td>
+<td align="left">将一层的输入和输出相加。</td>
+<td align="left">直接将对应位置的 token 向量相加。</td>
+</tr>
+<tr>
+<td align="left"><strong>激活函数 (e.g., ReLU, GELU, SiLU)</strong></td>
+<td align="left">引入非线性。</td>
+<td align="left">对向量中的每个元素独立进行操作。</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p></p>
+</details> 
 <h2>LLM 推理的核心指标</h2>
 <ul>
 <li>Time To First Token (TTFT): 首 Token 延迟，即从输入到输出第一个 token 的延迟。在在线的流式应用中，TTFT 是最重要的指标，因为它决定了用户体验。</li>
