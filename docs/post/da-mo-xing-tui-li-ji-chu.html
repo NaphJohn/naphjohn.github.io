@@ -83,7 +83,10 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <h2>LLM 推理的推理过程</h2>
 <p>目前主流LLM都是基于transformer的Decoder-only架构，也就是说使用解码器层来实现自回归式的文本生成。</p>
 <p>输入文本进入后，经过分词和嵌入转为向量表示，再经过多层堆叠的Decoder Block，每个block中经过Norm（LayerNorm or RMSNorm）、Attention、FFN三个部分，多层这样的 Decoder Block 堆叠后，模型会输出一个隐藏状态序列，最后通过 线性变换 和解码机制（softmax、top-K、top-P、beam serch等）。</p>
-<p>也就是重复pd两个步骤直到生成 EOS token 或达到用户设定的停止条件（stop token 或最大 token 数）。</p>
+<blockquote>
+<p>[!TIP]</p>
+</blockquote>
+<p>输入Token -&gt; 嵌入 -&gt; 加上位置编码 -&gt; 通过N个Transformer层 -&gt; 最终层归一化 -&gt; 语言模型头 -&gt; 概率分布 -&gt; 输出Token</p>
 <p>让我们以 Llama2-7B（4096 序列长度，float16精度）为例，计算一下 batch_size = 1的理想推理速度。</p>
 <ol>
 <li>prefill（预填充，并行处理输入的 tokens）：假设 prompt 的长度是 350 token，那么预填充所需要的时间 = number of tokens * ( number of parameters / accelerator compute bandwidth) = 350 * (2 * 7B) FLOP / 125 TFLOP/s = 39 ms（A10)。这个阶段主要是<strong>计算瓶颈。</strong></li>
