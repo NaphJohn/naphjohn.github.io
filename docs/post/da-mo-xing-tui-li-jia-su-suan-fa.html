@@ -367,11 +367,60 @@ Warpanize 设计：每个Warp独立负责计算一个子块的注意力输出，
 <li>使用网络前几层（缺点：实现复杂，需要修改模型结构，浅层表示可能无法很好地模拟完整模型的输出。）</li>
 <li>专用知识蒸馏小模型（缺点：需要额外的训练成本和数据。）</li>
 </ol>
-<p>降低延迟的核心原因在于：用一次昂贵的并行计算，换取了多次昂贵的串行计算。因为大模型在这个过程中并没有自己生成任何新token！它只是在计算一组已知候选token的概率。</p>
+<p>降低延迟的核心原因在于：用一次昂贵的并行计算，换取了多次昂贵的串行计算。</p>
 <p>为什么一次并行验证比三次串行生成快得多？<br>
 硬件利用效率：GPU是一种大规模并行处理器，它最擅长做的事情就是一次性处理一大块数据。一次处理长为 L+K 的序列，其计算效率远高于串行处理3个长度分别为 L, L+1, L+2 的序列。<br>
 内核启动开销：每次启动GPU内核（Kernel）进行前向传播都有固定的开销。合并成一次内核启动，就消除了两次额外的开销。<br>
 内存读写优化：一次处理长序列的数据可以更好地利用缓存，减少与慢速显存（HBM）的通信次数。</p>
+<p><strong>MTP (Multi-Token Prediction) 多令牌预测</strong>算法：</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th align="left">方法</th>
+<th align="left">核心思想</th>
+<th align="left">优点</th>
+<th align="left">缺点</th>
+<th align="left">代表</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>独立头并行</strong></td>
+<td align="left">多个独立输出头，各管一个</td>
+<td align="left">实现简单，计算高效</td>
+<td align="left">预测不一致，忽略token间依赖</td>
+<td align="left">DeepSeek, Meta</td>
+</tr>
+<tr>
+<td align="left"><strong>级联预测</strong></td>
+<td align="left">后一个头的输入依赖前一个头的输出</td>
+<td align="left">预测更一致，性能潜力更高</td>
+<td align="left">计算更复杂，部分串行</td>
+<td align="left">一些研究论文</td>
+</tr>
+<tr>
+<td align="left"><strong>联合预测</strong></td>
+<td align="left">用一个小型Decoder自回归生成多token</td>
+<td align="left">能建模复杂依赖关系</td>
+<td align="left">参数量和计算开销大</td>
+<td align="left">-</td>
+</tr>
+<tr>
+<td align="left"><strong>MoE混合</strong></td>
+<td align="left">不同专家负责不同预测策略</td>
+<td align="left">极其灵活，自适应</td>
+<td align="left">结构复杂，训练困难</td>
+<td align="left">Google Aurora</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p>补充说明：</p>
+<ul>
+<li>独立头并行：最实用方案，如DeepSeek模型采用</li>
+<li>级联预测：理论更优但实现复杂</li>
+<li>联合预测：计算代价最高但建模能力最强</li>
+<li>MoE混合：最前沿的探索方向，灵活性最高</li>
+</ul>
 <p></p>
 </details>
 <h2>LLM中一些优化特性</h2>
