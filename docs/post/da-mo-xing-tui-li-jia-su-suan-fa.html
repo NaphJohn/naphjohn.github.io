@@ -170,6 +170,12 @@ NRMSE越小，说明量化对模型精度影响越小</p>
 降低内存带宽压力：读取4bit权重所需带宽是读取16bit权重的1/4。<br>
 加速计算：许多硬件（如GPU的Tensor Cores）对低精度计算有专门优化，计算速度更快。</p>
 <p>量化中计算参考文章：<a href="https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-quantization" rel="nofollow">https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-quantization</a></p>
+<p>什么是 Per-Group Quantization？</p>
+<ul>
+<li>Per-Tensor：整个一个大权重张量共用一组量化参数（一个scale和一个zero_point）。</li>
+<li>Per-Channel：权重张量的每一个输出通道都有一组独立的量化参数。精度比Per-Tensor高。</li>
+<li>Per-Group：在Per-Channel的基础上更进一步，将<strong>每个通道的权重再细分成多个组（Groups）</strong>，每个组有自己的量化参数。它是精度最高的权重量化方式。</li>
+</ul>
 <p></p>
 </details>
 <div class="markdown-alert markdown-alert-tip"><p class="markdown-alert-title"><svg class="octicon octicon-light-bulb mr-2" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 0 0-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.751.751 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6 15.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z"></path></svg>Tip</p><p>量化与dropout有什么区别</p>
