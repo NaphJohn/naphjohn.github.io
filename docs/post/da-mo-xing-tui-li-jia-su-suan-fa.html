@@ -92,6 +92,22 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <div class="markdown-body" id="postBody"><h1>大模型优化方式/优化特性</h1>
 <h3>量化</h3>
 <p>目的是对模型压缩与加速。量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。</p>
+<p>smoothquant量化</p>
+<details><summary>Details</summary>
+<p>
+量化过程：
+1. 步骤一：校准（Calibration） - 离线的，只做一次
+ 准备校准数据：从训练集中选取一小批（几百条）有代表性的样本。
+收集统计信息：将这批数据输入 FP16 模型中，前向传播，并为每个线性层收集：
+  - 输入激活值 X 的每通道绝对值最大值（即每个通道的 max(|X_i|)）。
+  - 权重 W 的每输出通道绝对值最大值（即每个输出通道的 max(|W_j|)）。
+ 计算缩放因子 s：s = max(|X_i|) ^ α / max(|W_j|) ^ (1-α)  通常α选取0.5
+2. 步骤二：数学变换（Online Transformation） - 离线的，只做一次
+3. 量化（Quantization） - 离线的，只做一次
+4. INT8 推理（Inference） - 在线的，每次都用
+</p>
+</details> 
+<p>四种量化方式比较：</p>
 <details><summary>Details</summary>
 <p>
 核心算法原理详解
