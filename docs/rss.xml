@@ -1,9 +1,19 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Mon, 15 Sep 2025 15:50:15 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>简历对应问题</title><link>https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html</link><description>## 昇腾 NPU 深度优化
-#### Q：• 请量化说明你在 **Page-Attention 上具体改**了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？
-
-
-A：把原来一次性为每个 seq 预分配 max_seq_len 的 KV Cache，改成按页（page=16 tokens）按需申请。</description><guid isPermaLink="true">https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html</guid><pubDate>Mon, 15 Sep 2025 15:49:42 +0000</pubDate></item><item><title>SGlang推理引擎</title><link>https://naphjohn.github.io/post/SGlang-tui-li-yin-qing.html</link><description>## SGlang框架
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Mon, 15 Sep 2025 17:04:15 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>简历对应问题</title><link>https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html</link><description>## 昇腾 NPU 深度优化
+#### 量化回退
+**具体过程**
+&lt;details&gt;&lt;summary&gt;Details&lt;/summary&gt;
+&lt;p&gt;
+1. 离线权重预筛（一次性）
+a. 扫描目录下所有 .safetensors
+b. 对每张权重张量计算
+• 离散度：R = (max-min)/(Q3-Q1)
+• 量化误差：KL(P_logit ‖ Q_quant)
+c. 规则
+• R &lt; 10 且 KL &lt; 0.015 → 标记为 W4A16/W8A8
+• 10 ≤ R &lt; 50 或 0.015 ≤ KL &lt; 0.05 → W8A8 per-channel
+• 其余 → FP16
+d. 结果写入 sensitive_layers.json，上传到对象存储（版本化）。</description><guid isPermaLink="true">https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html</guid><pubDate>Mon, 15 Sep 2025 15:49:42 +0000</pubDate></item><item><title>SGlang推理引擎</title><link>https://naphjohn.github.io/post/SGlang-tui-li-yin-qing.html</link><description>## SGlang框架
 1. **前端语言**：
    - 提供原生成API接口，可以直接与本地模型交互和调用。</description><guid isPermaLink="true">https://naphjohn.github.io/post/SGlang-tui-li-yin-qing.html</guid><pubDate>Tue, 09 Sep 2025 12:10:55 +0000</pubDate></item><item><title>算子测精度差异</title><link>https://naphjohn.github.io/post/suan-zi-ce-jing-du-cha-yi.html</link><description># 算子介绍
 ### reducescatter算子
