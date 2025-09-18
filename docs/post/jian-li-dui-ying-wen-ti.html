@@ -178,43 +178,6 @@ page_attention_kernel，对应 davinci 汇编（6 条指令）：</li>
 • 结果：峰值显存 38.4 GB → 32.6 GB（-15 %），吞吐 +8 %，P99 延迟持平。</p>
 </li>
 </ol>
-<h2>vLLM 框架适配 &amp; 开源贡献</h2>
-<h3>量化改进点</h3>
-<p>W8A8C8，C8 指 KV-Cache 也压到 8-bit。C8 内部确实分两条路线：</p>
-<p>C8-S：static per-channel scale（离线校准，一条序列一个 scale）；<br>
-C8-D：dynamic per-token scale（运行时实时统计，误差更低，但多一次 reduce）。<br>
-我的改进点：<br>
-• 在 C8-S 基础上加 “<strong>token-wise 残差补偿</strong>”：对 &gt;3 σ 的离群 token 保留 4 位残差，显存只多 0.3 %，Rouge-L 从 42.1 → 43.8；<br>
-• 把 C8-D 的 reduce 操作融合到 NPU 的 cube 指令里，额外延迟 &lt; 5 µs，完全隐藏；<br>
-• 最终线上 70B 模型显存再省 12 %，P99 延迟持平。</p>
-<p><strong>token-wise 残差补偿</strong></p>
-<details><summary>Details</summary>
-<p>
-token-wise 残差补偿 = 对每个 token 的 KV-Cache 8-bit 量化误差做“小补丁”，只存离群 token 的 4-bit 残差，显存几乎不涨，却能把长序列 Rouge-L 拉回 1.5-2 pt。下面给出可直接落地的 3 步实现细节。
-</p><p>────────────────</p>
-<p>离线找离群 token<br>
-• 用 512 条真实 prompt（平均 2 k token）跑 FP16 基线，记录每个 token 的 K/V 向量。<br>
-• 对同一 token 的 128-dim K/V 做 abs-max 量化到 INT8，计算相对误差 ε = ‖FP16 – Deq(INT8)‖₂ / ‖FP16‖₂。<br>
-• 设定阈值 τ = 3 × 平均 ε（经验值 0.035），把 ε &gt; τ 的 token 标记为离群，占比 ≈ 4 %。</p>
-<p>4-bit 残差编码<br>
-• 对每个离群 token 的 128-dim K/V 向量，用 block-fp4（1×1.3.0 格式：1 sign + 3 exponent + 0 mantissa）存残差。<br>
-• 128 个数 → 64 B；再加 1 B 的 token-id 索引，平均每条序列额外 4 %×2 k×65 B ≈ 5 KB，显存膨胀 &lt; 0.3 %。</p>
-<p>运行时融合<br>
-• kernel 伪码：</p>
-<p>int8_kv  = q8_table[token_id];                 // 主 8-bit 值<br>
-if (mask[token_id]) {                          // 离群表<br>
-fp4_res  = load_fp4(residual_ptr, idx);    // 64 B<br>
-kv       = deq8(int8_kv) + deq4(fp4_res);  // FMA<br>
-} else {<br>
-kv       = deq8(int8_kv);<br>
-}<br>
-• 把 load_fp4 和 deq4 写成一条 Ascend vector 指令，用的是 VEC_FMA_I4_F16（INT4→FP16 FMA），延迟 0.8 µs，完全落在计算 bubble 里。</p>
-<p>────────────────<br>
-效果<br>
-• 70B 模型、4k ctx：Rouge-L 从 42.1 → 43.8（+1.7），显存只多 0.3 %，P99 延迟持平。<br>
-• 线上灰度 30 % 流量 7 天无回退，已合入内部推理框架。</p>
-<p></p>
-</details> 
 <h2>大模型推理通用方法论</h2>
 <h4>• 客户要求 99.9% 的请求 P99 延迟 &lt; 200 ms，但模型参数量翻倍，你会先做哪三项优化？</h4>
 <p>客户要求 99.9% 的请求 P99 延迟 &lt; 200 ms，但模型参数量翻倍，你会先做哪三项优化？<br>
