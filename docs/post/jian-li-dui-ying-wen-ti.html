@@ -11,36 +11,16 @@
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
 <meta name="description" content="## 昇腾 NPU 深度优化
-#### 量化回退
-**具体过程**
-<details><summary>Details</summary>
-<p>
-1. 离线权重预筛（一次性）
-a. 扫描目录下所有 .safetensors
-b. 对每张权重张量计算
-• 离散度：R = (max-min)/(Q3-Q1)
-• 量化误差：KL(P_logit ‖ Q_quant)
-c. 规则
-• R < 10 且 KL < 0.015 → 标记为 W4A16/W8A8
-• 10 ≤ R < 50 或 0.015 ≤ KL < 0.05 → W8A8 per-channel
-• 其余 → FP16
-d. 结果写入 sensitive_layers.json，上传到对象存储（版本化）。">
+
+#### Q：• 请量化说明你在 **Page-Attention 上具体改**了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？
+
+把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「**16-token 物理页按需分配**」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。">
 <meta property="og:title" content="简历对应问题">
 <meta property="og:description" content="## 昇腾 NPU 深度优化
-#### 量化回退
-**具体过程**
-<details><summary>Details</summary>
-<p>
-1. 离线权重预筛（一次性）
-a. 扫描目录下所有 .safetensors
-b. 对每张权重张量计算
-• 离散度：R = (max-min)/(Q3-Q1)
-• 量化误差：KL(P_logit ‖ Q_quant)
-c. 规则
-• R < 10 且 KL < 0.015 → 标记为 W4A16/W8A8
-• 10 ≤ R < 50 或 0.015 ≤ KL < 0.05 → W8A8 per-channel
-• 其余 → FP16
-d. 结果写入 sensitive_layers.json，上传到对象存储（版本化）。">
+
+#### Q：• 请量化说明你在 **Page-Attention 上具体改**了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？
+
+把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「**16-token 物理页按需分配**」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -102,54 +82,6 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h2>昇腾 NPU 深度优化</h2>
-<h4>量化回退</h4>
-<p><strong>具体过程</strong></p>
-<details><summary>Details</summary>
-<p>
-1. 离线权重预筛（一次性）
-a. 扫描目录下所有 .safetensors
-b. 对每张权重张量计算
-• 离散度：R = (max-min)/(Q3-Q1)
-• 量化误差：KL(P_logit ‖ Q_quant)
-c. 规则
-• R &lt; 10 且 KL &lt; 0.015 → 标记为 W4A16/W8A8
-• 10 ≤ R &lt; 50 或 0.015 ≤ KL &lt; 0.05 → W8A8 per-channel
-• 其余 → FP16
-d. 结果写入 sensitive_layers.json，上传到对象存储（版本化）。
-</p><ol start="2">
-<li>在线激活监控（毫秒级）<br>
-a. 推理框架启动时把 sensitive_layers.json 拉进内存，并起 30 s 热更新协程（检测 md5 变化即重载）。<br>
-b. 每个 forward 前插钩子：</li>
-</ol>
-<p>if abs(x) &gt; running_mean + 4σ → layer_token_mask |= 1<br>
-计数器每 1000 请求清零一次。<br>
-c. 若某层计数器 &gt; 1 %，则把该层 KV-Cache 动态切回 FP16（仅对该层生效）。</p>
-<ol start="3">
-<li>
-<p>实时回退路径（零重启）<br>
-a. 权重双份存储：INT8 与 FP16 同时存在显存，用 32-bit bit-mask 指示每层/每 token 走哪条路径。<br>
-b. 回退粒度<br>
-• per-layer：mask 按层开位（最常用）<br>
-• per-token：mask 扩成 token 级向量（极端离群）<br>
-• per-batch：整 batch 回退（兜底）<br>
-c. kernel 内一条 if (mask &amp; (1&lt;&lt;id)) 选路，额外延迟 &lt; 2 µs。</p>
-</li>
-<li>
-<p>闭环进化（每周自动）<br>
-a. 所有回退事件（层、粒度、KL、token-id）实时写 Kafka → 数据湖。<br>
-b. 每周 Spark 任务：<br>
-• 重新计算各层最新 KL 分布；<br>
-• 自动更新 sensitive_layers.json 与钩子阈值；<br>
-• 生成 PR 合并主干，实现阈值自进化。</p>
-</li>
-</ol>
-<p>────────────────<br>
-效果<br>
-• 70B 模型显存再省 12 %，首 token &amp; 增量延迟持平；<br>
-• 线上 30 % 灰度 7 天无幻觉回退；<br>
-• 全程零重启，阈值随数据自动刷新。</p>
-<p></p>
-</details> 
 <h4>Q：• 请量化说明你在 <strong>Page-Attention 上具体改</strong>了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？</h4>
 <p>把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「<strong>16-token 物理页按需分配</strong>」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。</p>
 <ol>
