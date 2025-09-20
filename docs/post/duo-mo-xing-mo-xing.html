@@ -93,7 +93,26 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li>训练 &amp; 推理<br>
 与 BERT 一样用 大规模监督预训练（ImageNet-21k → ILSVRC）。<br>
 推理时一次前向即得全局特征，计算量 ∝ patch 数，适合 GPU 并行。</li>
-</ol></div>
+</ol>
+<h1>wav2lip</h1>
+<p>Wav2Lip 用「梅尔频谱 + 参考脸」→ GAN 生成「唇部同步帧」，双判别器保障「对齐 + 清晰」，输入任意音频即可零样本产出嘴型完美对齐的新视频。<br>
+<strong>原理总览</strong><br>
+生成对抗网络（GAN） 架构：<br>
+– 生成器：编码「语音特征」+「参考人脸」，解码为「唇部同步帧」；<br>
+– 双判别器：<br>
+① 唇同步判别器（基于改进 SyncNet）→ 判断音-唇是否同步；<br>
+② 视觉质量判别器 → 判断画面真实度与清晰度。<br>
+损失函数：同步损失 + 对抗损失 + 重建损失联合训练，迫使生成器产出「既对齐又逼真」的口播帧<br>
+<strong>网络模块拆解</strong><br>
+Identity Encoder（残差卷积）：提取参考帧的「身份+姿态」特征。<br>
+Speech Encoder（2D CNN）：把梅尔频谱编码为「语音动画」特征。<br>
+Face Decoder：拼接两类特征 → 上采样 → 生成 96×96 唇部帧。<br>
+Lip-sync Expert（预训练 SyncNet）：额外监督，确保音-唇时间对齐 。<br>
+<strong>训练 &amp; 推理流程</strong><br>
+人脸检测 → 裁剪嘴部 96×96 区域。<br>
+音频转梅尔频谱，滑窗 16 帧为一段。<br>
+生成器逐段输出唇部帧；判别器实时反馈同步/真实度。<br>
+推理时无需 3D 参数，任何语音 + 任意人脸即可零样本合成</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
