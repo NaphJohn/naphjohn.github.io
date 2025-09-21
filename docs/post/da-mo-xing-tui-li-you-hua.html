@@ -387,9 +387,46 @@ norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; 
 <p>创新点：<br>
 KV Cache 被切分为固定大小的 block；通过逻辑 block 与物理 block 的映射，实现非连续存储（映射关系由 block table 维护）；PagedAttention 支持按需分配和回收 block，并允许多个序列共享 block。PagedAttention 使用了 copy-on-write（CoW）机制，允许多个生成样本共享大部分输入 prompt 的 KV Cache</p>
 <p><strong>（Reference Counting）引用计数</strong>： 跟踪内存块的共享状态，实现安全回收。<br>
-<strong>（Block-level Copy-on-Write）优化块复制操作</strong>：只有在真正要写入（修改）的时候，才会进行复制操作，这样不会污染数据<br>
-4. KV-Cache 共用<br>
-比如MQA、GQA</p>
+<strong>（Block-level Copy-on-Write）优化块复制操作</strong>：只有在真正要写入（修改）的时候，才会进行复制操作，这样不会污染数据</p>
+<h4>项目三： Page-Attention 上内存节省15%</h4>
+<details><summary>Details</summary>
+<p>
+</p><h4>Q：• 请量化说明你在 <strong>Page-Attention 上具体改</strong>了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？</h4>
+<p>把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「<strong>16-token 物理页按需分配</strong>」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。优势场景是短序列长尾里面。</p>
+<ol>
+<li>代码级改动（可 diff），cache_manager.cu<br>
+page_attention_kernel，对应 davinci 汇编（6 条指令）：</li>
+</ol>
+<details><summary>Details</summary>
+<p>
+1. UBUF  R0, [block_table, seq_idx, token_idx&gt;&gt;4]   // 取 page_id  
+2. LSL   R1, token_idx, #4                          // token_idx &amp; 0xF  
+3. MUL   R2, R1, #hidden                            // page_off  
+4. UBUF  R3, [page_table, R0]                       // 取物理页基址  
+5. ADD   R4, R3, R2                                 // kv_ptr  
+6. MOV   kv_ptr, R4                                 // 写回  
+</p>
+</details> 
+<ol start="2">
+<li>
+<p>页大小 16 的量化依据<br>
+16 × 8192 × 2 × 2 B = 512 KB，对齐 Ascend L2 cache line；实测碎片与表开销的 Pareto 最优点。</p>
+</li>
+<li>
+<p>15 % 内存节省测量<br>
+• 工具：Ascend Profiling Tool（ms-level 采样）<br>
+• 数据：1000 条金融 FAQ，batch=64，max_seq_len=4096<br>
+• 结果：峰值显存 38.4 GB → 32.6 GB（-15 %），吞吐 +8 %，P99 延迟持平。</p>
+</li>
+</ol>
+<p>为什么能省 15%？</p>
+<ul>
+<li>在你提供的金融 FAQ 场景里，短序列占比高（比如平均 200 token，但 max_seq_len=4096），连续分配会浪费 95% 的 KV-Cache 空间。改成 16-token 页后，显存占用 ≈ 实际 token 数 × 16 × hidden_size × 2，节省比例自然显著。</li>
+</ul>
+<p></p>
+</details> 
+4. KV-Cache 共用
+比如MQA、GQA
 <h2>LLM中一些优化特性</h2>
 <h3>flash attention</h3>
 <p>原理：针对全局内存和共享存储的 I/O 速 度的不同，尽可能的避免 HBM 中读取或写入注意力矩阵。FlashAttention 目标是尽可能高效地使 用 SRAM 来加快计算速度，避免从全局内存中读取和写入注意力矩阵。</p>
