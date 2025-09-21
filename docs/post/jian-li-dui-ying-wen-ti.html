@@ -12,15 +12,27 @@
     </script>
 <meta name="description" content="## 昇腾 NPU 深度优化
 
-#### Q：• 请量化说明你在 **Page-Attention 上具体改**了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？
 
-把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「**16-token 物理页按需分配**」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。">
+## 大模型推理通用方法论
+#### • 客户要求 99.9% 的请求 P99 延迟 < 200 ms，但模型参数量翻倍，你会先做哪三项优化？
+客户要求 99.9% 的请求 P99 延迟 < 200 ms，但模型参数量翻倍，你会先做哪三项优化？
+A：
+
+4-bit weight-only 量化：把 20 GB 权重压到 5 GB，加载时间 -70%，kernel 延迟 +3%，可接受；
+Chunked Prefill + Continuous Batching：prefill 阶段按 512-token chunk 切分，batch 内已解码 token 继续走 decode 路径，P99 延迟从 260 ms 降到 185 ms；
+投机解码（2-step）：用 1/10 参数的小模型生成候选 token，主模型一次验证 4 个 token，实测在百科问答场景 acceptance rate 0.72，整体延迟再降 22%。">
 <meta property="og:title" content="简历对应问题">
 <meta property="og:description" content="## 昇腾 NPU 深度优化
 
-#### Q：• 请量化说明你在 **Page-Attention 上具体改**了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？
 
-把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「**16-token 物理页按需分配**」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。">
+## 大模型推理通用方法论
+#### • 客户要求 99.9% 的请求 P99 延迟 < 200 ms，但模型参数量翻倍，你会先做哪三项优化？
+客户要求 99.9% 的请求 P99 延迟 < 200 ms，但模型参数量翻倍，你会先做哪三项优化？
+A：
+
+4-bit weight-only 量化：把 20 GB 权重压到 5 GB，加载时间 -70%，kernel 延迟 +3%，可接受；
+Chunked Prefill + Continuous Batching：prefill 阶段按 512-token chunk 切分，batch 内已解码 token 继续走 decode 路径，P99 延迟从 260 ms 降到 185 ms；
+投机解码（2-step）：用 1/10 参数的小模型生成候选 token，主模型一次验证 4 个 token，实测在百科问答场景 acceptance rate 0.72，整体延迟再降 22%。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -82,34 +94,6 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h2>昇腾 NPU 深度优化</h2>
-<h4>Q：• 请量化说明你在 <strong>Page-Attention 上具体改</strong>了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？</h4>
-<p>把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「<strong>16-token 物理页按需分配</strong>」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。</p>
-<ol>
-<li>代码级改动（可 diff），cache_manager.cu<br>
-page_attention_kernel，对应 davinci 汇编（6 条指令）：</li>
-</ol>
-<details><summary>Details</summary>
-<p>
-1. UBUF  R0, [block_table, seq_idx, token_idx&gt;&gt;4]   // 取 page_id  
-2. LSL   R1, token_idx, #4                          // token_idx &amp; 0xF  
-3. MUL   R2, R1, #hidden                            // page_off  
-4. UBUF  R3, [page_table, R0]                       // 取物理页基址  
-5. ADD   R4, R3, R2                                 // kv_ptr  
-6. MOV   kv_ptr, R4                                 // 写回  
-</p>
-</details> 
-<ol start="2">
-<li>
-<p>页大小 16 的量化依据<br>
-16 × 8192 × 2 × 2 B = 512 KB，对齐 Ascend L2 cache line；实测碎片与表开销的 Pareto 最优点。</p>
-</li>
-<li>
-<p>15 % 内存节省测量<br>
-• 工具：Ascend Profiling Tool（ms-level 采样）<br>
-• 数据：1000 条金融 FAQ，batch=64，max_seq_len=4096<br>
-• 结果：峰值显存 38.4 GB → 32.6 GB（-15 %），吞吐 +8 %，P99 延迟持平。</p>
-</li>
-</ol>
 <h2>大模型推理通用方法论</h2>
 <h4>• 客户要求 99.9% 的请求 P99 延迟 &lt; 200 ms，但模型参数量翻倍，你会先做哪三项优化？</h4>
 <p>客户要求 99.9% 的请求 P99 延迟 &lt; 200 ms，但模型参数量翻倍，你会先做哪三项优化？<br>

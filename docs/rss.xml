@@ -1,10 +1,16 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Sat, 20 Sep 2025 13:39:50 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>多模态模型</title><link>https://naphjohn.github.io/post/duo-mo-tai-mo-xing.html</link><description># ViT模型
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Sun, 21 Sep 2025 07:23:13 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>多模态模型</title><link>https://naphjohn.github.io/post/duo-mo-tai-mo-xing.html</link><description># ViT模型
 ViT = Patch Embedding + Transformer Encoder + cls_token，把“图像”当“句子”直接做自注意力，全局上下文一步到位，无需 CNN。</description><guid isPermaLink="true">https://naphjohn.github.io/post/duo-mo-tai-mo-xing.html</guid><pubDate>Sat, 20 Sep 2025 08:01:00 +0000</pubDate></item><item><title>简历对应问题</title><link>https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html</link><description>## 昇腾 NPU 深度优化
 
-#### Q：• 请量化说明你在 **Page-Attention 上具体改**了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？
 
-把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「**16-token 物理页按需分配**」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。</description><guid isPermaLink="true">https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html</guid><pubDate>Mon, 15 Sep 2025 15:49:42 +0000</pubDate></item><item><title>SGlang推理引擎</title><link>https://naphjohn.github.io/post/SGlang-tui-li-yin-qing.html</link><description>## SGlang框架
+## 大模型推理通用方法论
+#### • 客户要求 99.9% 的请求 P99 延迟 &lt; 200 ms，但模型参数量翻倍，你会先做哪三项优化？
+客户要求 99.9% 的请求 P99 延迟 &lt; 200 ms，但模型参数量翻倍，你会先做哪三项优化？
+A：
+
+4-bit weight-only 量化：把 20 GB 权重压到 5 GB，加载时间 -70%，kernel 延迟 +3%，可接受；
+Chunked Prefill + Continuous Batching：prefill 阶段按 512-token chunk 切分，batch 内已解码 token 继续走 decode 路径，P99 延迟从 260 ms 降到 185 ms；
+投机解码（2-step）：用 1/10 参数的小模型生成候选 token，主模型一次验证 4 个 token，实测在百科问答场景 acceptance rate 0.72，整体延迟再降 22%。</description><guid isPermaLink="true">https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html</guid><pubDate>Mon, 15 Sep 2025 15:49:42 +0000</pubDate></item><item><title>SGlang推理引擎</title><link>https://naphjohn.github.io/post/SGlang-tui-li-yin-qing.html</link><description>## SGlang框架
 1. **前端语言**：
    - 提供原生成API接口，可以直接与本地模型交互和调用。</description><guid isPermaLink="true">https://naphjohn.github.io/post/SGlang-tui-li-yin-qing.html</guid><pubDate>Tue, 09 Sep 2025 12:10:55 +0000</pubDate></item><item><title>算子测精度差异</title><link>https://naphjohn.github.io/post/suan-zi-ce-jing-du-cha-yi.html</link><description># 算子介绍
 ### reducescatter算子
