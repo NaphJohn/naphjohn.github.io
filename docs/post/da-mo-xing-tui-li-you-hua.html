@@ -269,35 +269,7 @@ P是计算密集型，D是内存带宽密集型；caching存储密集型，是�
 针对embedding模型只进行全量推理的特点，跳过kv cache相关tensor等的计算；<br>
 针对离线大批量处理场景，优化非必要cpu操作耗时，如array转list、list转tuple等；</p>
 <h3>算子测下发优化(硬件处理角度)</h3>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/04aad337-d133-4a0e-ba14-acd6c85932a2"><img width="710" height="451" alt="Image" src="https://github.com/user-attachments/assets/04aad337-d133-4a0e-ba14-acd6c85932a2" style="max-width: 100%; height: auto; max-height: 451px;"></a></p>
 <ol>
-<li>通信-通信-计算 三流并发<br>
-现有的多机多卡分布式moe推理场景下，激活集合通信，门控权重与路由专家、共享专家计算等步骤是顺序下发，导致集群利用率低，推理时延大。</li>
-</ol>
-<details><summary>Details</summary>
-<p>
-</p><ul>
-<li>
-<p>优化思路：</p>
-<ul>
-<li>将共享专家与门控权重计算从全激活改为DP（动态规划）计算。</li>
-<li>把原先有依赖关系的计算通信转换为可以并行执行的过程。</li>
-<li>利用两种形态的通信（AIV, SDMA），实现“通信-通信-计算”的并发。</li>
-</ul>
-</li>
-<li>
-<p>收益点：</p>
-<ol>
-<li><strong>提升带宽</strong>：通过两种形态通信并行，提高有效带宽。</li>
-<li><strong>减少数据量</strong>：先量化再进行通信，使通信的数据量减半。</li>
-<li><strong>节省时间</strong>：通信与计算并行，缩短总耗时。</li>
-<li><strong>降低计算量</strong>：共享专家与门控权重计算量并行后，整体计算量降至原来的1/DP倍数。</li>
-</ol>
-</li>
-</ul>
-<p></p>
-</details> 
-<ol start="2">
 <li>微批处理流水线：重叠计算与通信</li>
 </ol>
 <details><summary>Details</summary>
@@ -310,7 +282,7 @@ P是计算密集型，D是内存带宽密集型；caching存储密集型，是�
 </p>
 </details> 
 优势：隐藏通信延迟：将耗时的通信操作“隐藏”在计算操作背后，使得通信时间几乎被完全抵消；提升系统吞吐量：单位时间内完成了更多的Micro-batch处理。
-<ol start="3">
+<ol start="2">
 <li>MLA优化：算子融合、原生NZ格式KV缓存、MTP感知平铺等</li>
 </ol>
 <details><summary>Details</summary>
@@ -320,7 +292,7 @@ P是计算密集型，D是内存带宽密集型；caching存储密集型，是�
     - MTP感知平铺：MTP（Multi-Thread Parallelism）指昇腾NPU内部的多线程并行架构。具体分以下三步：算法会动态分析MatMul操作的维度（M, N, K）；此优化指根据NPU硬件线程的特性来智能地切分（Tiling）计算任务；确保切分后的子任务大小均匀。
 </p>
 </details> 
-<ol start="4">
+<ol start="3">
 <li>bert类模型参数量非常小，当计算量较小时，算子存在下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；</li>
 <li>算子编译优化prune hidden states提前至attention算子之前，减少最后一层计算量；<details><summary>Details</summary></details></li>
 </ol>
@@ -331,7 +303,7 @@ norm -&gt; qkv_proj -&gt; rope -&gt; attention -&gt; o_proj -&gt; norm -&gt; gat
 norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj
 </p>
 
-6.   数据并行/流水线并行/张量并行
+5.   ### 数据并行/流水线并行/张量并行/序列并行
 <details><summary>Details</summary>
 <p>
 数据并行：把输入的 batch 切分成多份，分配到多张卡上，每张卡独立执行完整的模型推理。
@@ -388,7 +360,7 @@ norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; 
 KV Cache 被切分为固定大小的 block；通过逻辑 block 与物理 block 的映射，实现非连续存储（映射关系由 block table 维护）；PagedAttention 支持按需分配和回收 block，并允许多个序列共享 block。PagedAttention 使用了 copy-on-write（CoW）机制，允许多个生成样本共享大部分输入 prompt 的 KV Cache</p>
 <p><strong>（Reference Counting）引用计数</strong>： 跟踪内存块的共享状态，实现安全回收。<br>
 <strong>（Block-level Copy-on-Write）优化块复制操作</strong>：只有在真正要写入（修改）的时候，才会进行复制操作，这样不会污染数据</p>
-<h4>项目三： Page-Attention 上内存节省15%</h4>
+<h4>项目三： Page_Attention 上内存节省15%</h4>
 <details><summary>Details</summary>
 <p>
 </p><h4>Q：• 请量化说明你在 <strong>Page-Attention 上具体改</strong>了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？</h4>
@@ -423,10 +395,19 @@ page_attention_kernel，对应 davinci 汇编（6 条指令）：</li>
 <ul>
 <li>在你提供的金融 FAQ 场景里，短序列占比高（比如平均 200 token，但 max_seq_len=4096），连续分配会浪费 95% 的 KV-Cache 空间。改成 16-token 页后，显存占用 ≈ 实际 token 数 × 16 × hidden_size × 2，节省比例自然显著。</li>
 </ul>
+<p><strong>PageAttention</strong><br>
+运行过程：</p>
+<details><summary>Details</summary>
+<p>
+首先，在模型推理过程中，当有新的token要写入KV cache时，它并不会往连续内存里append，而是找到一个空闲的page，把这个token对应的KV写进去。每个序列都有自己的页表，里面存的是这些page的地址。当要读某个序列的KV cache时，就通过页表找到对应的page。在做attention时，Q会去查找K、V，这时候并不需要它们是连续存储的，只要按照页表顺序去访问就行了。当某个序列生成结束了，它占用的page会被释放回池子里，这样后续别的请求可以继续用，显存利用率就高很多。
+</p>
+</details> 
 <p></p>
 </details> 
-4. KV-Cache 共用
-比如MQA、GQA
+<ol start="4">
+<li>KV-Cache 共用<br>
+比如MQA、GQA</li>
+</ol>
 <h2>LLM中一些优化特性</h2>
 <h3>flash attention</h3>
 <p>原理：针对全局内存和共享存储的 I/O 速 度的不同，尽可能的避免 HBM 中读取或写入注意力矩阵。FlashAttention 目标是尽可能高效地使 用 SRAM 来加快计算速度，避免从全局内存中读取和写入注意力矩阵。</p>
@@ -586,14 +567,6 @@ Warpanize 设计：每个Warp独立负责计算一个子块的注意力输出，
 </details>
 <p><strong>prefix-caching</strong><br>
 原理和KV Cache相似，可以用在多轮会话或者长system prompt场景下，加速prefill推理。</p>
-<p><strong>PageAttention</strong><br>
-主要管理同一个请求内部的 KV Cache，prefix caching能够共享相同提示词的多个请求<br>
-运行过程：</p>
-<details><summary>Details</summary>
-<p>
-首先，在模型推理过程中，当有新的token要写入KV cache时，它并不会往连续内存里append，而是找到一个空闲的page，把这个token对应的KV写进去。每个序列都有自己的页表，里面存的是这些page的地址。当要读某个序列的KV cache时，就通过页表找到对应的page。在做attention时，Q会去查找K、V，这时候并不需要它们是连续存储的，只要按照页表顺序去访问就行了。当某个序列生成结束了，它占用的page会被释放回池子里，这样后续别的请求可以继续用，显存利用率就高很多。
-</p>
-</details> 
 <p><strong>PD分离</strong><br>
 p与d分开在不同的实例并行进行推理，收益点：<br>
 p不会阻塞d，在SLO要求下有收益；<br>
