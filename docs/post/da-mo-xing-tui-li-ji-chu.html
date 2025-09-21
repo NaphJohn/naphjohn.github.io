@@ -196,11 +196,21 @@ MBU 定义为（实际内存带宽）/（峰值内存带宽），而（实际内
 <ol>
 <li>RMSNorm (Root Mean Square Normalization)： 取代了传统的LayerNorm，计算更简单，减少了计算量和激活值，训练更稳定。 RMSNorm去除了LayerNorm中的<strong>均值中心化</strong>（减去均值）操作，只进行方差缩放。在实践中，RMSNorm被证明可以达到与LayerNorm相当甚至更好的效果，同时训练更稳定。</li>
 <li>SwiGLU激活函数： 取代了传统的ReLU或GELU激活函数。SwiGLU是GLU（Gated Linear Unit）的一种，引入了门控机制，被证明在语言模型中能带来更好的性能。</li>
-<li>旋转位置编码 (RoPE, Rotary Position Embedding)： 取代了绝对或相对位置编码。RoPE通过旋转矩阵的方式将位置信息编码到注意力计算中，能更好地处理长序列，并具有很好的外推性（ extrapolation）。</li>
-<li>分组查询注意力 (GQA, Grouped-Query Attention)： 在较大的模型（如Qwen2-7B/72B）中使用了GQA。它介于MHA（多头注意力）和MQA（多查询注意力）之间，在几乎不损失效果的情况下，极大地减少了推理时KV Cache的内存占用，提高了推理速度。</li>
-<li>更长的上下文长度： Qwen2支持128K token的上下文长度，这得益于RoPE和相关的工程优化。</li>
-<li>Tokenizer改进： 使用了更高效的分词器，词汇表大小扩大到152K，压缩率更高（特别是对中文和代码），减少了序列长度，提升了处理效率。</li>
+<li>旋转位置编码 (RoPE, Rotary Position Embedding)： 取代了绝对或相对位置编码。RoPE通过旋转矩阵的方式将位置信息编码到注意力计算中，能更好地处理长序列，并具有很好的外推性（ extrapolation）。<br>
+<strong>ROPE公式计算</strong></li>
 </ol>
+<details><summary>Details</summary>
+<p>
+ROPE公式计算
+对位置 m 的向量 x，把它每两个分量当成一个复数，乘以旋转因子
+  f(x,m)=R_Θ^m·x，其中
+  Θ_i=10000^(−2i/d)，i=0,1,…,d/2−1
+结果：q_m、k_n 分别带上“相对距离”m−n 的旋转角，Attention 内积自然只与相对位置有关，而不再依赖绝对位置
+</p>
+</details> 
+4. 分组查询注意力 (GQA, Grouped-Query Attention)： 在较大的模型（如Qwen2-7B/72B）中使用了GQA。它介于MHA（多头注意力）和MQA（多查询注意力）之间，在几乎不损失效果的情况下，极大地减少了推理时KV Cache的内存占用，提高了推理速度。
+5. 更长的上下文长度： Qwen2支持128K token的上下文长度，这得益于RoPE和相关的工程优化。
+6. Tokenizer改进： 使用了更高效的分词器，词汇表大小扩大到152K，压缩率更高（特别是对中文和代码），减少了序列长度，提升了处理效率。
 <h3>RMSNorm以及LayerNorm公式</h3>
 <details><summary>Details</summary>
 <p>
@@ -363,39 +373,52 @@ Self-Attention 机制本身是置换不变 (Permutation Invariant) 的。即打�
 <p><strong>MHA/GQA)原理</strong><br>
 Multi-Head Attention多头注意力原理：</p>
 <ul>
-<li>
-<p>每个注意力头拥有独立的 Q/K/V 投影矩阵，并行计算后再拼接输出，可捕捉不同子空间信息。</p>
-</li>
-<li>
-<p>优点：模型容量最大，效果通常最好；缺点：KV 缓存随头数线性增长，长序列推理时显存与访存压力最大。</p>
-</li>
-<li>
-<p>因此 MHA 常被当作“精度基准”，但在大模型长上下文部署里最先遇到内存墙<br>
+<li>每个注意力头拥有独立的 Q/K/V 投影矩阵，并行计算后再拼接输出，可捕捉不同子空间信息。</li>
+<li>优点：模型容量最大，效果通常最好；缺点：KV 缓存随头数线性增长，长序列推理时显存与访存压力最大。</li>
+<li>因此 MHA 常被当作“精度基准”，但在大模型长上下文部署里最先遇到内存墙<br>
 GQA（Grouped-Query Attention）<br>
 本质：把“ Query 头”分组，让同组内的 Query 共享同一对 K/V，用“分组共享”在精度与内存之间取甜点。<br>
-展开：</p>
-</li>
-<li>
-<p>若总头数为 A，分成 G 组，则只需 G 套 K/V 参数（G=1 时退化为 MQA，G=A 时就是 MHA）。</p>
-</li>
-<li>
-<p>KV 缓存量从 MHA 的 A·n·d 降到 G·n·d，推理速度明显加快，而实验表明模型质量损失可忽略 。</p>
-</li>
-<li>
-<p>Llama 2、GPT-4、Mistral 等主流大模型因此把 GQA 作为“新默认”，兼顾长序列与高吞吐需求</p>
-</li>
+展开：</li>
+<li>若总头数为 A，分成 G 组，则只需 G 套 K/V 参数（G=1 时退化为 MQA，G=A 时就是 MHA）。</li>
+<li>KV 缓存量从 MHA 的 A·n·d 降到 G·n·d，推理速度明显加快，而实验表明模型质量损失可忽略 。</li>
+<li>Llama 2、GPT-4、Mistral 等主流大模型因此把 GQA 作为“新默认”，兼顾长序列与高吞吐需求</li>
 </ul>
-<details><summary>Details</summary>
-<p>
-1. 拆分：将输入序列的表示矩阵 X 通过线性变换，为每个头生成不同的 Q, K, V。
-2. 并行计算：每个头在各自的子空间（不同的权重矩阵）中独立计算 Scaled Dot-Product Attention。
-3. 合并：将所有头的输出拼接（Concat）起来，再通过一个线性层融合信息。
-公式：MultiHead(Q, K, V) = Concat(head₁, head₂, ..., head_h) * W^O
-where head_i = Attention(Q * W_i^Q, K * W_i^K, V * W_i^V)
-KV Cache 大小 = 批大小 (batch_size) * 序列长度 (seq_len) * 层数 (n_layers) * 头数 (n_heads) * 头维度 (d_head) * 2
-优点：允许模型同时关注来自不同表示子空间的信息。例如，一个头关注语法关系，另一个头关注语义关系，等等。
-</p>
-</details> 
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>机制</th>
+<th>实现要点</th>
+<th>KV 缓存大小</th>
+<th>质量-速度权衡</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MHA</strong></td>
+<td>每头独享 K/V</td>
+<td>H·n·d</td>
+<td>最高质量，最慢、最费显存</td>
+</tr>
+<tr>
+<td><strong>MQA</strong></td>
+<td>全部头共享 1 组 K/V</td>
+<td>1·n·d</td>
+<td>速度最快，显存最小，精度掉最多</td>
+</tr>
+<tr>
+<td><strong>GQA</strong></td>
+<td>头分成 G 组，组内共享</td>
+<td>G·n·d</td>
+<td>质量≈MHA，显存-速度居中；GPT-4、Llama2 采用</td>
+</tr>
+<tr>
+<td><strong>MLA</strong></td>
+<td>低秩投影后缓存潜向量</td>
+<td>R·n·d (R≪H)</td>
+<td>缓存比 MQA 还小，质量反超 MHA；DeepSeek-V2 已上线</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
 <p>分组查询注意力 (Grouped-Query Attention, GQA)/原理：<br>
 将 n_heads 个查询头 (Query Heads) 分成 g 个组。</p>
 <details><summary>Details</summary>
@@ -519,6 +542,8 @@ vllm中块回收策略：All-or-Nothing</p>
 <p></p>
 </details>
 <h2>vllm中相关KV的数学公式</h2>
+<p>KV-Cache 字节数 = 2 × n × H × d × 精度字节数<br>
+（系数 2 代表 K+V 各一份；n=当前序列长度；H=注意力头数；d=head_dim）</p>
 <p>KV Cache 大小 = 批大小 (batch_size) * 序列长度 (seq_len) * 层数 (n_layers) * 头数 (n_heads) * 头维度 (d_head) * 2</p>
 <details><summary>Details</summary>
 <p>
