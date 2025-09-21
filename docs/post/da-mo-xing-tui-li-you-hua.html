@@ -356,8 +356,11 @@ norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; 
 原理：通过<strong>逻辑 block 与物理 block</strong> 的映射，实现内存上的非连续存储（映射关系由 block table 维护）。</li>
 </ol>
 <p>与传统的注意力算法不同，PagedAttention 允许在不连续的内存空间中存储连续的键和值。可以将块视为页面，将 token 视为字节，将序列视为进程。</p>
-<p>创新点：<br>
-KV Cache 被切分为固定大小的 block；通过逻辑 block 与物理 block 的映射，实现非连续存储（映射关系由 block table 维护）；PagedAttention 支持按需分配和回收 block，并允许多个序列共享 block。PagedAttention 使用了 copy-on-write（CoW）机制，允许多个生成样本共享大部分输入 prompt 的 KV Cache</p>
+<p>核心思想<br>
+把「连续 KV-Cache」切成固定大小的 block（通常 4 KB ≈ 1k tokens），用块表做虚拟-物理映射，实现三大收益：<br>
+非连续分配：块可以散落在碎片化显存中，彻底消除预分配带来的浪费。<br>
+按需扩容：序列变长时只追加新 block，不用一次性 reserve max-seq。<br>
+块级共享：同一前缀的 block 可在多请求间引用计数，Prefix Caching 的基础</p>
 <p><strong>（Reference Counting）引用计数</strong>： 跟踪内存块的共享状态，实现安全回收。<br>
 <strong>（Block-level Copy-on-Write）优化块复制操作</strong>：只有在真正要写入（修改）的时候，才会进行复制操作，这样不会污染数据</p>
 <h4>项目三： Page_Attention 上内存节省15%</h4>
