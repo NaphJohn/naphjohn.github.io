@@ -535,7 +535,7 @@ vllm中块回收策略：All-or-Nothing</p>
 </p><p>然后，worker （理解是一张卡）开始使用这些输入 token ID 执行模型推理。在注意力层中，worker 会根据控制信息中提供的块表，读取对应的 KV Cache。在执行过程中，worker 会通过 <strong>all-reduce 通信</strong>原语同步中间计算结果，这一过程无需调度器参与协调。最后，worker 会将本轮生成的 token（采样结果）发送回调度器。</p>
 <p></p>
 </details>
-<h2>vllm中相关KV的数学公式</h2>
+<h2>vllm中相关KV的数学公式--kvcache</h2>
 <p>KV-Cache 字节数 = 2 × n × H × d × 精度字节数<br>
 （系数 2 代表 K+V 各一份；n=当前序列长度；H=注意力头数；d=head_dim）</p>
 <p>KV Cache 大小 = 批大小 (batch_size) * 序列长度 (seq_len) * 层数 (n_layers) * 头数 (n_heads) * 头维度 (d_head) * 2</p>
@@ -575,7 +575,9 @@ bytes_pretoken = num_layer * kv_heads * head_size * 2   (deepseek_v3 = 0.067MB)
 </li>
 </ul>
 <p></p>
-</details> </div>
+</details> 
+<h1>HCCL</h1>
+<p>华为对应集合通信库，支持allreduce、broadcast、allgather、reduceScatter、AlltoAll等通信原语</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
