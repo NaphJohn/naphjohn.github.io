@@ -10,27 +10,13 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="1. 什么是rag？
-2. rag流程？
-3.rag优化点？
-4.基座选取标准？
-手撕算法：1.并查集 2.最大二叉树宽度
-
-
-### RAG 怎么解决模型幻觉？
-1. grounding（ grounding 生成过程）
-- 原理：RAG在让模型生成答案之前，会先从外部知识库（如文档、数据库、网页）中检索出与问题最相关的信息片段（Context）。">
+<meta name="description" content="# RAG 检索增强生成（Retrieval-Augmented Generation，RAG）
+RAG的基本结构有哪些呢？
+- 向量化模块：用来将文档片段向量化。">
 <meta property="og:title" content="RAG">
-<meta property="og:description" content="1. 什么是rag？
-2. rag流程？
-3.rag优化点？
-4.基座选取标准？
-手撕算法：1.并查集 2.最大二叉树宽度
-
-
-### RAG 怎么解决模型幻觉？
-1. grounding（ grounding 生成过程）
-- 原理：RAG在让模型生成答案之前，会先从外部知识库（如文档、数据库、网页）中检索出与问题最相关的信息片段（Context）。">
+<meta property="og:description" content="# RAG 检索增强生成（Retrieval-Augmented Generation，RAG）
+RAG的基本结构有哪些呢？
+- 向量化模块：用来将文档片段向量化。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/RAG.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -91,29 +77,17 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><ol>
-<li>什么是rag？</li>
-<li>rag流程？<br>
-3.rag优化点？<br>
-4.基座选取标准？<br>
-手撕算法：1.并查集 2.最大二叉树宽度</li>
-</ol>
-<h3>RAG 怎么解决模型幻觉？</h3>
-<ol>
-<li>grounding（ grounding 生成过程）</li>
-</ol>
+<div class="markdown-body" id="postBody"><h1>RAG 检索增强生成（Retrieval-Augmented Generation，RAG）</h1>
+<p>RAG的基本结构有哪些呢？</p>
 <ul>
-<li>原理：RAG在让模型生成答案之前，会先从外部知识库（如文档、数据库、网页）中检索出与问题最相关的信息片段（Context）。</li>
-<li>如何解决幻觉：模型不再仅仅依赖其内部参数化知识（可能过时、不准确或不存在）来生成回答，而是被要求主要基于检索到的、事实性的文档片段进行回答。这将其“创作”范围限制在已有证据之上。</li>
+<li>向量化模块：用来将文档片段向量化。</li>
+<li>文档加载和切分模块：用来加载文档并切分成文档片段。</li>
+<li>数据库：存放文档片段及其对应的向量表示。</li>
+<li>检索模块：根据 Query（问题）检索相关的文档片段。</li>
+<li>大模型模块：根据检索到的文档回答用户的问题。</li>
 </ul>
-<ol start="2">
-<li>提供可验证的参考来源<br>
-原理：RAG系统通常会将检索到的文档片段作为生成答案的依据，并可以附带引用来源。</li>
-<li>减少对模型记忆的依赖<br>
-RAG允许模型访问最新的、经过验证的外部知识库。对于知识库中已有的信息，模型不需要去“记忆”，只需要学会“阅读理解”和“归纳总结”，极大降低了因记忆模糊或错误而产生幻觉的概率。</li>
-<li>将生成问题转化为理解问题<br>
-原理：对于事实性问题，RAG将任务从“无中生有地生成答案”转变为了“根据给定材料回答问题”。这更接近于阅读理解任务。</li>
-</ol></div>
+<p><strong>RAG流程</strong><br>
+RAG = “先把相关文档搜出来，再让大模型照着读”；流程固定为 编码→检索→拼装→生成→后处理 五步，离线再配套切块、建索引、存元数据即可上线。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
