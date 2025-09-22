@@ -87,7 +87,17 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li>大模型模块：根据检索到的文档回答用户的问题。</li>
 </ul>
 <p><strong>RAG流程</strong><br>
-RAG = “先把相关文档搜出来，再让大模型照着读”；流程固定为 编码→检索→拼装→生成→后处理 五步，离线再配套切块、建索引、存元数据即可上线。</p></div>
+RAG = “先把相关文档搜出来，再让大模型照着读”；流程固定为 编码→检索→拼装→生成→后处理 五步，离线再配套切块、建索引、存元数据即可上线。</p>
+<h1>LLM Agent</h1>
+<p>Agent 的工作流程如下：</p>
+<p>接收用户输入。<br>
+调用大模型（如 Qwen），并告知其可用的工具及其 Schema。<br>
+如果模型决定调用工具，Agent 会解析请求，执行相应的 Python 函数。<br>
+Agent 将工具的执行结果返回给模型。<br>
+模型根据工具结果生成最终回复。<br>
+Agent 将最终回复返回给用户。</p>
+<p>agent如何记住历史信息：<br>
+「在线用向量/Key-Value 做短时检索 → 定期摘要/结构化转长时记忆 → 必要时把高价值数据再喂回模型权重」</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
