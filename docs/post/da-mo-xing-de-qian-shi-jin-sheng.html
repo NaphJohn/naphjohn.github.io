@@ -84,7 +84,9 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 BERT（Bidirectional Encoder Representations from Transformers）= “只有 Transformer 编码器” 的预训练语言模型。<br>
 一句话：把 12/24 层 Transformer Encoder 叠起来，先在大规模无标签文本上做 Masked LM + Next Sentence Prediction 预训练，再微调就能横扫 11 项 NLP 任务。</p>
 <h1>Decoder-Only模型</h1>
-<p>GPT模型</p>
+<p>GPT模型：一句话总结： GPT（生成式预训练Transformer） = “只有 Transformer 解码器” 的自回归语言模型。<br>
+核心思想： 将多层（如GPT-3为96层）Transformer Decoder堆叠起来，采用“因果掩码”（Causal Mask）确保模型在生成时只能看到左侧上下文信息。先通过大规模无标签文本进行“下一个词预测”（Next Token Prediction）的自回归预训练，再通过指令微调（Instruction Tuning）和基于人类反馈的强化学习（RLHF）即可在文本生成、对话、代码生成等开放生成任务上展现出强大能力。</p>
+<p>LLama模型</p>
 <h1>Encoder-Decoder模型</h1>
 <p>T5模型</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
