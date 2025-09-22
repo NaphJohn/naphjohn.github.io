@@ -11,10 +11,10 @@
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
 <meta name="description" content="# ViT模型
-ViT = Patch Embedding + Transformer Encoder + cls_token，把“图像”当“句子”直接做自注意力，全局上下文一步到位，无需 CNN。">
+ViT = Patch Embedding + Transformer Encoder + cls_token（图像分类），就是「把图切成 patches → 当成一串 token → 做自注意力」，全局上下文一步到位，无需 CNN。">
 <meta property="og:title" content="多模态模型">
 <meta property="og:description" content="# ViT模型
-ViT = Patch Embedding + Transformer Encoder + cls_token，把“图像”当“句子”直接做自注意力，全局上下文一步到位，无需 CNN。">
+ViT = Patch Embedding + Transformer Encoder + cls_token（图像分类），就是「把图切成 patches → 当成一串 token → 做自注意力」，全局上下文一步到位，无需 CNN。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/duo-mo-tai-mo-xing.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -76,7 +76,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h1>ViT模型</h1>
-<p>ViT = Patch Embedding + Transformer Encoder + cls_token，把“图像”当“句子”直接做自注意力，全局上下文一步到位，无需 CNN。</p>
+<p>ViT = Patch Embedding + Transformer Encoder + cls_token（图像分类），就是「把图切成 patches → 当成一串 token → 做自注意力」，全局上下文一步到位，无需 CNN。</p>
 <ol>
 <li>输入处理<br>
 将 H×W×3 图片切成 固定大小 patches（如 16×16），得到 N = HW/16² 个 patch。<br>
@@ -112,7 +112,55 @@ Lip-sync Expert（预训练 SyncNet）：额外监督，确保音-唇时间对�
 人脸检测 → 裁剪嘴部 96×96 区域。<br>
 音频转梅尔频谱，滑窗 16 帧为一段。<br>
 生成器逐段输出唇部帧；判别器实时反馈同步/真实度。<br>
-推理时无需 3D 参数，任何语音 + 任意人脸即可零样本合成</p></div>
+推理时无需 3D 参数，任何语音 + 任意人脸即可零样本合成</p>
+<h1>Qwen2.5-VL</h1>
+<p>Qwen2.5-VL 的视觉编码器 = 任意分辨率 ViT + 2D-RoPE + Window Attention + 轻量 Neck，先单独对齐图文特征，再与 LLM 端到端混训，推理时把图像 patch 当「超长文本 token」直接拼进输入，无需额外 CNN 或 Q-Former，这就是「添加」的全部过程。</p>
+<p>一、视觉编码器结构（Qwen2.5-VL Vision Encoder）</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>模块</th>
+<th>设计要点</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Patch Embedding</td>
+<td>16×16 卷积，stride=16</td>
+<td>把任意长宽图像打成 1D patch 序列</td>
+</tr>
+<tr>
+<td>2D-RoPE</td>
+<td>将旋转位置编码同时施加在 h、w 两个维度</td>
+<td>保持 patch 间的二维空间相对位置</td>
+</tr>
+<tr>
+<td>Window Attention</td>
+<td>局部 7×7 window + 移位窗口</td>
+<td>降低 O(n²) 计算，显存随分辨率线性增长</td>
+</tr>
+<tr>
+<td>Global Query Token</td>
+<td>每 4 层插入 1 个可学习 global query</td>
+<td>远程 patch 也能直接交互，防止信息孤岛</td>
+</tr>
+<tr>
+<td>Neck（MLP）</td>
+<td>2 层 MLP 压缩通道 → LLM 词表维度</td>
+<td>把视觉特征映射到文本 token 空间</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p>二、训练流程（3 阶段）</p>
+<ol>
+<li>Vision-Language Alignment（冻结 LLM）<br>
+600 M 图文对 + 400 M OCR 对，只训 Neck 层 + Vision Encoder，让 patch 特征对齐词向量空间。</li>
+<li>Vision-Language Instruction Tuning（LLM 解冻）<br>
+200 M 高质量指令数据（图像描述、图表、定位、视频），全参数训练，学习「看-说」指令。</li>
+<li>Mixed Instruction Tuning（文本不掉）<br>
+再把纯文本 SFT 子集（约 20 M 样本）以 1:1 比例混训，确保文本基准不降级。</li>
+</ol></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
