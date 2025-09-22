@@ -303,7 +303,7 @@ norm -&gt; qkv_proj -&gt; rope -&gt; attention -&gt; o_proj -&gt; norm -&gt; gat
 norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; o_proj -&gt; norm -&gt; gate_up_proj -&gt; gelu -&gt; down_proj
 </p>
 
-5.   ### 数据并行/流水线并行/张量并行/序列并行
+5.  数据并行/流水线并行/张量并行/序列并行
 <details><summary>Details</summary>
 <p>
 数据并行：把输入的 batch 切分成多份，分配到多张卡上，每张卡独立执行完整的模型推理。
@@ -312,7 +312,8 @@ norm -&gt; qkv_proj -&gt; rope -&gt; _prune_hidden_states -&gt; attention -&gt; 
 <p>Tensor并行（张量并行）：<br>
 它是把 单层内部的算子 拆开，比如一个大的全连接矩阵乘法，我们把<strong>权重矩阵</strong>切成几块分到不同 GPU 上，每个 GPU 负责算一部分，再做 AllReduce 合并结果。好处是能并行利用多卡算力，加速单层的计算。缺点是通信量比较大，尤其是每层都需要跨卡通信，如果跨机通信的话开销就更明显。</p>
 <p>专家并行：在 MoE 模型中，不同的专家网络分配到不同设备，推理时路由到部分专家</p>
-<p>序列并行：把输入按照序列长度切分到多张卡上进行计算。</p>
+<p>序列并行：把输入按照序列长度切分到多张卡上进行计算。<br>
+可以将SP+TP视为TP的一种特殊形式，每层做两次AllGather，2次ReduceScatter操作，通信量和纯TP相同（AllReduce = AllGather+ReduceScatter）,Add+Norm块的计算量变为1/SP</p>
 <p></p>
 </details> 
 <h3>算子融合</h3>
