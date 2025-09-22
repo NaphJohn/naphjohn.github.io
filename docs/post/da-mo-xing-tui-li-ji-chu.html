@@ -273,6 +273,11 @@ SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_
 <p>embedding模型：输出向量，用于相似度搜索</p>
 <p>rerank模型：输出相关性分数，用于排序</p>
 <h2>Transformer架构：</h2>
+<p>一个 Transformer Block = Attention（全局）+ MLP（局部）+ LN/残差，交替堆叠 L 次，就是现在大模型（GPT、ViT、Qwen 等）的核心骨架。</p>
+<ul>
+<li>Attention 负责全局找关系（谁重要）</li>
+<li>MLP 负责局部深加工（把重要信息揉进非线性空间）</li>
+</ul>
 <p>核心是<strong>自注意力机制</strong>： “它的目的是让序列中的任何一个元素都能直接与所有元素交互，从而捕获长程依赖关系。计算过程是：对于输入序列，通过三个线性变换得到Query（Q）， Key（K）， Value（V） 三个矩阵。”</p>
 <p>Q，K，V对应理解以及实际工作过程：</p>
 <details><summary>Details</summary>
@@ -292,17 +297,7 @@ SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_
 <li>加权求和：用注意力权重对 Value 向量进行加权求和，得到最终的输出。Output = Attention_Weights * V</li>
 </ol>
 <p>这个输出就包含了当前 token 从序列所有其他 token 那里聚合到的上下文信息。</p>
-<p></p>
-</details> 
-Q, K, V 这样计算**存在问题**（这是深度）：
-  1.   - 计算复杂度高： 注意力权重的计算是序列长度的平方 O(n^2)，导致处理长序列时非常耗时耗内存。
-  2.   - 结构先验缺失： 纯粹的数据驱动，忽略了图像、语言中固有的局部性、层次性等先验知识，导致需要大量数据来学习这些本可以“告诉”它的规律。
-  3.   - 对位置信息不敏感： 自注意力本身是置换不变的，需要额外加入位置编码（Positional Encoding） 来注入顺序信息。
-<p><strong>Encoder编码器组成</strong><br>
-将输入序列（如一句话）压缩成一个富含上下文信息的中间表示（一组高维向量）。</p>
-<details><summary>Details</summary>
-<p>
-</p><ol>
+<ol>
 <li>多头自注意力机制 (Multi-Head Self-Attention)</li>
 </ol>
 <ul>
