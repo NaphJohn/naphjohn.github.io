@@ -160,15 +160,15 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p></p>
 </details> 
 <h2>LLM基座的推理能力</h2>
-<details><summary>Details</summary>
-<p>
-</p><p>核心评估维度：<br>
+<p>核心评估维度：<br>
 逻辑推理<br>
 数学推理  GSM8K, MATH, AQuA-RAT<br>
 常识推理 HellaSwag, PIQA, ARC<br>
 多步推理  BigBench-Hard, DROP<br>
 代码推理  HumanEval, MBPP</p>
-<h4><span>主流评估基准（Benchmarks）：</span></h4><ol start="1"><li><p><strong><span>MMLU (Massive Multitask Language Understanding)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：涵盖57个主题的多项选择题，包括数学、历史、法律、计算机科学等。</span></p></li><li><p><strong><span>目的</span></strong><span>：评估模型的</span><strong><span>知识广度和推理深度</span></strong><span>。</span></p></li></ul></li><li><p><strong><span>GSM8K (Grade School Math 8K)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：八千多道小学数学应用题，需要多步推理才能得出最终答案。</span></p></li><li><p><strong><span>目的</span></strong><span>：</span><strong><span>精准评估数学推理和分步解决问题</span></strong><span>的能力。CoT（思维链）效果的核心试金石。</span></p></li></ul></li><li><p><strong><span>BigBench-Hard (BBH)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：从大规模基准BIG-Bench中筛选出的23项最具挑战性的任务，人类评估者认为超出当前语言模型能力。</span></p></li><li><p><strong><span>目的</span></strong><span>：</span><strong><span>挑战模型极限</span></strong><span>，评估其解决极其复杂和反直觉问题的能力。</span></p></li></ul></li><li><p><strong><span>DROP (Discrete Reasoning Over Paragraphs)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：需要模型在阅读段落的基础上进行数值计算、日期推理、排序等离散推理。</span></p></li><li><p><strong><span>目的</span></strong><span>：评估模型</span><strong><span>理解文本并执行精确推理</span></strong><span>的能力，避免“蒙答案”。</span></p></li></ul></li></ol><h4><span>评估方法论：</span></h4><ul><li><p><strong><span>零样本（Zero-Shot）</span></strong><span>：直接给出指令，看模型能否理解并执行。评估</span><strong><span>泛化能力</span></strong><span>。</span></p></li><li><p><strong><span>少样本（Few-Shot）</span></strong><span>：提供几个示例（Demonstration），看模型能否从示例中学习推理模式。评估</span><strong><span>学习能力</span></strong><span>。</span></p></li><li><p><strong><span>思维链（Chain-of-Thought, CoT）</span></strong><span>：要求模型给出推理步骤，再给出答案。不仅看结果正确性，更要</span><strong><span>评估推理过程的合理性</span></strong><span>。</span></p></li></ul>
+<details><summary>Details</summary>
+<p>
+</p><h4><span>主流评估基准（Benchmarks）：</span></h4><ol start="1"><li><p><strong><span>MMLU (Massive Multitask Language Understanding)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：涵盖57个主题的多项选择题，包括数学、历史、法律、计算机科学等。</span></p></li><li><p><strong><span>目的</span></strong><span>：评估模型的</span><strong><span>知识广度和推理深度</span></strong><span>。</span></p></li></ul></li><li><p><strong><span>GSM8K (Grade School Math 8K)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：八千多道小学数学应用题，需要多步推理才能得出最终答案。</span></p></li><li><p><strong><span>目的</span></strong><span>：</span><strong><span>精准评估数学推理和分步解决问题</span></strong><span>的能力。CoT（思维链）效果的核心试金石。</span></p></li></ul></li><li><p><strong><span>BigBench-Hard (BBH)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：从大规模基准BIG-Bench中筛选出的23项最具挑战性的任务，人类评估者认为超出当前语言模型能力。</span></p></li><li><p><strong><span>目的</span></strong><span>：</span><strong><span>挑战模型极限</span></strong><span>，评估其解决极其复杂和反直觉问题的能力。</span></p></li></ul></li><li><p><strong><span>DROP (Discrete Reasoning Over Paragraphs)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：需要模型在阅读段落的基础上进行数值计算、日期推理、排序等离散推理。</span></p></li><li><p><strong><span>目的</span></strong><span>：评估模型</span><strong><span>理解文本并执行精确推理</span></strong><span>的能力，避免“蒙答案”。</span></p></li></ul></li></ol><h4><span>评估方法论：</span></h4><ul><li><p><strong><span>零样本（Zero-Shot）</span></strong><span>：直接给出指令，看模型能否理解并执行。评估</span><strong><span>泛化能力</span></strong><span>。</span></p></li><li><p><strong><span>少样本（Few-Shot）</span></strong><span>：提供几个示例（Demonstration），看模型能否从示例中学习推理模式。评估</span><strong><span>学习能力</span></strong><span>。</span></p></li><li><p><strong><span>思维链（Chain-of-Thought, CoT）</span></strong><span>：要求模型给出推理步骤，再给出答案。不仅看结果正确性，更要</span><strong><span>评估推理过程的合理性</span></strong><span>。</span></p></li></ul>
 <p></p>
 </details> 
 <h2>LLM 推理的性能卡点</h2>
@@ -278,8 +278,7 @@ SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_
 <li>Attention 负责全局找关系（谁重要）</li>
 <li>MLP 负责局部深加工（把重要信息揉进非线性空间）</li>
 </ul>
-<p>核心是<strong>自注意力机制</strong>： “它的目的是让序列中的任何一个元素都能直接与所有元素交互，从而捕获长程依赖关系。计算过程是：对于输入序列，通过三个线性变换得到Query（Q）， Key（K）， Value（V） 三个矩阵。”</p>
-<p>Q，K，V对应理解以及实际工作过程：</p>
+<p>Q，K，V计算的实际过程：</p>
 <details><summary>Details</summary>
 <p>
 </p><ul>
