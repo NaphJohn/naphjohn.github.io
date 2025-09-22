@@ -86,7 +86,9 @@ BERT（Bidirectional Encoder Representations from Transformers）= “只有 Tra
 <h1>Decoder-Only模型</h1>
 <p>GPT模型：一句话总结： GPT（生成式预训练Transformer） = “只有 Transformer 解码器” 的自回归语言模型。<br>
 核心思想： 将多层（如GPT-3为96层）Transformer Decoder堆叠起来，采用“因果掩码”（Causal Mask）确保模型在生成时只能看到左侧上下文信息。先通过大规模无标签文本进行“下一个词预测”（Next Token Prediction）的自回归预训练，再通过指令微调（Instruction Tuning）和基于人类反馈的强化学习（RLHF）即可在文本生成、对话、代码生成等开放生成任务上展现出强大能力。</p>
-<p>LLama模型</p>
+<p>LLama模型：<br>
+一句话总结： LLaMA = Meta公司基于“Decoder-Only”架构的一系列高效能、开源的大型语言模型。<br>
+核心思想： 其本质是GPT架构的优化与改进版。通过采用RMSNorm归一化、SwiGLU激活函数、旋转位置编码（RoPE）等最新技术，在更大量（1.4T token）的公开数据集上训练，旨在证明“模型性能更依赖于高质量的训练数据量和精巧的架构设计，而非仅仅参数量”，从而实现了用更少的参数量达到更优的性能，推动了高性能大模型的开源化和普及。</p>
 <h1>Encoder-Decoder模型</h1>
 <p>T5模型</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
