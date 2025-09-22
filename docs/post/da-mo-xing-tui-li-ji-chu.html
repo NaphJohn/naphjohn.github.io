@@ -577,7 +577,15 @@ bytes_pretoken = num_layer * kv_heads * head_size * 2   (deepseek_v3 = 0.067MB)
 <p></p>
 </details> 
 <h1>HCCL</h1>
-<p>华为对应集合通信库，支持allreduce、broadcast、allgather、reduceScatter、AlltoAll等通信原语</p></div>
+<p>华为对应集合通信库，支持allreduce、broadcast、allgather、reduceScatter、AlltoAll等通信原语<br>
+broadcast：1到多<br>
+gather：多到1<br>
+scatter：1个npu数据切分到其它npu<br>
+reduce：多个npu获取数据并做规约运算</p>
+<p>allreduce：从多个npu获取数据到所有npu并做归约运算<br>
+reduce scatter：按维度执行规约并发送到对应npu<br>
+allgather：收集每个npu所有的数据到每个npu上<br>
+alltoallv：所有npu互相scatter和gather数据</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
