@@ -90,10 +90,11 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <h2>量化</h2>
 <h3>量化基础概念</h3>
 <p>目的是对模型压缩与加速。量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。</p>
-<p><strong>smoothquant量化</strong></p>
+<p><strong>smoothquant量化</strong>：校准（离线统计 |X| 的 per-channel 最大值）--平滑变化--量化--int8推理<br>
+<strong>awq量化</strong>：识别重要权重--找最优缩放因子--量化重建</p>
 <details><summary>Details</summary>
 <p>
-量化过程：校准（离线统计 |X| 的 per-channel 最大值）--平滑变化--量化--int8推理
+量化过程：
 1. 步骤一：校准（Calibration） - 离线的，只做一次
  准备校准数据：从训练集中选取一小批（几百条）有代表性的样本。
 收集统计信息：将这批数据输入 FP16 模型中，前向传播，并为每个线性层收集：
@@ -125,7 +126,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </tr>
 <tr>
 <td align="left"><strong>AWQ</strong></td>
-<td align="left"><strong>激活感知</strong>：认为“权重的重要性不是平等的”。通过分析校准数据的激活值尺度，识别出对输出影响更大的“重要权重”，并为这些权重分配更高的量化精度（更宽的量化区间）。</td>
+<td align="left"><strong>激活感知</strong>：通过分析校准数据的激活值尺度，识别出“重要权重”，并为这些权重分配更高的量化精度（更宽的量化区间）。</td>
 <td align="left">如何在不依赖复杂二阶计算的情况下，找到更智能的量化保护策略。</td>
 </tr>
 <tr>
