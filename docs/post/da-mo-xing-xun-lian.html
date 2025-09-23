@@ -135,49 +135,6 @@ verl 的核心是其 HybridFlow 架构和 3D-HybridEngine。</p>
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
-<p>横向对比</p>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th>维度</th>
-<th>PTQ</th>
-<th>QAT</th>
-<th>QA-LoRA</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>是否需要重训</td>
-<td>×</td>
-<td>√</td>
-<td>√（只调 Adapter）</td>
-</tr>
-<tr>
-<td>精度损失</td>
-<td>0.1-2%</td>
-<td>&lt;0.5%</td>
-<td>可忽略</td>
-</tr>
-<tr>
-<td>工程周期</td>
-<td>小时级</td>
-<td>天-周级</td>
-<td>半天-天</td>
-</tr>
-<tr>
-<td>硬件友好</td>
-<td>👍👍👍</td>
-<td>👍</td>
-<td>👍👍</td>
-</tr>
-<tr>
-<td>适用场景</td>
-<td>推理加速、上线压缩</td>
-<td>云端高精度服务</td>
-<td>低资源微调、端侧定制</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
 <p>目前大厂主流落地答案 → “PTQ 为主，QA-LoRA 为辅”<br>
 大厂上线 90% 用 PTQ；</p>
 <p>比如现在deepseek的训练路线：预训练+SFT VS 纯强化学习<br>
