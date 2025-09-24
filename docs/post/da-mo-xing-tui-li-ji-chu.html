@@ -92,7 +92,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li><strong>prefill（预填充，并行处理输入的 tokens）</strong>：假设 prompt 的长度是 350 token，那么预填充所需要的时间 = number of tokens * ( number of parameters / accelerator compute bandwidth) = 350 * (2 * 7B) FLOP / 125 TFLOP/s = 39 ms（A10)。这个阶段主要是<strong>计算瓶颈。</strong></li>
 <li><strong>decoding（解码，逐个生成下一个 token。）</strong>：time/token = total number of bytes moved (the model weights) / accelerator memory bandwidth = (2 * 7B) bytes / (600 GB/s) = 23 ms/token（A10)。这个阶段的瓶颈是<strong>带宽。</strong></li>
 </ol>
-<p>kv cache节省了那部分计算？</p>
+<p>kvcache节省了那部分计算？</p>
 <details><summary>Details</summary>
 <p>
 1. FFN阶段本质上是两个矩阵乘计算，token之前互不影响，因此使用kv cache可以将计算量节省为原来的1/S
@@ -176,11 +176,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li>KV-Cache 大小导致并发能力受限<br>
 LLM推理的过程是一个自回归的过程，也就是说前i次的token会作为第i+1次的预测数据送入模型，拿到第i+1次的推理token。</li>
 </ol>
-<p>在这个过程中Transformer会执行自注意力操作，为此需要给当前序列中的每个项目（无论是prompt/context还是生成的token）提取键值（kv）向量。这些向量存储在一个矩阵中，通常被称为kv cache。kv cache是为了避免每次采样token时重新计算键值向量。</p>
-<p>对最大长度是 4096 的 LLaMa2-7B fp16 模型，服务端每创建 1 个并发，都需要大约 2GB 显存保存 kv_cache，即便是 A100 80G，能并发服务的用户也非常有限。<br>
-计算公式：<br>
-<strong>KV 缓存的总大小</strong>（以字节为单位）= （batch_size） * （sequence_length） * 2 * （num_layers） * （hidden_size） * sizeof（FP16）<br>
-所以KV-Cache 的减少以及优化是提高 LLM 推理性能的关键。</p>
+<p>对最大长度是 4096 的 LLaMa2-7B fp16 模型，服务端每创建 1 个并发，都需要大约 2GB 显存保存 kv_cache，即便是 A100 80G，能并发服务的用户也非常有限。</p>
 <ol start="2">
 <li>带宽瓶颈导致 TPOT 受限<br>
 将 LLM 托管到现代 GPU 时，计算能力一般不是瓶颈，显存带宽才是瓶颈。一般的衡量指标是 MBU（模型带宽利用率，Model Bandwidth Utilization）。</li>
