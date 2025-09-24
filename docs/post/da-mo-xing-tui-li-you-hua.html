@@ -84,17 +84,24 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <strong>awq量化</strong>：识别重要权重--找最优缩放因子--量化重建</p>
 <details><summary>Details</summary>
 <p>
-量化过程：
-1. 步骤一：校准（Calibration） - 离线的，只做一次
- 准备校准数据：从训练集中选取一小批（几百条）有代表性的样本。
-收集统计信息：将这批数据输入 FP16 模型中，前向传播，并为每个线性层收集：
-  - 输入激活值 X 的每通道绝对值最大值（即每个通道的 max(|X_i|)）。
-  - 权重 W 的每输出通道绝对值最大值（即每个输出通道的 max(|W_j|)）。
- 计算缩放因子 s：s = max(|X_i|) ^ α / max(|W_j|) ^ (1-α)  通常α选取0.5
-2. 步骤二：数学变换（Online Transformation） - 离线的，只做一次
-3. 量化（Quantization） - 离线的，只做一次
-4. INT8 推理（Inference） - 在线的，每次都用
-</p>
+SmoothQuant 的 s 是通过校准集统计激活和权重的最大绝对值得到的
+</p><p>量化过程：</p>
+<ol>
+<li>步骤一：校准（Calibration） - 离线的，只做一次<br>
+准备校准数据：从训练集中选取一小批（几百条）有代表性的样本。<br>
+收集统计信息：将这批数据输入 FP16 模型中，前向传播，并为每个线性层收集：</li>
+</ol>
+<ul>
+<li>输入激活值 X 的每通道绝对值最大值（即每个通道的 max(|X_i|)）。</li>
+<li>权重 W 的每输出通道绝对值最大值（即每个输出通道的 max(|W_j|)）。<br>
+计算缩放因子 s：s = max(|X_i|) ^ α / max(|W_j|) ^ (1-α)  通常α选取0.5</li>
+</ul>
+<ol start="2">
+<li>步骤二：数学变换（Online Transformation） - 离线的，只做一次</li>
+<li>量化（Quantization） - 离线的，只做一次</li>
+<li>INT8 推理（Inference） - 在线的，每次都用</li>
+</ol>
+<p></p>
 </details> 
 <p>四种量化方式比较：</p>
 <details><summary>Details</summary>
