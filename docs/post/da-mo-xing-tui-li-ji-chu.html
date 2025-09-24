@@ -536,9 +536,14 @@ vllm中块回收策略：All-or-Nothing</p>
 <p></p>
 </details>
 <h2>vllm中相关KV的数学公式--kvcache</h2>
-<p>KV-Cache 字节数 = 2 × n × H × d × 精度字节数<br>
-（系数 2 代表 K+V 各一份；n=当前序列长度；H=注意力头数；d=head_dim）</p>
-<p>KV Cache 大小 = 批大小 (batch_size) * 序列长度 (seq_len) * 层数 (n_layers) * 头数 (n_heads) * 头维度 (d_head) * 2</p>
+<p>KVCache(字节) = B × L × n_kv_heads × head_dim × 2 × sizeof(dtype) × 层数<br>
+B：batch 内同时服务的序列条数<br>
+L：当前已生成 token 数（=seq_len）<br>
+n_kv_heads：GQA 压缩后的 KV 头数（若无压缩 = 原头数） n_kv_heads = n_h // G<br>
+head_dim：每个头的维度<br>
+2：K 与 V 各一份<br>
+sizeof(dtype)：FP16/BF16→2；INT8/FP8→1；FP32→4<br>
+层数：Transformer decoder 层数</p>
 <details><summary>Details</summary>
 <p>
 Kv_memory = gpu-memory-util (0.95) * total_memory - peak_memory
