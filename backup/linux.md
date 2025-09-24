@@ -1,5 +1,21 @@
+### gpu上建立容器
+```powershell
+nvidia-docker run -it \   （这边也可以使用docker run -it）
+docker run -it -u root \
+--gpus all  \
+-p 1034:1034 -p 2735:2735 \
+-e NVIDIA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+--ulimit memlock=-1 \
+--name whk_vllm_091_0728 \
+-v /data/:/data/ \
+-v /home/model/:/home/model/ \
+ee0767a44255 bash
 
-初始化设置
+#挂载命令
+mkdir -p /nfs-data ; mount -t nfs -o vers=3,timeo=600,nolock 10.170.23.193:/ /nfs-data
+``` 
+
+### 初始化设置
 ```python
 vim ~/.bashrc
 

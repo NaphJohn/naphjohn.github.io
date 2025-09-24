@@ -10,8 +10,24 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="
-初始化设置
+<meta name="description" content="### gpu上建立容器
+```powershell
+nvidia-docker run -it \   （这边也可以使用docker run -it）
+docker run -it -u root \
+--gpus all  \
+-p 1034:1034 -p 2735:2735 \
+-e NVIDIA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+--ulimit memlock=-1 \
+--name whk_vllm_091_0728 \
+-v /data/:/data/ \
+-v /home/model/:/home/model/ \
+ee0767a44255 bash
+
+#挂载命令
+mkdir -p /nfs-data ; mount -t nfs -o vers=3,timeo=600,nolock 10.170.23.193:/ /nfs-data
+``` 
+
+### 初始化设置
 ```python
 vim ~/.bashrc
 
@@ -118,8 +134,24 @@ brew install visidata
 vd + csv文件
 ``` 。">
 <meta property="og:title" content="linux">
-<meta property="og:description" content="
-初始化设置
+<meta property="og:description" content="### gpu上建立容器
+```powershell
+nvidia-docker run -it \   （这边也可以使用docker run -it）
+docker run -it -u root \
+--gpus all  \
+-p 1034:1034 -p 2735:2735 \
+-e NVIDIA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+--ulimit memlock=-1 \
+--name whk_vllm_091_0728 \
+-v /data/:/data/ \
+-v /home/model/:/home/model/ \
+ee0767a44255 bash
+
+#挂载命令
+mkdir -p /nfs-data ; mount -t nfs -o vers=3,timeo=600,nolock 10.170.23.193:/ /nfs-data
+``` 
+
+### 初始化设置
 ```python
 vim ~/.bashrc
 
@@ -295,7 +327,21 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><p>初始化设置</p>
+<div class="markdown-body" id="postBody"><h3>gpu上建立容器</h3>
+<div class="highlight highlight-source-powershell"><pre class="notranslate">nvidia<span class="pl-k">-</span>docker run <span class="pl-k">-</span>it \   （这边也可以使用docker run <span class="pl-k">-</span>it）
+docker run <span class="pl-k">-</span>it <span class="pl-k">-</span>u root \
+<span class="pl-k">--</span>gpus all  \
+<span class="pl-k">-</span>p <span class="pl-c1">1034</span>:<span class="pl-c1">1034</span> <span class="pl-k">-</span>p <span class="pl-c1">2735</span>:<span class="pl-c1">2735</span> \
+<span class="pl-k">-</span>e NVIDIA_VISIBLE_DEVICES<span class="pl-k">=</span><span class="pl-c1">0</span><span class="pl-k">,</span><span class="pl-c1">1</span><span class="pl-k">,</span><span class="pl-c1">2</span><span class="pl-k">,</span><span class="pl-c1">3</span><span class="pl-k">,</span><span class="pl-c1">4</span><span class="pl-k">,</span><span class="pl-c1">5</span><span class="pl-k">,</span><span class="pl-c1">6</span><span class="pl-k">,</span><span class="pl-c1">7</span> \
+<span class="pl-k">--</span>ulimit memlock<span class="pl-k">=</span><span class="pl-c1">-1</span> \
+<span class="pl-k">--</span>name whk_vllm_091_0728 \
+<span class="pl-k">-</span>v <span class="pl-k">/</span><span class="pl-k">data</span><span class="pl-k">/</span>:<span class="pl-k">/</span><span class="pl-k">data</span><span class="pl-k">/</span> \
+<span class="pl-k">-</span>v <span class="pl-k">/</span>home<span class="pl-k">/</span>model<span class="pl-k">/</span>:<span class="pl-k">/</span>home<span class="pl-k">/</span>model<span class="pl-k">/</span> \
+ee0767a44255 bash
+
+<span class="pl-c"><span class="pl-c">#</span>挂载命令</span>
+mkdir <span class="pl-k">-</span>p <span class="pl-k">/</span>nfs<span class="pl-k">-</span>data ; mount <span class="pl-k">-</span>t nfs <span class="pl-k">-</span>o vers<span class="pl-k">=</span><span class="pl-c1">3</span><span class="pl-k">,</span>timeo<span class="pl-k">=</span><span class="pl-c1">600</span><span class="pl-k">,</span>nolock <span class="pl-c1">10.170</span>.<span class="pl-c1">23.193</span>:<span class="pl-k">/</span> <span class="pl-k">/</span>nfs<span class="pl-k">-</span>data</pre></div>
+<h3>初始化设置</h3>
 <div class="highlight highlight-source-python"><pre class="notranslate"><span class="pl-s1">vim</span> <span class="pl-c1">~</span><span class="pl-c1">/</span>.<span class="pl-c1">bashrc</span>
 
 <span class="pl-s1">export</span> <span class="pl-c1">HISTSIZE</span><span class="pl-c1">=</span><span class="pl-c1">1000</span>
