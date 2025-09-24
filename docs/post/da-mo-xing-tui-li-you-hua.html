@@ -11,10 +11,10 @@
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
 <meta name="description" content="# 大模型优化方式/优化特性
-优化主要是从压缩内存，也就是kvcache的角度，然后算子角度，来提升吞吐。">
+优化主要是从框架测（量化，其它特性），压缩内存，然后算子角度，来提升吞吐。">
 <meta property="og:title" content="大模型推理优化">
 <meta property="og:description" content="# 大模型优化方式/优化特性
-优化主要是从压缩内存，也就是kvcache的角度，然后算子角度，来提升吞吐。">
+优化主要是从框架测（量化，其它特性），压缩内存，然后算子角度，来提升吞吐。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/da-mo-xing-tui-li-you-hua.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -76,7 +76,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h1>大模型优化方式/优化特性</h1>
-<p>优化主要是从压缩内存，也就是kvcache的角度，然后算子角度，来提升吞吐。</p>
+<p>优化主要是从框架测（量化，其它特性），压缩内存，然后算子角度，来提升吞吐。</p>
 <h2>量化</h2>
 <h3>量化基础概念</h3>
 <p>目的是对模型压缩与加速。量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。</p>
@@ -273,24 +273,6 @@ b. 每周 Spark 任务：<br>
 • 全程零重启，阈值随数据自动刷新。</p>
 <p></p>
 </details> 
-<h3>框架测优化</h3>
-<p>推理系统设计：比如将LLM推理<strong>解耦</strong>为Prefill（预填充）、Decode（解码）和Caching（缓存）三个可独立扩展的资源池；</p>
-<details><summary>Details</summary>
-<p>
-P是计算密集型，D是内存带宽密集型；caching存储密集型，是一个分布式共享KV缓存。它从Prefill和Decode中分离出来，集中管理所有请求的KV Cache；由大容量、低延迟的内存或SSD组成，可能通过高速RDMA网络互联（如华为的UB）；
-</p><p><strong>解耦与调度：</strong></p>
-<ul>
-<li>一个新请求到达后，调度器将其Prefill任务发送给 Prefill池。</li>
-<li>Prefill池计算完Attention后，将产生的KV Cache 直接写入远端的 Caching池，然后立即释放Prefill池的资源去处理下一个请求的Prefill。</li>
-<li>对于该请求的Decode任务，调度器将其发送给 Decode池。</li>
-<li>Decode池在生成每个Token时，通过高速网络从 Caching池 按需获取它需要的KV Cache片段。</li>
-</ul>
-<p>这种架构代表了LLM推理服务的未来发展方向，从“一个设备处理所有”的集成架构，转向“专业硬件处理专业任务”的离散化、池化架构。</p>
-<p></p>
-</details> 
-<p>比如model和后处理异步化，来提升吞吐；<br>
-针对embedding模型只进行全量推理的特点，跳过kv cache相关tensor等的计算；<br>
-针对离线大批量处理场景，优化非必要cpu操作耗时，如array转list、list转tuple等；</p>
 <h3>算子测优化</h3>
 <h4>算子优化项目三：</h4>
 <p>根因是线程块划分不合理。多线程同步冲突导致计算效率低。<br>
@@ -437,6 +419,31 @@ page_attention_kernel，对应 davinci 汇编（6 条指令）：</li>
 </details> 
 <p></p>
 </details> 
+<h3>框架测优化</h3>
+<p>建议面试回答：</p>
+<ol>
+<li>Chunked Prefill开发：将长序列输入拆分为32K token chunks，通过昇腾HBM的通道并行特性，解决大batch场景下的内存峰值问题，预填充阶段吞吐提升35%。</li>
+<li>Guided Decoding硬件加速：针对昇腾指令集优化beam search逻辑，通过指令重排和共享内存复用，解码延迟降低28%，尤其在金融客服等对话场景效果显著。</li>
+<li>昇腾专属量化工具链：开发INT8量化插件适配vLLM的PagedAttention，结合达芬奇核心的INT8计算单元，模型压缩率达2.3倍，推理成本降低30%。</li>
+</ol>
+<p>最终实现Qwen-7B在昇腾910上单卡吞吐400+ tokens/s，支撑3个POC项目落地，年流水贡献超100万元。</p>
+<p>推理系统设计：比如将LLM推理<strong>解耦</strong>为Prefill（预填充）、Decode（解码）和Caching（缓存）三个可独立扩展的资源池；</p>
+<details><summary>Details</summary>
+<p>
+P是计算密集型，D是内存带宽密集型；caching存储密集型，是一个分布式共享KV缓存。它从Prefill和Decode中分离出来，集中管理所有请求的KV Cache；由大容量、低延迟的内存或SSD组成，可能通过高速RDMA网络互联（如华为的UB）；
+</p><p><strong>解耦与调度：</strong></p>
+<ul>
+<li>一个新请求到达后，调度器将其Prefill任务发送给 Prefill池。</li>
+<li>Prefill池计算完Attention后，将产生的KV Cache 直接写入远端的 Caching池，然后立即释放Prefill池的资源去处理下一个请求的Prefill。</li>
+<li>对于该请求的Decode任务，调度器将其发送给 Decode池。</li>
+<li>Decode池在生成每个Token时，通过高速网络从 Caching池 按需获取它需要的KV Cache片段。</li>
+</ul>
+<p>这种架构代表了LLM推理服务的未来发展方向，从“一个设备处理所有”的集成架构，转向“专业硬件处理专业任务”的离散化、池化架构。</p>
+<p></p>
+</details> 
+<p>比如model和后处理异步化，来提升吞吐；<br>
+针对embedding模型只进行全量推理的特点，跳过kv cache相关tensor等的计算；<br>
+针对离线大批量处理场景，优化非必要cpu操作耗时，如array转list、list转tuple等；</p>
 <h2>LLM中一些优化特性</h2>
 <h3>flash attention</h3>
 <p>原理：针对全局内存和共享存储的 I/O 速 度的不同，尽可能的避免 HBM 中读取或写入注意力矩阵。FlashAttention 目标是尽可能高效地使 用 SRAM 来加快计算速度，避免从全局内存中读取和写入注意力矩阵。</p>
