@@ -280,22 +280,10 @@ $\epsilon$： 超参数（如0.2），限制更新幅度。</li>
 14. 如何去评价你工作的产出和质量（基本上每个面试官都会问）<br>
 15. FLUX的工作原理，LoRA在这个地方起到了什么作用？<br>
 链接：<a href="https://www.nowcoder.com/feed/main/detail/cb3c1bff8b9d40f0a5431b26ebcc6042?sourceSSR=search" rel="nofollow">https://www.nowcoder.com/feed/main/detail/cb3c1bff8b9d40f0a5431b26ebcc6042?sourceSSR=search</a></p>
-<h2>微调的全链路</h2>
-<ol>
-<li>问题定义与数据准备： 明确任务（如文本分类、NER、对话生成）。收集和清洗数据，构建(instruction, input, output)格式的样本。</li>
-<li>模型选型与基座模型选择： 根据任务和资源选择模型架构（如LLaMA, ChatGLM, BERT）。选择合适的预训练模型作为起点。</li>
-<li>微调方法选择：</li>
-</ol>
-<ul>
-<li>全参数微调： 资源充足时使用，更新所有参数。</li>
-<li>参数高效微调（PEFT）： 当前主流。如LoRA（在原始权重旁增加低秩适配器，只训练适配器）、Adapter、Prompt Tuning等。务必详细解释LoRA的原理和优势。</li>
-</ul>
-<ol start="4">
-<li>训练配置： 设置超参数（学习率、batch size、训练轮次）。使用DeepSpeed/FSDP进行分布式训练（如果问得深）。</li>
-<li>训练与监控： 启动训练，使用Tensorboard/W&amp;B等工具监控Loss、评估指标变化，防止过拟合。</li>
-<li>评估与验证： 在预留的验证集和测试集上评估模型性能，对比微调前后的效果。</li>
-<li>模型部署与应用： 将微调后的模型（如果是LoRA，需与基座模型合并）转换为可用于推理的格式（如Hugging Face pipelines），并集成到应用中去。</li>
-</ol>
+<h2>不同微调方式</h2>
+<p>LoRA（低秩适应）：核心思想是用低秩分解来模拟权重更新，适用于绝大多数需要高效微调的场景，是效果和效率的最佳平衡点。<br>
+QLoRA（量化LoRA）：核心思想是将模型量化到4位后再进行LoRA微调，适用于显存极其有限（如单张消费级显卡）的场景，极大降低了微调门槛。<br>
+AdaLoRA（自适应LoRA）：核心思想是动态分配低秩矩阵的参数量（秩），适用于对微调性能有更高要求或希望智能分配参数预算的场景，能获得比LoRA更优的效果。</p>
 <h2>RL中一些基本概念</h2>
 <p><strong>人类反馈强化学习(Reinforcement Learning from Human Feedback, RLHF)</strong>：<br>
 核心思想:让LLM的输出能够符合人类偏好(即人类反馈),主要通过人类偏好数据集(例如针对一个response,会<br>
