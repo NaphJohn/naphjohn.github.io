@@ -66,6 +66,20 @@ git config --global http.sslVerify false
  from torch_npu.contrib import transfer_to_npu
 ``` 
 
+### 打patch包
+```powershell
+cp -r vllm patch/vllm
+cd patch
+git init
+git add .
+git commit  -m "init"
+修改代码
+git add .
+git commit -m "xxxx"
+git format-patch -1
+修改patch名称
+``` 
+
 ### 查看cann包
 ```powershell
 #查看cann包版本

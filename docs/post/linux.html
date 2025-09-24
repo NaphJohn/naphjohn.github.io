@@ -78,6 +78,20 @@ git config --global http.sslVerify false
  from torch_npu.contrib import transfer_to_npu
 ``` 
 
+### 打patch包
+```powershell
+cp -r vllm patch/vllm
+cd patch
+git init
+git add .
+git commit  -m 'init'
+修改代码
+git add .
+git commit -m 'xxxx'
+git format-patch -1
+修改patch名称
+``` 
+
 ### 查看cann包
 ```powershell
 #查看cann包版本
@@ -170,6 +184,20 @@ git config --global http.sslVerify false
 
 #支持自动迁移代码
  from torch_npu.contrib import transfer_to_npu
+``` 
+
+### 打patch包
+```powershell
+cp -r vllm patch/vllm
+cd patch
+git init
+git add .
+git commit  -m 'init'
+修改代码
+git add .
+git commit -m 'xxxx'
+git format-patch -1
+修改patch名称
 ``` 
 
 ### 查看cann包
@@ -321,6 +349,17 @@ git config <span class="pl-k">--</span>global http.sslVerify false
 
 <span class="pl-c"><span class="pl-c">#</span>支持自动迁移代码</span>
  <span class="pl-k">from</span> torch_npu.contrib import transfer_to_npu</pre></div>
+<h3>打patch包</h3>
+<div class="highlight highlight-source-powershell"><pre class="notranslate">cp <span class="pl-k">-</span>r vllm patch<span class="pl-k">/</span>vllm
+cd patch
+git init
+git add .
+git commit  <span class="pl-k">-</span>m <span class="pl-s"><span class="pl-pds">"</span>init<span class="pl-pds">"</span></span>
+修改代码
+git add .
+git commit <span class="pl-k">-</span>m <span class="pl-s"><span class="pl-pds">"</span>xxxx<span class="pl-pds">"</span></span>
+git <span class="pl-c1">format-patch</span> <span class="pl-c1">-1</span>
+修改patch名称</pre></div>
 <h3>查看cann包</h3>
 <div class="highlight highlight-source-powershell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span>查看cann包版本</span>
 cat <span class="pl-k">/</span>usr<span class="pl-k">/</span>local<span class="pl-k">/</span>Ascend<span class="pl-k">/</span>ascend<span class="pl-k">-</span>toolkit<span class="pl-k">/</span>latest<span class="pl-k">/</span>version.cfg
