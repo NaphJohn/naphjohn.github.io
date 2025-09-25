@@ -345,12 +345,7 @@ b. 每周 Spark 任务：<br>
 </p>
 </details> 
 <ol start="3">
-<li>
-<p>bert类模型参数量非常小，当计算量较小时，算子存在下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；</p>
-</li>
-<li>
-<p>数据并行/流水线并行/张量并行/序列并行</p>
-</li>
+<li>数据并行/流水线并行/张量并行/序列并行</li>
 </ol>
 <details><summary>Details</summary>
 <p>
@@ -628,8 +623,29 @@ Chunked Prefill（Splitfuse）特性的目的是将长prompt request分解成更
 <ul>
 <li>静态批处理 (Static Batching)：在推理前，将多个请求合并为一个大的请求，然后一次性推理。这种方式可以提高吞吐量，但是需要所有请求都完成后才能返回结果，所以一般不会应用</li>
 <li>动态批处理 (Dynamic Batching)<br>
-在推理过程中，服务器不是收到一个请求就立刻处理一个，而是等待一个极短的时间窗口，将多个同时到达的请求组合成一个批次（Batch），然后一次性送给GPU进行计算</li>
+动态连续批 = “先算完的立刻下车，没算完的继续坐，车（GPU）从不空跑”。</li>
 </ul>
+<p>常问的问题，比如发送一条请求，里面的数据有长有短，怎么处理比较好？如果发送十条请求呢<br>
+“单条 chunked+掩码分组，十条连续批+前缀树，长短混打也能把 GPU 吃满，首包降 70%，吞吐升 50%。”<br>
+细节部分：</p>
+<details><summary>Details</summary>
+<p>
+① 单条请求（内部变长）
+1. Chunked-Prefill
+若 seq_len &gt; L（通常 512/1024），先只算前 L token 的 KV，立即返回首包；剩余 chunk 继续进 batch，首 token 延迟从全长→chunk 长。
+2. Zero-Pad-Free 分组
+同一长度段才组 batch，段间不 pad；段内用掩码代替物理 0，FlashAttention 直接支持，显存↓15%，计算强度↑10%。
+3. 动态连续批（Continuous Batching）
+短 chunk 先算完立即出队，长 chunk 继续留在 batch，GPU 无空闲。
+② 十条请求（批量变长）
+请求级连续批
+把 10 条请求拆成micro-batch 时间片；短请求先结束就踢出，长请求继续打满 SM，吞吐↑30-50%。
+RadixAttention / 前缀树
+若 10 条 prompt 有公共系统提示，只存一份 KV，显存再省 20-40%，首包更快。
+Chunked-Prefill + 流式 SSE
+每条请求按 chunk 返回 token，前端并行渲染，用户体验“秒出字”。
+</p>
+</details> 
 <p>其他重要特性</p>
 <ul>
 <li>Guided-decoding:
@@ -654,8 +670,14 @@ Chunked Prefill（Splitfuse）特性的目的是将长prompt request分解成更
 </li>
 </ul>
 <h1>npu/gpu架构</h1>
+<p>核心单元：每个AI Core集成一个3D Cube矩阵计算引擎，单周期可执行4096次MAC操作。<br>
+达芬奇 3D-Cube 单元每拍能并行完成 4096 个 16-bit 乘加运算，等效 8.19 T FP16 FLOPS/Core。</p>
 <p>910B ≈ A100（Ampere架构）<br>
-910C ≈ H100（Hopper架构）</p></details></div>
+910C ≈ H100（Hopper架构）</p>
+<p>每个Core内部包含三种计算单元：<br>
+① 3D Cube：矩阵运算主力；<br>
+② Vector单元：向量计算；<br>
+③ Scalar单元：控制流和逻辑运算</p></details></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
