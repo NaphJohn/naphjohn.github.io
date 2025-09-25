@@ -433,8 +433,10 @@ moe中一个重要的点是控制负载均衡损失 (Load Balancing Loss)：为�
 [<a href="https://fancyerii.github.io/2019/03/09/transformer-illustrated/#%E6%AE%8B%E5%B7%AE%E8%BF%9E%E6%8E%A5" rel="nofollow">https://fancyerii.github.io/2019/03/09/transformer-illustrated/#残差连接</a>](<a href="https://fancyerii.github.io/2019/03/09/transformer-illustrated/#%E6%AE%8B%E5%B7%AE%E8%BF%9E%E6%8E%A5" rel="nofollow">https://fancyerii.github.io/2019/03/09/transformer-illustrated/#%E6%AE%8B%E5%B7%AE%E8%BF%9E%E6%8E%A5</a>)</p>
 <p></p>
 </details>
-<p><strong>Mask</strong><br>
-确保解码器的自回归特性，防止信息泄露。</p>
+<p><strong>Mask原理</strong><br>
+mask 就是布尔矩阵，True 处 logits→−∞，softmax 后概率=0，实现 pad 屏蔽 + 自回归 + 任意可见性控制，形状随场景从 (B,L) 到 (L,L) 不等。<br>
+比如因果掩码：防止标签泄漏，应用在Decoder的自注意力层（在训练和推理中均使用）。<br>
+填充掩码 (Padding Mask)：忽略填充符号，应用在Encoder和Decoder的自注意力层（主要用于处理批量数据）。</p>
 <details><summary>Details</summary>
 <p>
 在编码器（Encoder）中：通常只需要 Padding Mask，因为Encoder是一次性看到整个输入序列的。
