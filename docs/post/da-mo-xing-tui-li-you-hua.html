@@ -378,25 +378,36 @@ b. 每周 Spark 任务：<br>
 <p><strong>（Reference Counting）引用计数</strong>： 跟踪内存块的共享状态，实现安全回收。<br>
 <strong>（Block-level Copy-on-Write）优化块复制操作</strong>：只有在真正要写入（修改）的时候，才会进行复制操作，这样不会污染数据</p>
 <h4>项目五： Page_Attention 上内存节省15%</h4>
+<p><strong>PageAttention</strong><br>
+物理块：将整个KV Cache内存池划分为固定大小的“块”。<br>
+逻辑块：每个序列的KV Cache被视为由多个非连续的逻辑块组成的链表。<br>
+块表：维护一个逻辑块到物理块的映射表。</p>
 <details><summary>Details</summary>
 <p>
-</p><h4>Q：• 请量化说明你在 <strong>Page-Attention 上具体改</strong>了哪几行代码/哪几个 kernel，15% 内存节省是如何测出来的？</h4>
-<p>把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「<strong>16-token 物理页按需分配</strong>」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。优势场景是短序列长尾里面。</p>
-<ol>
-<li>代码级改动（可 diff），cache_manager.cu<br>
-page_attention_kernel，对应 davinci 汇编（6 条指令）：</li>
-</ol>
-<details><summary>Details</summary>
-<p>
-1. UBUF  R0, [block_table, seq_idx, token_idx&gt;&gt;4]   // 取 page_id  
-2. LSL   R1, token_idx, #4                          // token_idx &amp; 0xF  
-3. MUL   R2, R1, #hidden                            // page_off  
-4. UBUF  R3, [page_table, R0]                       // 取物理页基址  
-5. ADD   R4, R3, R2                                 // kv_ptr  
-6. MOV   kv_ptr, R4                                 // 写回  
-</p>
-</details> 
-<ol start="2">
+把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「**16-token 物理页按需分配**」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。优势场景是短序列长尾里面。
+</p><ol>
+<li>
+<p>代码级改动（可 diff），cache_manager.cu<br>
+page_attention_kernel，对应 davinci 汇编（6 条指令）：</p>
+</li>
+<li>
+<p>UBUF  R0, [block_table, seq_idx, token_idx&gt;&gt;4]   // 取 page_id</p>
+</li>
+<li>
+<p>LSL   R1, token_idx, #4                          // token_idx &amp; 0xF</p>
+</li>
+<li>
+<p>MUL   R2, R1, #hidden                            // page_off</p>
+</li>
+<li>
+<p>UBUF  R3, [page_table, R0]                       // 取物理页基址</p>
+</li>
+<li>
+<p>ADD   R4, R3, R2                                 // kv_ptr</p>
+</li>
+<li>
+<p>MOV   kv_ptr, R4                                 // 写回</p>
+</li>
 <li>
 <p>页大小 16 的量化依据<br>
 16 × 8192 × 2 × 2 B = 512 KB，对齐 Ascend L2 cache line；实测碎片与表开销的 Pareto 最优点。</p>
@@ -412,10 +423,8 @@ page_attention_kernel，对应 davinci 汇编（6 条指令）：</li>
 <ul>
 <li>在你提供的金融 FAQ 场景里，短序列占比高（比如平均 200 token，但 max_seq_len=4096），连续分配会浪费 95% 的 KV-Cache 空间。改成 16-token 页后，显存占用 ≈ 实际 token 数 × 16 × hidden_size × 2，节省比例自然显著。</li>
 </ul>
-<p><strong>PageAttention</strong><br>
-物理块：将整个KV Cache内存池划分为固定大小的“块”。<br>
-逻辑块：每个序列的KV Cache被视为由多个非连续的逻辑块组成的链表。<br>
-块表：维护一个逻辑块到物理块的映射表。</p>
+<p></p>
+</details> 
 <h3>框架测优化</h3>
 <p>建议面试回答：</p>
 <ol>
@@ -677,7 +686,7 @@ Chunked-Prefill + 流式 SSE
 <p>每个Core内部包含三种计算单元：<br>
 ① 3D Cube：矩阵运算主力；<br>
 ② Vector单元：向量计算；<br>
-③ Scalar单元：控制流和逻辑运算</p></details></div>
+③ Scalar单元：控制流和逻辑运算</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
