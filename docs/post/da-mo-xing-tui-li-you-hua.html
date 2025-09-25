@@ -679,7 +679,8 @@ Chunked-Prefill + 流式 SSE
 </li>
 </ul>
 <h1>npu/gpu架构</h1>
-<p>核心单元：每个AI Core集成一个3D Cube矩阵计算引擎，单周期可执行4096次MAC操作。<br>
+<p>华为910采用chiplet方案，一共8个die，4个HBM，2个dummy die，1个soc die，一个NIMBUS die；其中两个dummy die用来保持芯片整体机械应力平衡; 四个HBM总带宽为 1.2TB/s<br>
+核心单元：每个AI Core集成一个3D Cube矩阵计算引擎，单周期可执行4096次MAC操作。<br>
 达芬奇 3D-Cube 单元每拍能并行完成 4096 个 16-bit 乘加运算，等效 8.19 T FP16 FLOPS/Core。</p>
 <p>910B ≈ A100（Ampere架构）<br>
 910C ≈ H100（Hopper架构）</p>
