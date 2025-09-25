@@ -418,14 +418,9 @@ page_attention_kernel，对应 davinci 汇编（6 条指令）：</li>
 <li>在你提供的金融 FAQ 场景里，短序列占比高（比如平均 200 token，但 max_seq_len=4096），连续分配会浪费 95% 的 KV-Cache 空间。改成 16-token 页后，显存占用 ≈ 实际 token 数 × 16 × hidden_size × 2，节省比例自然显著。</li>
 </ul>
 <p><strong>PageAttention</strong><br>
-运行过程：</p>
-<details><summary>Details</summary>
-<p>
-首先，在模型推理过程中，当有新的token要写入KV cache时，它并不会往连续内存里append，而是找到一个空闲的page，把这个token对应的KV写进去。每个序列都有自己的页表，里面存的是这些page的地址。当要读某个序列的KV cache时，就通过页表找到对应的page。在做attention时，Q会去查找K、V，这时候并不需要它们是连续存储的，只要按照页表顺序去访问就行了。当某个序列生成结束了，它占用的page会被释放回池子里，这样后续别的请求可以继续用，显存利用率就高很多。
-</p>
-</details> 
-<p></p>
-</details> 
+物理块：将整个KV Cache内存池划分为固定大小的“块”。<br>
+逻辑块：每个序列的KV Cache被视为由多个非连续的逻辑块组成的链表。<br>
+块表：维护一个逻辑块到物理块的映射表。</p>
 <h3>框架测优化</h3>
 <p>建议面试回答：</p>
 <ol>
@@ -528,6 +523,8 @@ Warpanize 设计：每个Warp独立负责计算一个子块的注意力输出，
 </p>
 </details>
 <p><strong>投机推理（MTP）</strong><br>
+四步流程：<br>
+① 小模型自回归生成 k 个候选；② 大模型一次 forward 并行打分；③ 按 accept 概率保留或重采样；④ 循环直至结束<br>
 MTP实现的算法有哪些？<br>
 本质是大模型一次稍贵但便宜得多的并行计算，再加上K次小模型的廉价计算</p>
 <details><summary>Details</summary>
@@ -655,7 +652,7 @@ Chunked Prefill（Splitfuse）特性的目的是将长prompt request分解成更
 <li>基模型和多个挂载的lora权重一起推理服务</li>
 </ul>
 </li>
-</ul></div>
+</ul></details></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
