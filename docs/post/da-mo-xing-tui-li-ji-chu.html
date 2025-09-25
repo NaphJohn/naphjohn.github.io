@@ -455,16 +455,18 @@ python -m vllm.entrypoints.openai.api_server --model=/data/model/qwen3-32b-w8a8/
 <h1>推理框架</h1>
 <p>目前推理框架包含vllm、SGlang、LMDeploy、TensorRT-LLM</p>
 <p>四者对比：<br>
-成本+性能极致 → TensorRT-LLM<br>
-快速上线+社区生态 → vLLM<br>
-前缀缓存/研究友好 → SGLang<br>
+图编译器（生成引擎） → TensorRT-LLM  ，优化是预编译+算子融合+FP8-TC，编译慢，但是执行快<br>
+推理引擎（动态调度） → vLLM，适合需要处理大量并发请求的在线服务<br>
+前缀缓存 → SGLang<br>
+服务框架（HTTP/gRPC+批处理）→ Triton，优化是动态批+并发执行+多模型编排<br>
 国产化/训练推理一体 → LMDeploy<br>
 具体区别如下：</p>
 <details><summary>Details</summary>
 <p>
-TensorRT-LLM：追求极致速度，适合生产环境对延迟敏感的场景
-vLLM：追求高吞吐量，适合需要处理大量并发请求的在线服务
 SGLang：追求开发效率，适合需要复杂提示词处理和快速迭代的研究场景
+只追求延迟/吞吐 → TensorRT
+快速上线+多硬件 → vLLM
+要 REST/gRPC+监控+多模型编排 → Triton（后端可挂 TensorRT 或 vLLM）
 </p>
 </details> 
 <h2>vllm推理框架架构</h2>
