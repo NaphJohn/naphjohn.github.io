@@ -197,12 +197,42 @@ MBU 定义为（实际内存带宽）/（峰值内存带宽），而（实际内
 </ol>
 <details><summary>Details</summary>
 <p>
-ROPE公式计算
-对位置 m 的向量 x，把它每两个分量当成一个复数，乘以旋转因子
-  f(x,m)=R_Θ^m·x，其中
-  Θ_i=10000^(−2i/d)，i=0,1,…,d/2−1
-结果：q_m、k_n 分别带上“相对距离”m−n 的旋转角，Attention 内积自然只与相对位置有关，而不再依赖绝对位置
-</p>
+</p><markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>收益</th>
+<th>一句话解释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>外推性强</strong></td>
+<td>训练 4k，推理 128k 不微调也能用，LLaMA-2 32k、ChatGLM-6B 32k/64k 全靠它。</td>
+</tr>
+<tr>
+<td><strong>无额外参数</strong></td>
+<td>旋转矩阵是固定的，0 可学习权重，过拟合风险低。</td>
+</tr>
+<tr>
+<td><strong>计算高效</strong></td>
+<td>仅需对 Q/K 做一次旋转，矩阵乘法可融合进注意力，GPU 友好。</td>
+</tr>
+<tr>
+<td><strong>长程衰减</strong></td>
+<td>角度随距离增大而“转得远”，远距离点积自然变小，抑制噪声。</td>
+</tr>
+<tr>
+<td><strong>缓存友好</strong></td>
+<td>KV-cache 里每个位置只存一次旋转后的向量，增量推理省内存。</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p>ROPE公式计算<br>
+对位置 m 的向量 x，把它每两个分量当成一个复数，乘以旋转因子<br>
+  f(x,m)=R_Θ^m·x，其中<br>
+  Θ_i=10000^(−2i/d)，i=0,1,…,d/2−1<br>
+结果：q_m、k_n 分别带上“相对距离”m−n 的旋转角，Attention 内积自然只与相对位置有关，而不再依赖绝对位置</p>
+<p></p>
 </details> 
 4. 分组查询注意力 (GQA, Grouped-Query Attention)： 在较大的模型（如Qwen2-7B/72B）中使用了GQA。它介于MHA（多头注意力）和MQA（多查询注意力）之间，在几乎不损失效果的情况下，极大地减少了推理时KV Cache的内存占用，提高了推理速度。
 5. 更长的上下文长度： Qwen2支持128K token的上下文长度，这得益于RoPE和相关的工程优化。
