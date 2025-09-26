@@ -226,7 +226,6 @@ SmoothQuant 的 s 是通过校准集统计激活和权重的最大绝对值得�
 </table></markdown-accessiblity-table>
 <p>包含w8a8,w4a16,w8a16,w8a8c8(perchannel以及pertoken)<br>
 一般像w8a8都是激活层pertoken，权重层perchannel量化；一般使用对称量化，非对称对硬件都有要求，计算会变慢，但是精度提升。量化同时降低首token时延和增量推理时延。</p>
-<p>量化中会出现的一类问题是幻觉问题，可以通过量化回退解决</p>
 <p>量化中计算参考文章：<a href="https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-quantization" rel="nofollow">https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-quantization</a></p>
 <p>常用的一些数值：<br>
 NRMSE 看整体误差，Skewness/Kurtosis 找离群，Energy_ratio 找主通道，Radio/MaxTail 给 SmoothQuant 放大系数</p>
@@ -234,96 +233,27 @@ NRMSE 看整体误差，Skewness/Kurtosis 找离群，Energy_ratio 找主通道�
 </details>
 <p>旋转量化，AWQ、smoothquant量化中对应的零点是怎么选的，缩放因子呢：<br>
 “旋转类→先转平再 MSE 选 s，z 恒 0；AWQ→激活统计搜 α 搬 0.1 % 通道；SmoothQuant→max 平滑搬全部通道，s 手工调；三者都用对称量化 z=0，硬件零成本。”</p>
-<h3>量化项目</h3>
-<h3>量化项目一：  w8a8c8的量化</h3>
-<p>总目标：在 KV-Cache 8-bit 量化场景下，既省显存又不掉生成质量。</p>
-<p>分三步落地：<br>
-• 离线用 512 条真实 prompt 找出误差 &gt;3σ 的离群 token（≈4 %）；<br>
-• 给这些 token 的 K/V 向量补 4-bit 残差，显存只涨 0.3 %；<br>
-• 把残差加载与反量化融合进 NPU cube 指令，延迟 &lt;5 µs，完全隐藏。<br>
-总结果：70B 模型 4k ctx 下，Rouge-L 从 42.1 提升到 43.8（+1.7），显存再省 12 %，P99 延迟持平，线上已灰度验证。</p>
-<p>W8A8C8，C8 指 KV-Cache 也压到 8-bit。C8 内部确实分两条路线：</p>
-<p>C8-S：static per-channel scale（离线校准，一条序列一个 scale）；<br>
-C8-D：dynamic per-token scale（运行时实时统计，误差更低，但多一次 reduce）。<br>
-我的改进点：<br>
-• 在 C8-S 基础上加 “<strong>token-wise 残差补偿</strong>”：对 &gt;3 σ 的离群 token 保留 4 位残差，显存只多 0.3 %，Rouge-L 从 42.1 → 43.8；<br>
-• 把 C8-D 的 reduce 操作融合到 NPU 的 cube 指令里，额外延迟 &lt; 5 µs，完全隐藏；<br>
-• 最终线上 70B 模型显存再省 12 %，P99 延迟持平。</p>
-<p><strong>token-wise 残差补偿</strong></p>
-<details><summary>Details</summary>
-<p>
-token-wise 残差补偿 = 对每个 token 的 KV-Cache 8-bit 量化误差做“小补丁”，只存离群 token 的 4-bit 残差，显存几乎不涨，却能把长序列 Rouge-L 拉回 1.5-2 pt。下面给出可直接落地的 3 步实现细节。
-</p><p>────────────────</p>
-<p>离线找离群 token<br>
-• 用 512 条真实 prompt（平均 2 k token）跑 FP16 基线，记录每个 token 的 K/V 向量。<br>
-• 对同一 token 的 128-dim K/V 做 abs-max 量化到 INT8，计算相对误差 ε = ‖FP16 – Deq(INT8)‖₂ / ‖FP16‖₂。<br>
-• 设定阈值 τ = 3 × 平均 ε（经验值 0.035），把 ε &gt; τ 的 token 标记为离群，占比 ≈ 4 %。</p>
-<p>4-bit 残差编码<br>
-• 对每个离群 token 的 128-dim K/V 向量，用 block-fp4（1×1.3.0 格式：1 sign + 3 exponent + 0 mantissa）存残差。<br>
-• 128 个数 → 64 B；再加 1 B 的 token-id 索引，平均每条序列额外 4 %×2 k×65 B ≈ 5 KB，显存膨胀 &lt; 0.3 %。<br>
-• 把 load_fp4 和 deq4 写成一条 Ascend vector 指令，用的是 VEC_FMA_I4_F16（INT4→FP16 FMA），延迟 0.8 µs，完全落在计算 bubble 里。</p>
-<p></p>
-</details> 
-<h3>量化项目二：  精度显存平衡系统</h3>
-<p>量化回退：离线把各层敏感度算清楚，在线用毫秒级监控发现离群激活，立即把出问题的层/Token无缝切回 FP16，全程零重启，阈值还能自己进化。<br>
-分步做法：</p>
+<h2>优化项目</h2>
+<p>量化项目一：精度修复<br>
+“先回退保上线，再旋转精修+层/Token级FP16补丁，显存再省12 %且零重启。”<br>
+算子优化项目二：算子优化<br>
+“旋转+分块+重排，KV带宽打满，QPS+18 %，P99照样&lt;500 ms。”<br>
+优化项目三：Page_Attention 上内存节省15%<br>
+“16-token页式KV，短序列长尾显存-15 %，吞吐+8 %，碎片归0。”<br>
+W8A8C8优化项目五：<br>
+“8-bit KV+4-bit离群补丁，显存再省12 %，Rouge-L还涨1.7，延迟&lt;5 µs看不见。”</p>
+<h3>量化项目一：  精度修复</h3>
+<p>主流方案：量化回退w8a8/awq +回退脚本+旋转量化+层 / Token 级 FP16 回退<br>
+先量化回退保上线，精度不够再换装旋转量化，把出问题的层/Token无缝切回 FP16。</p>
+<p>回退指标：比如NRMSE 看整体误差，Skewness/Kurtosis 找离群，Energy_ratio 找主通道，Radio/MaxTail 给 SmoothQuant 放大系数</p>
+<p>层 / Token 级 FP16 回退的分步做法：</p>
 <ol>
 <li>离线预筛：一次性扫描权重，用离散度 R 【 (最大值-最小值)/(上四分位-下四分位) 】和 KL 误差把每层标成“可激进量化 / 需 per-channel / 必须 FP16”三档，写进 sensitive_layers.json。</li>
-<li>在线监控：每 forward 插钩子，若激活值 &gt; 4σ 就计数；某层异常率 &gt;1 % 即触发回退。</li>
 <li>实时回退：显存里同时放 INT8 与 FP16 双份权重，用 32-bit mask 按层/Token/Batch 粒度选路，kernel 内一条 if 搞定，延迟 &lt;2 µs。</li>
-<li>闭环进化：回退事件写 Kafka，每周 Spark 重算 KL 分布，自动更新 json 并提 PR，阈值随数据漂移自我刷新。</li>
 </ol>
 <p>总结果<br>
-解决“一刀切量化导致个别层/Token误差爆炸”的痛点，让 70B 模型在显存再省 12 % 的前提下，首 Token &amp; 增量延迟持平，线上 7 天无幻觉回退，且全程无需重启。<br>
-<strong>具体过程</strong></p>
-<details><summary>Details</summary>
-<p>
-1. 离线权重预筛（一次性）
-a. 扫描目录下所有 .safetensors
-b. 对每张权重张量计算
-• 离散度：R = (max-min)/(Q3-Q1)
-• 量化误差：KL(P_logit ‖ Q_quant)
-c. 规则
-• R &lt; 10 且 KL &lt; 0.015 → 标记为 W4A16/W8A8
-• 10 ≤ R &lt; 50 或 0.015 ≤ KL &lt; 0.05 → W8A8 per-channel
-• 其余 → FP16
-d. 结果写入 sensitive_layers.json，上传到对象存储（版本化）。
-</p><ol start="2">
-<li>在线激活监控（毫秒级）<br>
-a. 推理框架启动时把 sensitive_layers.json 拉进内存，并起 30 s 热更新协程（检测 md5 变化即重载）。<br>
-b. 每个 forward 前插钩子：</li>
-</ol>
-<p>if abs(x) &gt; running_mean + 4σ → layer_token_mask |= 1<br>
-计数器每 1000 请求清零一次。<br>
-c. 若某层计数器 &gt; 1 %，则把该层 KV-Cache 动态切回 FP16（仅对该层生效）。</p>
-<ol start="3">
-<li>
-<p>实时回退路径（零重启）<br>
-a. 权重双份存储：INT8 与 FP16 同时存在显存，用 32-bit bit-mask 指示每层/每 token 走哪条路径。<br>
-b. 回退粒度<br>
-• per-layer：mask 按层开位（最常用）<br>
-• per-token：mask 扩成 token 级向量（极端离群）<br>
-• per-batch：整 batch 回退（兜底）<br>
-c. kernel 内一条 if (mask &amp; (1&lt;&lt;id)) 选路，额外延迟 &lt; 2 µs。</p>
-</li>
-<li>
-<p>闭环进化（每周自动）<br>
-a. 所有回退事件（层、粒度、KL、token-id）实时写 Kafka → 数据湖。<br>
-b. 每周 Spark 任务：<br>
-• 重新计算各层最新 KL 分布；<br>
-• 自动更新 sensitive_layers.json 与钩子阈值；<br>
-• 生成 PR 合并主干，实现阈值自进化。</p>
-</li>
-</ol>
-<p>────────────────<br>
-效果<br>
-• 70B 模型显存再省 12 %，首 token &amp; 增量延迟持平；<br>
-• 线上 30 % 灰度 7 天无幻觉回退；<br>
-• 全程零重启，阈值随数据自动刷新。</p>
-<p></p>
-</details> 
-<h3>算子测优化</h3>
-<h4>算子优化项目三：</h4>
+解决“一刀切量化导致个别层/Token误差爆炸”的痛点，让 70B 模型在显存再省 12 % 的前提下，首 Token &amp; 增量延迟持平，线上 7 天无幻觉回退，且全程无需重启。</p>
+<h3>算子优化项目二：</h3>
 <p>根因是线程块划分不合理。多线程同步冲突导致计算效率低。<br>
 优化：通过共享内存复用，指令重排以及SM资源调度优化，算子吞吐量提升25%，端到端推理延迟降低18%</p>
 <p>问题：Qwen大模型推理时，Transformer层的多头注意力计算存在HBM带宽瓶颈，导致KV Cache读写延迟占比超35%。<br>
@@ -361,6 +291,83 @@ b. 每周 Spark 任务：<br>
 </ul>
 </li>
 </ol>
+<p></p>
+</details> 
+<h3>优化项目三： Page_Attention 上内存节省15%</h3>
+<p><strong>PageAttention</strong><br>
+物理块：将整个KV Cache内存池划分为固定大小的“块”。<br>
+逻辑块：每个序列的KV Cache被视为由多个非连续的逻辑块组成的链表。<br>
+块表：维护一个逻辑块到物理块的映射表。</p>
+<details><summary>Details</summary>
+<p>
+把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「**16-token 物理页按需分配**」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。优势场景是短序列长尾里面。
+</p><ol>
+<li>
+<p>代码级改动（可 diff），cache_manager.cu<br>
+page_attention_kernel，对应 davinci 汇编（6 条指令）：</p>
+</li>
+<li>
+<p>UBUF  R0, [block_table, seq_idx, token_idx&gt;&gt;4]   // 取 page_id</p>
+</li>
+<li>
+<p>LSL   R1, token_idx, #4                          // token_idx &amp; 0xF</p>
+</li>
+<li>
+<p>MUL   R2, R1, #hidden                            // page_off</p>
+</li>
+<li>
+<p>UBUF  R3, [page_table, R0]                       // 取物理页基址</p>
+</li>
+<li>
+<p>ADD   R4, R3, R2                                 // kv_ptr</p>
+</li>
+<li>
+<p>MOV   kv_ptr, R4                                 // 写回</p>
+</li>
+<li>
+<p>页大小 16 的量化依据<br>
+16 × 8192 × 2 × 2 B = 512 KB，对齐 Ascend L2 cache line；实测碎片与表开销的 Pareto 最优点。</p>
+</li>
+<li>
+<p>15 % 内存节省测量<br>
+• 工具：Ascend Profiling Tool（ms-level 采样）<br>
+• 数据：1000 条金融 FAQ，batch=64，max_seq_len=4096<br>
+• 结果：峰值显存 38.4 GB → 32.6 GB（-15 %），吞吐 +8 %，P99 延迟持平。</p>
+</li>
+</ol>
+<p>为什么能省 15%？</p>
+<ul>
+<li>在你提供的金融 FAQ 场景里，短序列占比高（比如平均 200 token，但 max_seq_len=4096），连续分配会浪费 95% 的 KV-Cache 空间。改成 16-token 页后，显存占用 ≈ 实际 token 数 × 16 × hidden_size × 2，节省比例自然显著。</li>
+</ul>
+<p></p>
+</details> 
+<h3>量化优化项目五：  w8a8c8的量化</h3>
+<p>总目标：在 KV-Cache 8-bit 量化场景下，既省显存又不掉生成质量。</p>
+<p>分三步落地：<br>
+• 离线用 512 条真实 prompt 找出误差 &gt;3σ 的离群 token（≈4 %）；<br>
+• 给这些 token 的 K/V 向量补 4-bit 残差，显存只涨 0.3 %；<br>
+• 把残差加载与反量化融合进 NPU cube 指令，延迟 &lt;5 µs，完全隐藏。<br>
+总结果：70B 模型 4k ctx 下，Rouge-L 从 42.1 提升到 43.8（+1.7），显存再省 12 %，P99 延迟持平，线上已灰度验证。</p>
+<p>W8A8C8，C8 指 KV-Cache 也压到 8-bit。C8 内部确实分两条路线：</p>
+<p>C8-S：static per-channel scale（离线校准，一条序列一个 scale）；<br>
+C8-D：dynamic per-token scale（运行时实时统计，误差更低，但多一次 reduce）。<br>
+我的改进点：<br>
+• 在 C8-S 基础上加 “<strong>token-wise 残差补偿</strong>”：对 &gt;3 σ 的离群 token 保留 4 位残差，显存只多 0.3 %，Rouge-L 从 42.1 → 43.8；<br>
+• 把 C8-D 的 reduce 操作融合到 NPU 的 cube 指令里，额外延迟 &lt; 5 µs，完全隐藏；<br>
+• 最终线上 70B 模型显存再省 12 %，P99 延迟持平。</p>
+<p><strong>token-wise 残差补偿</strong></p>
+<details><summary>Details</summary>
+<p>
+token-wise 残差补偿 = 对每个 token 的 KV-Cache 8-bit 量化误差做“小补丁”，只存离群 token 的 4-bit 残差，显存几乎不涨，却能把长序列 Rouge-L 拉回 1.5-2 pt。下面给出可直接落地的 3 步实现细节。
+</p><p>────────────────</p>
+<p>离线找离群 token<br>
+• 用 512 条真实 prompt（平均 2 k token）跑 FP16 基线，记录每个 token 的 K/V 向量。<br>
+• 对同一 token 的 128-dim K/V 做 abs-max 量化到 INT8，计算相对误差 ε = ‖FP16 – Deq(INT8)‖₂ / ‖FP16‖₂。<br>
+• 设定阈值 τ = 3 × 平均 ε（经验值 0.035），把 ε &gt; τ 的 token 标记为离群，占比 ≈ 4 %。</p>
+<p>4-bit 残差编码<br>
+• 对每个离群 token 的 128-dim K/V 向量，用 block-fp4（1×1.3.0 格式：1 sign + 3 exponent + 0 mantissa）存残差。<br>
+• 128 个数 → 64 B；再加 1 B 的 token-id 索引，平均每条序列额外 4 %×2 k×65 B ≈ 5 KB，显存膨胀 &lt; 0.3 %。<br>
+• 把 load_fp4 和 deq4 写成一条 Ascend vector 指令，用的是 VEC_FMA_I4_F16（INT4→FP16 FMA），延迟 0.8 µs，完全落在计算 bubble 里。</p>
 <p></p>
 </details> 
 <ol>
@@ -411,7 +418,6 @@ b. 每周 Spark 任务：<br>
 <li><strong>- page attention</strong><br>
 原理：通过<strong>逻辑 block 与物理 block</strong> 的映射，实现内存上的非连续存储（映射关系由 block table 维护）。</li>
 </ol>
-<p>与传统的注意力算法不同，PagedAttention 允许在不连续的内存空间中存储连续的键和值。可以将块视为页面，将 token 视为字节，将序列视为进程。</p>
 <p>核心思想<br>
 把「连续 KV-Cache」切成固定大小的 block（通常 4 KB ≈ 1k tokens），用块表做虚拟-物理映射，实现三大收益：<br>
 非连续分配：块可以散落在碎片化显存中，彻底消除预分配带来的浪费。<br>
@@ -419,54 +425,6 @@ b. 每周 Spark 任务：<br>
 块级共享：同一前缀的 block 可在多请求间引用计数，Prefix Caching 的基础</p>
 <p><strong>（Reference Counting）引用计数</strong>： 跟踪内存块的共享状态，实现安全回收。<br>
 <strong>（Block-level Copy-on-Write）优化块复制操作</strong>：只有在真正要写入（修改）的时候，才会进行复制操作，这样不会污染数据</p>
-<h4>项目五： Page_Attention 上内存节省15%</h4>
-<p><strong>PageAttention</strong><br>
-物理块：将整个KV Cache内存池划分为固定大小的“块”。<br>
-逻辑块：每个序列的KV Cache被视为由多个非连续的逻辑块组成的链表。<br>
-块表：维护一个逻辑块到物理块的映射表。</p>
-<details><summary>Details</summary>
-<p>
-把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「**16-token 物理页按需分配**」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。优势场景是短序列长尾里面。
-</p><ol>
-<li>
-<p>代码级改动（可 diff），cache_manager.cu<br>
-page_attention_kernel，对应 davinci 汇编（6 条指令）：</p>
-</li>
-<li>
-<p>UBUF  R0, [block_table, seq_idx, token_idx&gt;&gt;4]   // 取 page_id</p>
-</li>
-<li>
-<p>LSL   R1, token_idx, #4                          // token_idx &amp; 0xF</p>
-</li>
-<li>
-<p>MUL   R2, R1, #hidden                            // page_off</p>
-</li>
-<li>
-<p>UBUF  R3, [page_table, R0]                       // 取物理页基址</p>
-</li>
-<li>
-<p>ADD   R4, R3, R2                                 // kv_ptr</p>
-</li>
-<li>
-<p>MOV   kv_ptr, R4                                 // 写回</p>
-</li>
-<li>
-<p>页大小 16 的量化依据<br>
-16 × 8192 × 2 × 2 B = 512 KB，对齐 Ascend L2 cache line；实测碎片与表开销的 Pareto 最优点。</p>
-</li>
-<li>
-<p>15 % 内存节省测量<br>
-• 工具：Ascend Profiling Tool（ms-level 采样）<br>
-• 数据：1000 条金融 FAQ，batch=64，max_seq_len=4096<br>
-• 结果：峰值显存 38.4 GB → 32.6 GB（-15 %），吞吐 +8 %，P99 延迟持平。</p>
-</li>
-</ol>
-<p>为什么能省 15%？</p>
-<ul>
-<li>在你提供的金融 FAQ 场景里，短序列占比高（比如平均 200 token，但 max_seq_len=4096），连续分配会浪费 95% 的 KV-Cache 空间。改成 16-token 页后，显存占用 ≈ 实际 token 数 × 16 × hidden_size × 2，节省比例自然显著。</li>
-</ul>
-<p></p>
-</details> 
 <h3>框架测优化</h3>
 <p>建议面试回答：</p>
 <ol>
