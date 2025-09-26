@@ -683,10 +683,95 @@ Chunked-Prefill + 流式 SSE
 达芬奇 3D-Cube 单元每拍能并行完成 4096 个 16-bit 乘加运算，等效 8.19 T FP16 FLOPS/Core。</p>
 <p>910B ≈ A100（Ampere架构）<br>
 910C ≈ H100（Hopper架构）</p>
-<p>每个Core内部包含三种计算单元：<br>
+<p>npu架构与gpu区别：</p>
+<details><summary>Details</summary>
+<p>
+</p><ol>
+<li>
+<p>三维立方计算引擎（3D Cube）——暴力美学的心脏<br>
+单周期 4096 次 MAC：16×16×16 立方阵列，一次时钟完成 4096 个乘加，等效 4096 OPS。<br>
+对比 2D 阵列：同样 4096 次运算，2D 需要 64×64 平面，Cube 只要 16×16×16，数据搬运距离缩短 4×，能效提升 3-5×。<br>
+支持多精度：INT4/INT8/FP16/FP32 混合，训练推理全覆盖。</p>
+</li>
+<li>
+<p>三合一计算单元<br>
+每个Core内部包含三种计算单元：<br>
 ① 3D Cube：矩阵运算主力；<br>
 ② Vector单元：向量计算；<br>
-③ Scalar单元：控制流和逻辑运算</p></div>
+③ Scalar单元：控制流和逻辑运算</p>
+</li>
+</ol>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>单元</th>
+<th>职责</th>
+<th>类比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cube</strong></td>
+<td>大块矩阵乘</td>
+<td>“重体力”</td>
+</tr>
+<tr>
+<td><strong>Vector</strong></td>
+<td>向量/激活函数</td>
+<td>“轻体力”</td>
+</tr>
+<tr>
+<td><strong>Scalar</strong></td>
+<td>循环、分支、打杂</td>
+<td>“包工头”</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<ol start="3">
+<li>统一可扩展<br>
+同一套汇编可在手机、边缘盒、云端集群无缝迁移，开发一次，全场景部署</li>
+</ol>
+<p>与gpu对比：</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>架构</th>
+<th>设计取向</th>
+<th>矩阵单元</th>
+<th>单周期 MAC</th>
+<th>能效比</th>
+<th>场景覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>达芬奇</strong></td>
+<td>专做 AI</td>
+<td>3D Cube 16×16×16</td>
+<td>4096</td>
+<td>高</td>
+<td>端-边-云统一</td>
+</tr>
+<tr>
+<td>CUDA GPU</td>
+<td>通用并行</td>
+<td>Tensor Core 4×4×4</td>
+<td>256</td>
+<td>中</td>
+<td>云端为主</td>
+</tr>
+<tr>
+<td>Google TPU</td>
+<td>云端推理</td>
+<td>2D MXU 256×256</td>
+<td>65536</td>
+<td>高</td>
+<td>仅云端</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p></p>
+</details> </div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
