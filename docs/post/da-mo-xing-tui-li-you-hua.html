@@ -293,6 +293,8 @@ W8A8C8优化项目五：<br>
 </ol>
 <p></p>
 </details> 
+<p>显存优化算子案例：<br>
+自定义FusedMultiHeadAttention算子（融合多头拆分+转置+矩阵乘），通过数据布局重构（KV Cache从[batch, head, seq, dim]→[batch, seq, head, dim]）和共享内存分块存储，减少全局内存访问次数（从12次/元素→4次），本质是显存访问模式优化。</p>
 <h3>优化项目三： Page_Attention 上内存节省15%</h3>
 <p><strong>PageAttention</strong><br>
 物理块：将整个KV Cache内存池划分为固定大小的“块”。<br>
