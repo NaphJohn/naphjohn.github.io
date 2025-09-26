@@ -232,6 +232,8 @@ SmoothQuant 的 s 是通过校准集统计激活和权重的最大绝对值得�
 NRMSE 看整体误差，Skewness/Kurtosis 找离群，Energy_ratio 找主通道，Radio/MaxTail 给 SmoothQuant 放大系数</p>
 <p></p>
 </details>
+<p>旋转量化，AWQ、smoothquant量化中对应的零点是怎么选的，缩放因子呢：<br>
+“旋转类→先转平再 MSE 选 s，z 恒 0；AWQ→激活统计搜 α 搬 0.1 % 通道；SmoothQuant→max 平滑搬全部通道，s 手工调；三者都用对称量化 z=0，硬件零成本。”</p>
 <h3>量化项目</h3>
 <h3>量化项目一：  w8a8c8的量化</h3>
 <p>总目标：在 KV-Cache 8-bit 量化场景下，既省显存又不掉生成质量。</p>
