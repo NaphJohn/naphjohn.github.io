@@ -92,8 +92,17 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li><strong>prefill（预填充，并行处理输入的 tokens）</strong>：假设 prompt 的长度是 350 token，那么预填充所需要的时间 = number of tokens * ( number of parameters / accelerator compute bandwidth) = 350 * (2 * 7B) FLOP / 125 TFLOP/s = 39 ms（A10)。这个阶段主要是<strong>计算瓶颈。</strong></li>
 <li><strong>decoding（解码，逐个生成下一个 token。）</strong>：time/token = total number of bytes moved (the model weights) / accelerator memory bandwidth = (2 * 7B) bytes / (600 GB/s) = 23 ms/token（A10)。这个阶段的瓶颈是<strong>带宽。</strong></li>
 </ol>
-<p><strong>kvcache</strong>原理：自回归生成时，把之前所有 token 已经算过的 K/V 矩阵缓存到 HBM，下次只算新 token 的 Q/K/V，然后拼接历史 K/V 做注意力，避免 O(n²) 重复计算，<br>
-kvcache节省了那部分计算？以及transformer中每一层信息</p>
+<p><strong>kvcache</strong><br>
+原理：自回归生成时，把之前所有 token 已经算过的 K/V 矩阵缓存到 HBM，下次只算新 token 的 Q/K/V，然后拼接历史 K/V 做注意力，避免 O(n²) 重复计算。<br>
+数学公式<br>
+KVCache(字节) = B × L × n_kv_heads × head_dim × 2 × sizeof(dtype) × 层数<br>
+B：batch 内同时服务的序列条数<br>
+L：当前已生成 token 数（=seq_len）<br>
+n_kv_heads：GQA 压缩后的 KV 头数（若无压缩 = 原头数） n_kv_heads = n_h // G<br>
+head_dim：每个头的维度<br>
+2：K 与 V 各一份<br>
+sizeof(dtype)：FP16/BF16→2字节；INT8/FP8→1字节；FP32→4字节</p>
+<p>相关问题： kvcache节省了那部分计算？以及transformer中每一层信息</p>
 <details><summary>Details</summary>
 <p>
 1. FFN阶段本质上是两个矩阵乘计算，token之前互不影响，因此使用kv cache可以将计算量节省为原来的1/S
@@ -494,36 +503,38 @@ SGLang：追求开发效率，适合需要复杂提示词处理和快速迭代�
 </p>
 </details> 
 <h2>vllm推理整体流程</h2>
+<p>vLLM 构建了一套面向分布式推理的执行架构。</p>
+<ul>
+<li>V0架构: - 使用BlockManager和Scheduler作为独立组件 - 调度器直接与BlockManager交互管理KV缓存 - 在LLMEngine中集成了大量功能逻辑；</li>
+<li>V1架构: - 引入了更模块化的设计，将功能分散到专门的组件中 - 使用KVCacheManager替代BlockManager，提供更抽象的接口 - 引入EngineCoreClient和Processor等组件实现更清晰的职责分离 - 采用更统一的调度方式，不再严格区分预填充和解码阶段</li>
+</ul>
+<p>用户请求<br>
+↓<br>
+AsyncLLM / Client 进程（Process-0）<br>
+├─ tokenize + 参数校验<br>
+└─ 通过 ZMQ 把「request_id + prompt_ids」发给 EngineCore</p>
+<p>EngineCore 进程（Process-1）  ←─── 双进程异步，CPU-GPU 并行<br>
+├─ Scheduler 产出 {req_id: num_tokens} 调度表<br>
+├─ KVCacheManager 分配/复用 paged block<br>
+├─ prepare_input 只增量更新张量（persistent batch）<br>
+├─ model_forward → logits<br>
+├─ sampling → next_token<br>
+├─ 把新 token 写回 req 对象<br>
+└─ ZMQ 返回给 Client 做 detokenize / 回包</p>
+<p>关键加速点</p>
+<ul>
+<li>双进程：Process-0 做前后处理，Process-1 只做调度和推理，CPU 流水线重叠。</li>
+<li>Persistent Batch：每步只改「新增 token」那一列，省掉 V0 的“全表重建”开销。</li>
+<li>Prefix Caching 默认开：0% 命中率时吞吐量下降 &lt;1%，高命中率时数倍提升。</li>
+<li>Chunked Prefill：长 prompt 被切成多段，与 decode 混跑，decode 延迟更平滑。</li>
+</ul>
 <h3>推理任务的调度与抢占：</h3>
 <p>vllm采用了 FCFS（first-come-first-serve） 的策略；<br>
 vllm中块回收策略：All-or-Nothing</p>
 <h3>块恢复策略：Swapping 与 Recomputation</h3>
-<p><strong>Swapping（交换）</strong>：将被抢占请求的 KV Cache 块从 GPU 移动到 CPU 内存。当有空闲 GPU 块时再从 CPU 恢复回来继续执行。为了控制资源使用，被交换（swapped）到 CPU 内存中的 KV Cache 块数量，永远不会超过 GPU 中物理块的总数。<br>
-<strong>Recomputation（重计算）</strong>：直接丢弃已生成的 KV Cache，待请求恢复后重新计算。<br>
+<p>Swapping（交换）：将被抢占请求的 KV Cache 块从 GPU 移动到 CPU 内存。当有空闲 GPU 块时再从 CPU 恢复回来继续执行。为了控制资源使用，被交换（swapped）到 CPU 内存中的 KV Cache 块数量，永远不会超过 GPU 中物理块的总数。<br>
+Recomputation（重计算）：直接丢弃已生成的 KV Cache，待请求恢复后重新计算。<br>
 根据论文中的实验结果，Swapping 更适用于 block size 较大的场景，而 Recomputation 则在不同 block size 下的表现更为稳定。在中等 block size（16 到 64）范围内，两种方式的端到端性能基本相当。</p>
-<h3>分布式架构</h3>
-<p>vLLM 构建了一套面向分布式推理的执行架构，原生支持 Megatron-LM 风格的张量并行策略，并通过统一调度与基于分页的 KV Cache 管理机制，实现了跨 GPU 的高效协同推理与资源共享。</p>
-<ul>
-<li>V0架构: - 使用BlockManager和Scheduler作为独立组件 - 调度器直接与BlockManager交互管理KV缓存 - 在LLMEngine中集成了大量功能逻辑；</li>
-<li>V1架构: - 引入了更模块化的设计，将功能分散到专门的组件中 - 使用KVCacheManager替代BlockManager，提供更抽象的接口 - 引入EngineCoreClient和Processor等组件实现更清晰的职责分离 - 采用更统一的调度方式，不再严格区分预填充和解码阶段；</li>
-</ul>
-<details><summary>Details</summary>
-<p>
-在每一步 decode 过程中，调度器首先为每个 batch 中的请求准备控制信息，其中包括：
-输入 token 的 ID；
-以及该请求的块表（block table，即逻辑块到物理块的映射信息）。
-接下来，调度器会将这些控制信息广播给所有的 GPU worker。
-</p><p>然后，worker （理解是一张卡）开始使用这些输入 token ID 执行模型推理。在注意力层中，worker 会根据控制信息中提供的块表，读取对应的 KV Cache。在执行过程中，worker 会通过 <strong>all-reduce 通信</strong>原语同步中间计算结果，这一过程无需调度器参与协调。最后，worker 会将本轮生成的 token（采样结果）发送回调度器。</p>
-<p></p>
-</details>
-<h2>vllm中相关KV的数学公式--kvcache</h2>
-<p>KVCache(字节) = B × L × n_kv_heads × head_dim × 2 × sizeof(dtype) × 层数<br>
-B：batch 内同时服务的序列条数<br>
-L：当前已生成 token 数（=seq_len）<br>
-n_kv_heads：GQA 压缩后的 KV 头数（若无压缩 = 原头数） n_kv_heads = n_h // G<br>
-head_dim：每个头的维度<br>
-2：K 与 V 各一份<br>
-sizeof(dtype)：FP16/BF16→2字节；INT8/FP8→1字节；FP32→4字节</p>
 <h1>HCCL</h1>
 <p>华为对应集合通信库，支持allreduce、broadcast、allgather、reduceScatter、AlltoAll等通信原语<br>
 broadcast：1到多<br>
