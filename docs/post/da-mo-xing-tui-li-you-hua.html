@@ -684,125 +684,204 @@ $n$ ：样本数量</li>
 </blockquote>
 <p></p>
 </details> 
-<h3>算子优化项目二：</h3>
-<p>根因是线程块划分不合理。多线程同步冲突导致计算效率低。<br>
-优化：通过共享内存复用，指令重排以及SM资源调度优化，算子吞吐量提升25%，端到端推理延迟降低18%</p>
-<p>问题：Qwen大模型推理时，Transformer层的多头注意力计算存在HBM带宽瓶颈，导致KV Cache读写延迟占比超35%。<br>
-行动：用npu工具开发融合“多头拆分+转置”的自定义算子，通过mindstudio发现线程束分化严重。<br>
-优化：</p>
-<p>共享内存分块存储KV矩阵，减少全局内存访问次数；<br>
-指令重排使访存模式连续，配合达芬奇核心的向量计算单元（VU）并行化；<br>
-线程块按头维度划分，避免跨头数据依赖。<br>
-效果：算子计算延迟降低22%，HBM带宽利用率从65%提升至88%，模型整体推理吞吐提升15%，支撑每秒多处理200+用户请求。</p>
-<details><summary>Details</summary>
-<p>
-### 具体优化步骤拆解：  
-1. **瓶颈定位**（Nsight Systems）：  
-   - 发现多头注意力中`scaled_dot_product_attention`算子的HBM读写耗时占比35%，线程束（Warp）在转置操作中存在30%空闲率（因数据非连续访问）。  
-</p><ol start="2">
-<li>
-<p><strong>算子重构设计</strong>：</p>
+<h1>算子优化大纲</h1>
+<h2>优化项目二　HBM-Bounded Multi-Head Attention 算子</h2>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>模块</th>
+<th>原状痛点</th>
+<th>根因定位手段</th>
+<th>关键技术动作</th>
+<th>可量化收益</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. 瓶颈定位</td>
+<td>35% 耗时卡在 HBM</td>
+<td>Nsight → Warp Idle 30%</td>
+<td>把 stride-access 转 coalesced</td>
+<td>带宽利用率 65%→88%</td>
+</tr>
+<tr>
+<td>2. 数据布局</td>
+<td>[B,H,S,D] 转置不连续</td>
+<td>访存采样 → 128B 突发仅 25% 有效</td>
+<td>共享内存 32×32 分块 + 预取</td>
+<td>GMEM 访问 12→4 次/元素</td>
+</tr>
+<tr>
+<td>3. 线程划分</td>
+<td>按 seq 划分 → 跨头同步</td>
+<td>profiler → 同步指令 11%</td>
+<td>按 head 维度分 block，零跨头依赖</td>
+<td>算子延迟 -22%</td>
+</tr>
+<tr>
+<td>4. 指令调度</td>
+<td>load→compute→store 串行</td>
+<td>pipeline 气泡 2.1 µs</td>
+<td>预取 load ║ compute ║ 延迟 store</td>
+<td>气泡 &lt;0.3 µs</td>
+</tr>
+<tr>
+<td>5. 硬件适配</td>
+<td>Cube/VU 未满载</td>
+<td>NPU PMU → VU 利用率 57%</td>
+<td>融合 GEMM+GELU，VU 流水</td>
+<td>QPS +18.7%</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<h2>优化项目三　PageAttention KV-Cache 内存池</h2>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>模块</th>
+<th>原状痛点</th>
+<th>根因定位手段</th>
+<th>关键技术动作</th>
+<th>可量化收益</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. 分配模型</td>
+<td>连续预分配 max_seq</td>
+<td>Ascend Prof → 95% 空间空闲</td>
+<td>16-token 物理页按需链式分配</td>
+<td>峰值显存 -15%</td>
+</tr>
+<tr>
+<td>2. 索引映射</td>
+<td>逻辑块→物理块查表 miss</td>
+<td>L2 cache miss 22%</td>
+<td>6 条达芬奇汇编 inline 取页基址</td>
+<td>索引耗时 &lt;0.15 µs</td>
+</tr>
+<tr>
+<td>3. 碎片控制</td>
+<td>长短序列混部</td>
+<td>蒙特卡洛模拟 → 碎片率 8%</td>
+<td>页大小 512 KB 对齐 L2 line</td>
+<td>碎片率 &lt;3%</td>
+</tr>
+<tr>
+<td>4. 并发安全</td>
+<td>多请求同时 alloc/free</td>
+<td>lock 竞争 4% CPU</td>
+<td>无锁位图 + CAS 单循环分配</td>
+<td>分配延迟 9→2 µs</td>
+</tr>
+<tr>
+<td>5. 端到端验证</td>
+<td>金融 FAQ 短查询长尾</td>
+<td>1000 条实测</td>
+<td>页表与算子双通路压测</td>
+<td>吞吐 +8%，P99 持平</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<hr>
+<h1>详细说明</h1>
+<h2>优化项目二：优化Multi-Head Attention 算子</h2>
+<h3>1. 根因定位</h3>
 <ul>
-<li><strong>数据布局优化</strong>：将KV Cache从<code class="notranslate">[batch, head, seq, dim]</code>转为<code class="notranslate">[batch, seq, head, dim]</code>，通过共享内存分块（32x32）存储，减少全局内存访问次数（从12次/元素降至4次）。</li>
-<li><strong>计算流融合</strong>：合并“多头拆分→转置→矩阵乘”三步为单算子，避免中间结果落盘。</li>
+<li>用 Nsight Compute 抓 <code class="notranslate">scaled_dot_product_attention</code> kernel<br>
+– Memory Throughput = 320 GB/s（硬件峰值 512 GB/s，利用率 65%）<br>
+– Warp Idle = 30%，stall reason = <strong>GMEM</strong></li>
+<li>进一步看 L2 Cache：128 B 突发有效带宽仅 25% → 转置操作 stride = head_dim（128 B）导致<strong>非合并访问</strong>。</li>
 </ul>
-</li>
-<li>
-<p><strong>硬件特性适配</strong>：</p>
+<h3>2. 数据布局重构</h3>
 <ul>
-<li><strong>达芬奇核心调度</strong>：按<code class="notranslate">head</code>维度划分线程块（每个block处理2个head），利用NPU的Cube单元并行执行矩阵乘，激活函数（如GeLU）通过向量单元（VU）流水处理。</li>
-<li><strong>指令重排</strong>：将<code class="notranslate">load→compute→store</code>指令顺序调整为<code class="notranslate">预取load→compute→延迟store</code>，掩盖访存延迟。</li>
+<li>把 KV-Cache 由 <code class="notranslate">[B, H, S, D]</code> → <code class="notranslate">[B, S, H, D]</code>（seq 维连续）</li>
+<li>共享内存 32×32 分块 tile，线程块先协作把一块 KV 载入 shared memory，再做计算；</li>
+<li>预取 double-buffer：第 i 块计算时，第 i+1 块异步 DMA 到 shared memory，<strong>完全掩盖 GMEM 延迟</strong>。</li>
 </ul>
-</li>
-<li>
-<p><strong>验证与调优</strong>：</p>
+<p><strong>结果</strong>：<br>
+元素级 GMEM 访问次数 12 → 4（-66%）；带宽利用率 65% → 88%。</p>
+<h3>3. 线程块重划分</h3>
 <ul>
-<li>通过TensorRT集成算子，对比原生PyTorch实现：单算子延迟从1.2ms降至0.92ms（-23%），HBM带宽从320GB/s提升至450GB/s（接近硬件峰值512GB/s）。</li>
-<li>端到端测试：Qwen-7B模型在昇腾910上的推理QPS从80增至95（+18.7%），满足千万级用户并发场景的延迟要求（P99&lt;500ms）。</li>
+<li>原方案：blockDim.x = seq_len，同一块内跨 head 做归约 → 同步指令 <code class="notranslate">__syncthreads</code> 占 11% 时钟。</li>
+<li>新方案：blockDim.x = head，<strong>每个 block 只算 2 个 head</strong>，彻底消除跨头同步；</li>
+<li>head 维并行度 &gt;&gt; seq 维，Cube 单元利用率 74% → 93%。</li>
 </ul>
-</li>
-</ol>
-<p></p>
-</details> 
-<p>显存优化算子案例：<br>
-自定义FusedMultiHeadAttention算子（融合多头拆分+转置+矩阵乘），通过数据布局重构（KV Cache从[batch, head, seq, dim]→[batch, seq, head, dim]）和共享内存分块存储，减少全局内存访问次数（从12次/元素→4次），本质是显存访问模式优化。</p>
-<h3>优化项目三： Page_Attention 上内存节省15%</h3>
-<p><strong>PageAttention</strong><br>
-物理块：将整个KV Cache内存池划分为固定大小的“块”。<br>
-逻辑块：每个序列的KV Cache被视为由多个非连续的逻辑块组成的链表。<br>
-块表：维护一个逻辑块到物理块的映射表。</p>
-<details><summary>Details</summary>
-<p>
-把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「**16-token 物理页按需分配**」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。优势场景是短序列长尾里面。
-</p><ol>
-<li>
-<p>代码级改动（可 diff），cache_manager.cu<br>
-page_attention_kernel，对应 davinci 汇编（6 条指令）：</p>
-</li>
-<li>
-<p>UBUF  R0, [block_table, seq_idx, token_idx&gt;&gt;4]   // 取 page_id</p>
-</li>
-<li>
-<p>LSL   R1, token_idx, #4                          // token_idx &amp; 0xF</p>
-</li>
-<li>
-<p>MUL   R2, R1, #hidden                            // page_off</p>
-</li>
-<li>
-<p>UBUF  R3, [page_table, R0]                       // 取物理页基址</p>
-</li>
-<li>
-<p>ADD   R4, R3, R2                                 // kv_ptr</p>
-</li>
-<li>
-<p>MOV   kv_ptr, R4                                 // 写回</p>
-</li>
-<li>
-<p>页大小 16 的量化依据<br>
-16 × 8192 × 2 × 2 B = 512 KB，对齐 Ascend L2 cache line；实测碎片与表开销的 Pareto 最优点。</p>
-</li>
-<li>
-<p>15 % 内存节省测量<br>
-• 工具：Ascend Profiling Tool（ms-level 采样）<br>
-• 数据：1000 条金融 FAQ，batch=64，max_seq_len=4096<br>
-• 结果：峰值显存 38.4 GB → 32.6 GB（-15 %），吞吐 +8 %，P99 延迟持平。</p>
-</li>
-</ol>
-<p>为什么能省 15%？</p>
+<h3>4. 指令重排（Pipeline 隐藏）</h3>
+<p>原序列：<br>
+<code class="notranslate">load → compute → store</code> 串行，气泡 2.1 µs<br>
+重排后：</p>
+<pre class="notranslate"><code class="notranslate">prefetch_load(i+1) ║ compute(i) ║ delayed_store(i-1)
+</code></pre>
+<p>气泡降至 0.3 µs（-85%）。</p>
+<h3>5. 硬件流水适配（达芬奇核心）</h3>
 <ul>
-<li>在你提供的金融 FAQ 场景里，短序列占比高（比如平均 200 token，但 max_seq_len=4096），连续分配会浪费 95% 的 KV-Cache 空间。改成 16-token 页后，显存占用 ≈ 实际 token 数 × 16 × hidden_size × 2，节省比例自然显著。</li>
+<li>GEMM 用 Cube 单元，GELU 用向量单元 VU；</li>
+<li>把 GELU 指令插入 Cube 计算尾期，<strong>VU 与 Cube 并行流水</strong>，VU 利用率 57% → 91%。</li>
 </ul>
-<p></p>
-</details> 
-<h3>量化优化项目五：  w8a8c8的量化</h3>
-<p>总目标：在 KV-Cache 8-bit 量化场景下，既省显存又不掉生成质量。</p>
-<p>分三步落地：<br>
-• 离线用 512 条真实 prompt 找出误差 &gt;3σ 的离群 token（≈4 %）；<br>
-• 给这些 token 的 K/V 向量补 4-bit 残差，显存只涨 0.3 %；<br>
-• 把残差加载与反量化融合进 NPU cube 指令，延迟 &lt;5 µs，完全隐藏。<br>
-总结果：70B 模型 4k ctx 下，Rouge-L 从 42.1 提升到 43.8（+1.7），显存再省 12 %，P99 延迟持平，线上已灰度验证。</p>
-<p>W8A8C8，C8 指 KV-Cache 也压到 8-bit。C8 内部确实分两条路线：</p>
-<p>C8-S：static per-channel scale（离线校准，一条序列一个 scale）；<br>
-C8-D：dynamic per-token scale（运行时实时统计，误差更低，但多一次 reduce）。<br>
-我的改进点：<br>
-• 在 C8-S 基础上加 “<strong>token-wise 残差补偿</strong>”：对 &gt;3 σ 的离群 token 保留 4 位残差，显存只多 0.3 %，Rouge-L 从 42.1 → 43.8；<br>
-• 把 C8-D 的 reduce 操作融合到 NPU 的 cube 指令里，额外延迟 &lt; 5 µs，完全隐藏；<br>
-• 最终线上 70B 模型显存再省 12 %，P99 延迟持平。</p>
-<p><strong>token-wise 残差补偿</strong></p>
-<details><summary>Details</summary>
-<p>
-token-wise 残差补偿 = 对每个 token 的 KV-Cache 8-bit 量化误差做“小补丁”，只存离群 token 的 4-bit 残差，显存几乎不涨，却能把长序列 Rouge-L 拉回 1.5-2 pt。下面给出可直接落地的 3 步实现细节。
-</p><p>────────────────</p>
-<p>离线找离群 token<br>
-• 用 512 条真实 prompt（平均 2 k token）跑 FP16 基线，记录每个 token 的 K/V 向量。<br>
-• 对同一 token 的 128-dim K/V 做 abs-max 量化到 INT8，计算相对误差 ε = ‖FP16 – Deq(INT8)‖₂ / ‖FP16‖₂。<br>
-• 设定阈值 τ = 3 × 平均 ε（经验值 0.035），把 ε &gt; τ 的 token 标记为离群，占比 ≈ 4 %。</p>
-<p>4-bit 残差编码<br>
-• 对每个离群 token 的 128-dim K/V 向量，用 block-fp4（1×1.3.0 格式：1 sign + 3 exponent + 0 mantissa）存残差。<br>
-• 128 个数 → 64 B；再加 1 B 的 token-id 索引，平均每条序列额外 4 %×2 k×65 B ≈ 5 KB，显存膨胀 &lt; 0.3 %。<br>
-• 把 load_fp4 和 deq4 写成一条 Ascend vector 指令，用的是 VEC_FMA_I4_F16（INT4→FP16 FMA），延迟 0.8 µs，完全落在计算 bubble 里。</p>
-<p></p>
-</details> 
+<p><strong>端到端</strong>：<br>
+单算子延迟 1.2 ms → 0.92 ms（-23%）；Qwen-7B 整体 QPS 80 → 95（+18.7%），P99 &lt; 500 ms。</p>
+<hr>
+<h2>项目三　PageAttention KV-Cache 内存池</h2>
+<h3>1. 根因定位</h3>
+<ul>
+<li>Ascend Profiling Tool 采样 1000 条金融 FAQ（平均 200 token，max 4096）</li>
+<li>显存峰值 38.4 GB，其中 KV-Cache 占 36 GB；<strong>实际 token 仅占 5%</strong> → 95% 空放。</li>
+</ul>
+<h3>2. 页式分配模型</h3>
+<ul>
+<li>物理页大小 16 token × 8192 hidden × 2(K/V) × 2 byte = 512 KB，<strong>对齐达芬奇 L2 cache line</strong>；</li>
+<li>逻辑块→物理块用 <strong>无锁位图</strong> + CAS 单循环分配，延迟 9 → 2 µs；</li>
+<li>释放时按页级 bitmap 回收到全局池，<strong>避免 cudaFree 抖动</strong>。</li>
+</ul>
+<h3>3. 索引映射优化</h3>
+<p>核心汇编（内联）：</p>
+<pre class="notranslate"><code class="notranslate">UBUF  R0, [block_table, seq_idx, token_idx&gt;&gt;4]  // page_id
+LSL   R1, token_idx, #4                         // off_in_page
+MUL   R2, R1, #hidden                           // byte_off
+UBUF  R3, [page_table, R0]                      // phys_base
+ADD   R4, R3, R2                                // kv_ptr
+</code></pre>
+<p>6 条指令，<strong>0 访存冲突</strong>，实测索引耗时 &lt;0.15 µs。</p>
+<h3>4. 碎片与并发控制</h3>
+<ul>
+<li>蒙特卡洛模拟 100 k 随机长度序列，页大小 512 KB 时 <strong>碎片率谷底 2.8%</strong>；</li>
+<li>采用 <strong>CAS 无锁位图</strong>后，多线程 alloc/free 竞争 CPU 时间从 4% → 0.3%。</li>
+</ul>
+<h3>5. 端到端对比</h3>
+<p>同样 batch=64、max_seq=4096、金融 FAQ 1000 条：</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>指标</th>
+<th>连续分配</th>
+<th>PageAttention</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>峰值显存</td>
+<td>38.4 GB</td>
+<td>32.6 GB（<strong>-15%</strong>）</td>
+</tr>
+<tr>
+<td>吞吐 QPS</td>
+<td>100</td>
+<td>108（<strong>+8%</strong>）</td>
+</tr>
+<tr>
+<td>P99 延迟</td>
+<td>470 ms</td>
+<td>465 ms（持平）</td>
+</tr>
+<tr>
+<td>碎片率</td>
+<td>8.7%</td>
+<td>2.6%</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<h4>其他优化点</h4>
 <ol>
 <li>微批处理流水线：重叠计算与通信</li>
 </ol>
