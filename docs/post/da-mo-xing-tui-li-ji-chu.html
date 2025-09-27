@@ -92,8 +92,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li><strong>prefill（预填充，并行处理输入的 tokens）</strong>：假设 prompt 的长度是 350 token，那么预填充所需要的时间 = number of tokens * ( number of parameters / accelerator compute bandwidth) = 350 * (2 * 7B) FLOP / 125 TFLOP/s = 39 ms（A10)。这个阶段主要是<strong>计算瓶颈。</strong></li>
 <li><strong>decoding（解码，逐个生成下一个 token。）</strong>：time/token = total number of bytes moved (the model weights) / accelerator memory bandwidth = (2 * 7B) bytes / (600 GB/s) = 23 ms/token（A10)。这个阶段的瓶颈是<strong>带宽。</strong></li>
 </ol>
-<p>kvcache原理：自回归生成时，把之前所有 token 已经算过的 K/V 矩阵缓存到 HBM，下次只算新 token 的 Q/K/V，然后拼接历史 K/V 做注意力，避免 O(n²) 重复计算，<br>
-kvcache节省了那部分计算？</p>
+<p><strong>kvcache</strong>原理：自回归生成时，把之前所有 token 已经算过的 K/V 矩阵缓存到 HBM，下次只算新 token 的 Q/K/V，然后拼接历史 K/V 做注意力，避免 O(n²) 重复计算，<br>
+kvcache节省了那部分计算？以及transformer中每一层信息</p>
 <details><summary>Details</summary>
 <p>
 1. FFN阶段本质上是两个矩阵乘计算，token之前互不影响，因此使用kv cache可以将计算量节省为原来的1/S
@@ -101,6 +101,12 @@ kvcache节省了那部分计算？</p>
 3. Attention阶段由于Q和K做gemm，会得到一个shape为[S，S]的向量，在seqlen比较大的情况下，计算复杂度为O(S^2)，使用kv cache之后，Attention计算复杂度变为O(S)，计算Q、K、V的GEMM运算降为GEMV运算，整体计算量为原来的1/S;
 4. 其他的Embedding等计算量比较小，大约也为原来计算量的1/S；
 </p><h3>Transformer 中每一层对应细节</h3>
+<p><strong>Transformer block</strong>（一个transformer块）<br>
+一个 Transformer Block = Attention（全局）+ MLP（局部）+ LN/残差，交替堆叠 L 次，就是现在大模型（GPT、ViT、Qwen 等）的核心骨架。</p>
+<ul>
+<li>Attention 负责全局找关系（谁重要）</li>
+<li>MLP 负责局部深加工（把重要信息揉进非线性空间）</li>
+</ul>
 <p>Transformer 中典型的 Token-wise （“对每个 token 单独做同样的计算，token 之间不交换信息”）操作：<br>
 对于 Token-wise 操作（如FFN、Norm、新token的QKV投影），它们天然地只需要处理新 token 即可。计算量是固定的，与生成长度 S 无关</p>
 <markdown-accessiblity-table><table role="table">
@@ -146,57 +152,25 @@ kvcache节省了那部分计算？</p>
 </table></markdown-accessiblity-table>
 <p></p>
 </details> 
-<h2>LLM 推理的核心指标</h2>
-<details><summary>Details</summary>
-<p>
-- Time To First Token (TTFT): 首 Token 延迟，即从输入到输出第一个 token 的延迟。在在线的流式应用中，TTFT 是最重要的指标，因为它决定了用户体验。
-- Time Per Output Token (TPOT)： 每个输出 token 的延迟（不含首个Token）。在离线的批处理应用中，TPOT 是最重要的指标，因为它决定了整个推理过程的时间。
-- Latency：延迟，即从输入到输出最后一个 token 的延迟。 Latency = (TTFT) + (TPOT) * (the number of tokens to be generated). Latency 可以转换为 Tokens Per Second (TPS)：TPS = (the number of tokens to be generated) / Latency。
-- Throughput：吞吐量，即每秒针对所有请求生成的 token 数。以上三个指标都针对单个请求，而吞吐量是针对所有并发请求的。
-</p><p>我们将 LLM 应用分为两种：</p>
+<p>QKV计算：<br>
+Score = Q * K^T<br>
+缩放：为了防止点积结果过大导致 Softmax 梯度消失，将得分除以 Key 向量维度的平方根。Scaled_Score = Score / √d_k<br>
+应用 Softmax：Attention_Weights = Softmax(Scaled_Score)<br>
+加权求和：用注意力权重对 Value 向量进行加权求和，得到最终的输出。Output = Attention_Weights * V</p>
+<p>前馈神经网络 (Feed-Forward Network, FFN)</p>
 <ul>
-<li>在线流式应用：对 TTFT、TPOT、Latency 敏感，需要尽可能快的生成 token。</li>
-<li>离线批量应用：对 Throughput 敏感，需要在单位时间内尽可能多的生成 token。<br>
-而实际在某种应用（如在线流式应用），我们也应该在Latency 和 Throughput 之间进行权衡，提高 Throughtput 可以提高硬件承担的并发数，从而降低推理成本。</li>
+<li>标准的Transformer FFN层由两个线性变换和一个ReLU激活函数组成： FFN_ReLU(x) = ReLU(xW1 + b1) W2 + b2 其中： 1. x 是输入，维度为 [batch_size, seq_len, d_model] 。</li>
+<li>对自注意力层的输出进行非线性变换和空间映射，增强模型的表达能力。</li>
 </ul>
-<p></p>
-</details> 
-<h2>LLM基座的推理能力</h2>
-<p>核心评估维度：<br>
-逻辑推理<br>
-数学推理  GSM8K, MATH, AQuA-RAT<br>
-常识推理 HellaSwag, PIQA, ARC<br>
-多步推理  BigBench-Hard, DROP<br>
-代码推理  HumanEval, MBPP</p>
-<details><summary>Details</summary>
-<p>
-</p><h4><span>主流评估基准（Benchmarks）：</span></h4><ol start="1"><li><p><strong><span>MMLU (Massive Multitask Language Understanding)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：涵盖57个主题的多项选择题，包括数学、历史、法律、计算机科学等。</span></p></li><li><p><strong><span>目的</span></strong><span>：评估模型的</span><strong><span>知识广度和推理深度</span></strong><span>。</span></p></li></ul></li><li><p><strong><span>GSM8K (Grade School Math 8K)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：八千多道小学数学应用题，需要多步推理才能得出最终答案。</span></p></li><li><p><strong><span>目的</span></strong><span>：</span><strong><span>精准评估数学推理和分步解决问题</span></strong><span>的能力。CoT（思维链）效果的核心试金石。</span></p></li></ul></li><li><p><strong><span>BigBench-Hard (BBH)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：从大规模基准BIG-Bench中筛选出的23项最具挑战性的任务，人类评估者认为超出当前语言模型能力。</span></p></li><li><p><strong><span>目的</span></strong><span>：</span><strong><span>挑战模型极限</span></strong><span>，评估其解决极其复杂和反直觉问题的能力。</span></p></li></ul></li><li><p><strong><span>DROP (Discrete Reasoning Over Paragraphs)</span></strong></p><ul><li><p><strong><span>内容</span></strong><span>：需要模型在阅读段落的基础上进行数值计算、日期推理、排序等离散推理。</span></p></li><li><p><strong><span>目的</span></strong><span>：评估模型</span><strong><span>理解文本并执行精确推理</span></strong><span>的能力，避免“蒙答案”。</span></p></li></ul></li></ol><h4><span>评估方法论：</span></h4><ul><li><p><strong><span>零样本（Zero-Shot）</span></strong><span>：直接给出指令，看模型能否理解并执行。评估</span><strong><span>泛化能力</span></strong><span>。</span></p></li><li><p><strong><span>少样本（Few-Shot）</span></strong><span>：提供几个示例（Demonstration），看模型能否从示例中学习推理模式。评估</span><strong><span>学习能力</span></strong><span>。</span></p></li><li><p><strong><span>思维链（Chain-of-Thought, CoT）</span></strong><span>：要求模型给出推理步骤，再给出答案。不仅看结果正确性，更要</span><strong><span>评估推理过程的合理性</span></strong><span>。</span></p></li></ul>
-<p></p>
-</details> 
-<h2>LLM 推理的性能卡点</h2>
-<ol>
-<li>KV-Cache 大小导致并发能力受限<br>
-LLM推理的过程是一个自回归的过程，也就是说前i次的token会作为第i+1次的预测数据送入模型，拿到第i+1次的推理token。</li>
-</ol>
-<p>对最大长度是 4096 的 LLaMa2-7B fp16 模型，服务端每创建 1 个并发，都需要大约 2GB 显存保存 kv_cache，即便是 A100 80G，能并发服务的用户也非常有限。</p>
-<ol start="2">
-<li>带宽瓶颈导致 TPOT 受限<br>
-将 LLM 托管到现代 GPU 时，计算能力一般不是瓶颈，显存带宽才是瓶颈。一般的衡量指标是 MBU（模型带宽利用率，Model Bandwidth Utilization）。</li>
-</ol>
-<details><summary>Details</summary>
-<p>
-MBU 定义为（实际内存带宽）/（峰值内存带宽），而（实际内存带宽） = （总模型参数大小 + KV 缓存大小） / TPOT。举个例子，假如 7B fp16 模型的 TPOT 是 14ms，那么它就需要在 14ms 内把 14GB 参数从显存加载到计算单元，也就是 1TB/s 的带宽使用量。假设显卡的峰值带宽为 2TB/s，那么 MBU = 0.5，即显存带宽利用率是 50%。
-</p>
-</details> 
-<h1>大模型架构Qwen、GPT系列、llama系列，Deepseek系列，Transformer</h1>
-<h2>Qwen</h2>
-<p>核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。</p>
-<ol>
-<li>RMSNorm (Root Mean Square Normalization)： RMSNorm 把 减均值和学偏置两步都删了，只剩一个缩放向量 γ</li>
-<li>SwiGLU激活函数： 取代了传统的ReLU或GELU激活函数。SwiGLU是GLU（Gated Linear Unit）的一种，引入了门控机制，被证明在语言模型中能带来更好的性能。</li>
-<li>旋转位置编码 (RoPE, Rotary Position Embedding)： 取代了绝对或相对位置编码。RoPE通过旋转矩阵的方式将位置信息编码到注意力计算中，能更好地处理长序列，并具有很好的外推性（ extrapolation）。<br>
-<strong>ROPE公式计算</strong></li>
-</ol>
+<p>残差连接 (Add) 和层归一化 (Norm)<br>
+<strong>残差连接 (Residual Connection)</strong>：将子层的输入直接加到其输出上（Output = Sublayer(input) + input）。这有效地缓解了深层网络中的梯度消失问题，使得模型可以堆叠得很深。<br>
+<strong>层归一化 (Layer Normalization)</strong>：对残差相加后的结果进行归一化，稳定训练过程，加快收敛<br>
+公式表示一个 Encoder Layer：<br>
+EncoderOutput = LayerNorm( SelfAttention(Input) + Input )<br>
+FinalOutput = LayerNorm( FFN(EncoderOutput) + EncoderOutput )</p>
+<p><strong>位置编码positional encoding</strong><br>
+提供单词在序列中的绝对或相对位置信息，增加语言的有序性，使 Transformer 能够理解顺序。</p>
+<p><strong>ROPE公式计算</strong></p>
 <details><summary>Details</summary>
 <p>
 </p><markdown-accessiblity-table><table role="table">
@@ -236,148 +210,6 @@ MBU 定义为（实际内存带宽）/（峰值内存带宽），而（实际内
 结果：q_m、k_n 分别带上“相对距离”m−n 的旋转角，Attention 内积自然只与相对位置有关，而不再依赖绝对位置</p>
 <p></p>
 </details> 
-4. 分组查询注意力 (GQA, Grouped-Query Attention)： 在较大的模型（如Qwen2-7B/72B）中使用了GQA。它介于MHA（多头注意力）和MQA（多查询注意力）之间，在几乎不损失效果的情况下，极大地减少了推理时KV Cache的内存占用，提高了推理速度。
-5. 更长的上下文长度： Qwen2支持128K token的上下文长度，这得益于RoPE和相关的工程优化。
-6. Tokenizer改进： 使用了更高效的分词器，词汇表大小扩大到152K，压缩率更高（特别是对中文和代码），减少了序列长度，提升了处理效率。
-<h3>RMSNorm以及LayerNorm公式</h3>
-<details><summary>Details</summary>
-<p>
-LayerNorm：
-$\text{LayerNorm}(\mathbf{x}) = \frac{\mathbf{x} - \mu}{\sigma} \odot \mathbf{g} + \mathbf{b}$
-其中 $\mu = \frac{1}{H}\sum_{i=1}^H x_i$, $\sigma = \sqrt{\frac{1}{H}\sum_{i=1}^H (x_i - \mu)^2 + \epsilon}$, $\mathbf{g}$ 和 $\mathbf{b}$ 是可学习的增益和偏置参数。
-</p>
-<p>RMSNorm：<br>
-$\text{RMSNorm}(\mathbf{x}) = \frac{\mathbf{x}}{\text{RMS}(\mathbf{x})} \odot \mathbf{g}$<br>
-其中 $\text{RMS}(\mathbf{x}) = \sqrt{\frac{1}{H}\sum_{i=1}^H x_i^2 + \epsilon}$， 通常省略偏置 $\mathbf{b}$。</p>
-<p>SwiGLU的公式是什么？<br>
-SwiGLU是Swish激活函数和GLU（Gated Linear Unit）结构的结合。</p>
-<p>公式：<br>
-$\text{SwiGLU}(x, W, V, b, c) = \text{Swish}(xW + b) \odot (xV + c)$<br>
-其中：</p>
-<ul>
-<li>
-$x$ 是输入</li>
-<li>
-$W, V$ 是权重矩阵</li>
-<li>
-$b, c$ 是偏置（可选）</li>
-<li>
-$\odot$ 是逐元素乘法（Hadamard product）</li>
-<li>
-$\text{Swish}(x) = x \cdot \sigma(x)$， $\sigma$ 是sigmoid函数。</li>
-</ul>
-<p>GLU：这种 (A) ⊙ (B) 的结构被称为“门控线性单元”（Gated Linear Unit）。Swish(xW1) 是“门”，它控制 (xV) 哪些部分可以通过。<br>
-在Transformer的FFN层中，通常用SwiGLU取代原来的ReLU激活</p>
-<p></p>
-</details> 
-<h3>参数量计算与调整策略</h3>
-<details><summary>Details</summary>
-<p>
-标准的Transformer FFN层由两个线性变换和一个ReLU激活函数组成：
-FFN_ReLU(x) = ReLU(xW1 + b1) W2 + b2
-其中：
-1. x 是输入，维度为 [batch_size, seq_len, d_model]
-2. W1 是一个权重矩阵，将维度从 d_model 投影到 d_ff（通常 d_ff = 4 * d_model）
-3. W2 将维度从 d_ff 投影回 d_model
-4. 参数数量主要集中在 W1 和 W2：
-  - W1 的参数数量：d_model * d_ff
-  - W2 的参数数量：d_ff * d_model
-  - 总参数量 ≈ 2 * d_model * d_ff (忽略偏置项b)
-</p><p><strong>原始ReLU FFN参数量</strong>： W1 + W2 = d_model * d_ff + d_ff * d_model = 2 * d_model * d_ff,标准的Transformer FFN层公式如上<br>
-SwiGLU FFN参数量： W1 + V + W2 = d_model * d_ff + d_model * d_ff + d_ff * d_model = 3 * d_model * d_ff<br>
-参数量比值： (3 * d_model * d_ff) / (2 * d_model * d_ff) = 3/2<br>
-所以，直接使用相同 d_ff 的SwiGLU，其参数量是原始FFN的 <strong>1.5 倍</strong>（即 3/2 倍）。<br>
-如何<strong>保持参数量一致</strong>？<br>
-缩放 d_ff为了在改用SwiGLU后不增加模型的总参数量，需要一个“补偿”策略。最有效的方法是减小中间维度 d_ff。<br>
-我们的目标是：SwiGLU参数量 = ReLU FFN参数量<br>
-设新的中间维度为 d_ff_new。<br>
-等式为： 3 * d_model * d_ff_new = 2 * d_model * d_ff_old<br>
-两边同时除以 d_model： 3 * d_ff_new = 2 * d_ff_old<br>
-解得： d_ff_new = (2/3) * d_ff_old<br>
-结论： 将SwiGLU FFN的<strong>隐藏层维度 d_ff 设置为原始ReLU FFN维度的 2/3</strong>，可以使两者的参数量几乎保持一致。</p>
-<p></p>
-</details> 
-<h2>其他模型</h2>
-<p>embedding模型：输出向量，用于相似度搜索</p>
-<p>rerank模型：输出相关性分数，用于排序</p>
-<h2>Transformer架构：</h2>
-<p>一个 Transformer Block = Attention（全局）+ MLP（局部）+ LN/残差，交替堆叠 L 次，就是现在大模型（GPT、ViT、Qwen 等）的核心骨架。</p>
-<ul>
-<li>Attention 负责全局找关系（谁重要）</li>
-<li>MLP 负责局部深加工（把重要信息揉进非线性空间）</li>
-</ul>
-<p>Q，K，V计算的实际过程：</p>
-<details><summary>Details</summary>
-<p>
-</p><ul>
-<li>Query (Q - 查询)：可以理解为“当前正在关注的 token”发出的一个询问：“与我相关的信息是什么？”</li>
-<li>Key (K - 键)：可以理解为所有 token 提供的一个“标识”，用来匹配 Query。Query 会与所有 Key 进行相似度比较。</li>
-<li>Value (V - 值)：可以理解为每个 token 所包含的“实际信息”或“内容”。一旦通过 Q-K 匹配确定了哪些 token 重要，我们就对这些 token 的 Value 进行加权求和。</li>
-</ul>
-<p><strong>实际过程：</strong></p>
-<ol>
-<li>线性投影：通过三个权重矩阵 W^Q, W^K, W^V，将输入 X 分别投影到 Q, K, V 空间。</li>
-<li>Q = X * W^Q, K = X * W^K, V = X * W^V</li>
-<li>计算注意力得分：计算 Query 和所有 Key 的点积，得到相似度得分。Score = Q * K^T</li>
-<li>缩放：为了防止点积结果过大导致 Softmax 梯度消失，将得分除以 Key 向量维度的平方根。Scaled_Score = Score / √d_k</li>
-<li>应用 Softmax：对缩放后的得分应用 Softmax 函数，得到归一化的注意力权重（所有权重和为1）。Attention_Weights = Softmax(Scaled_Score)</li>
-<li>加权求和：用注意力权重对 Value 向量进行加权求和，得到最终的输出。Output = Attention_Weights * V</li>
-</ol>
-<p>这个输出就包含了当前 token 从序列所有其他 token 那里聚合到的上下文信息。</p>
-<ol>
-<li>多头自注意力机制 (Multi-Head Self-Attention)</li>
-</ol>
-<ul>
-<li>“自” (Self) 的含义：输入序列自身内部元素之间进行注意力计算。例如，句子中的每个词都会与句子中的所有词（包括自己）进行关联，从而捕捉词与词之间的语义和语法关系。</li>
-<li>attention核心公式：Attention(Q, K, V) = softmax(QK^T / √d_k) V</li>
-<li>让模型能够“同时看到”整个序列，并理解每个词在上下文中的真正含义。</li>
-</ul>
-<ol>
-<li>前馈神经网络 (Feed-Forward Network, FFN)</li>
-</ol>
-<ul>
-<li>一个简单的全连接网络，通常包含一个隐藏层和激活函数（如 ReLU）。</li>
-<li>对自注意力层的输出进行非线性变换和空间映射，增强模型的表达能力。</li>
-</ul>
-<ol>
-<li>残差连接 (Add) 和层归一化 (Norm)</li>
-</ol>
-<ul>
-<li>残差连接 (Residual Connection)：将子层的输入直接加到其输出上（Output = Sublayer(input) + input）。这有效地缓解了深层网络中的梯度消失问题，使得模型可以堆叠得很深。</li>
-<li>层归一化 (Layer Normalization)：对残差相加后的结果进行归一化，稳定训练过程，加快收敛<br>
-公式表示一个 Encoder Layer：<br>
-EncoderOutput = LayerNorm( SelfAttention(Input) + Input )<br>
-FinalOutput = LayerNorm( FFN(EncoderOutput) + EncoderOutput )</li>
-</ul>
-<p></p>
-</details>
-<p><strong>Decoder解码器组成</strong><br>
-根据 Encoder 产生的中间表示，自回归地（一个一个地）生成输出序列（如翻译后的句子）。</p>
-<details><summary>Details</summary>
-<p>
-</p><ol>
-<li>掩码多头自注意力机制 (Masked Multi-Head Self-Attention)</li>
-</ol>
-<ul>
-<li>“掩码” (Masked) 的含义：为了防止在训练时“偷看”未来信息（即解码第 t 个词时只能看到 1 到 t-1 的词），通过一个掩码矩阵将当前位置之后的所有信息屏蔽掉（设置为负无穷，softmax 后变为 0）。</li>
-</ul>
-<ol>
-<li>多头交叉注意力机制 (Multi-Head Cross-Attention)</li>
-</ol>
-<ul>
-<li>“交叉” (Cross) 的含义：Decoder 的表示 与 Encoder 的最终输出 进行注意力计算。</li>
-<li>Query (Q) 来自 Masked Self-Attention 的输出。</li>
-<li>Key (K) 和 Value (V) 来自 Encoder 的最终输出。</li>
-<li>这是 Encoder 和 Decoder 之间信息交互的桥梁，让 Decoder 在生成每一个词时都能有针对性地关注输入序列中最相关的部分。</li>
-</ul>
-<ol>
-<li>前馈神经网络 (Feed-Forward Network, FFN)<br>
-每个子层都伴随着残差连接和层归一化。</li>
-</ol>
-<p></p>
-</details>
-<p><strong>位置编码positional encoding</strong><br>
-为模型提供单词在序列中的绝对或相对位置信息，使 Transformer 能够理解顺序。</p>
 <details><summary>Details</summary>
 <p>
 为什么要位置编码？
@@ -475,15 +307,155 @@ mask 就是布尔矩阵，True 处 logits→−∞，softmax 后概率=0，实�
 </p><p>在解码器（Decoder）中：需要同时使用 Padding Mask 和 Causal Mask（两者相加），既不能看Pad token，也不能看未来的token。</p>
 <p></p>
 </details>
-<p><strong>思维链</strong><br>
-原理：模型开启推理步骤，生成最终答案<br>
-遇到问题，启动带上RC发现TTFT劣化，TPOT减少，但是QPS以及E2E时间无变化</p>
+<h2>LLM 推理的核心指标</h2>
 <details><summary>Details</summary>
 <p>
-python -m vllm.entrypoints.openai.api_server --model=/data/model/qwen3-32b-w8a8/  --served-model-name=Qwen --dtype=auto   --host=0.0.0.0   --port=8012   --tensor-parallel-size=2   --gpu-memory-utilization=0.95   --block-size=128   --max-num-seqs=256   --max-model-len=32768   --max-num-batched-tokens=32768   --trust-remote-code   --guided-decoding-backend=xgrammar   --no-enable-prefix-caching  --additional-config='{"ascend_turbo_graph_config": {"enabled": true},"ascend_scheduler_config": {"enabled": true,"chunked_prefill_enabled": false}}'   --quantization=compressed-tensors --enable-auto-tool-choice --tool-parser-plugin /home/ma-user/AscendCloud/AscendCloud-LLM/llm_inference/ascend_vllm/ascend_vllm/tool_parsers/ascend_hermes_tool_parser.py   --tool-call-parser=ascend_hermes --chat-template=/data/whk/ascend-vllm/llm_tools/tool_chat_template_hermes.v2.jinja   --enable-reasoning  --reasoning-parser qwen3
+- Time To First Token (TTFT): 首 Token 延迟，即从输入到输出第一个 token 的延迟。在在线的流式应用中，TTFT 是最重要的指标，因为它决定了用户体验。
+- Time Per Output Token (TPOT)： 每个输出 token 的延迟（不含首个Token）。在离线的批处理应用中，TPOT 是最重要的指标，因为它决定了整个推理过程的时间。
+- Latency：延迟，即从输入到输出最后一个 token 的延迟。 Latency = (TTFT) + (TPOT) * (the number of tokens to be generated). Latency 可以转换为 Tokens Per Second (TPS)：TPS = (the number of tokens to be generated) / Latency。
+- Throughput：吞吐量，即每秒针对所有请求生成的 token 数。以上三个指标都针对单个请求，而吞吐量是针对所有并发请求的。
+</p><p>我们将 LLM 应用分为两种：</p>
+<ul>
+<li>在线流式应用：对 TTFT、TPOT、Latency 敏感，需要尽可能快的生成 token。</li>
+<li>离线批量应用：对 Throughput 敏感，需要在单位时间内尽可能多的生成 token。<br>
+而实际在某种应用（如在线流式应用），我们也应该在Latency 和 Throughput 之间进行权衡，提高 Throughtput 可以提高硬件承担的并发数，从而降低推理成本。</li>
+</ul>
+<p></p>
+</details> 
+<h2>LLM基座的推理能力</h2>
+<p>核心评估维度：<br>
+逻辑推理  比如mmlu（涵盖57个主题的多项选择题）<br>
+数学推理  GSM8K, MATH, AQuA-RAT<br>
+常识推理 HellaSwag, PIQA, ARC<br>
+多步推理  BigBench-Hard, DROP<br>
+代码推理  HumanEval, MBPP，livecodebench，livecodebench2025</p>
+<h2>LLM 推理的性能卡点</h2>
+<ol>
+<li>KV-Cache 大小导致并发能力受限<br>
+LLM推理的过程是一个自回归的过程，也就是说前i次的token会作为第i+1次的预测数据送入模型，拿到第i+1次的推理token。</li>
+</ol>
+<p>对最大长度是 4096 的 LLaMa2-7B fp16 模型，服务端每创建 1 个并发，都需要大约 2GB 显存保存 kv_cache，即便是 A100 80G，能并发服务的用户也非常有限。</p>
+<ol start="2">
+<li>带宽瓶颈导致 TPOT 受限<br>
+将 LLM 托管到现代 GPU 时，计算能力一般不是瓶颈，显存带宽才是瓶颈。一般的衡量指标是 MBU（模型带宽利用率，Model Bandwidth Utilization）。</li>
+</ol>
+<details><summary>Details</summary>
+<p>
+MBU 定义为（实际内存带宽）/（峰值内存带宽），而（实际内存带宽） = （总模型参数大小 + KV 缓存大小） / TPOT。举个例子，假如 7B fp16 模型的 TPOT 是 14ms，那么它就需要在 14ms 内把 14GB 参数从显存加载到计算单元，也就是 1TB/s 的带宽使用量。假设显卡的峰值带宽为 2TB/s，那么 MBU = 0.5，即显存带宽利用率是 50%。
 </p>
 </details> 
-原因：开启RC后，第一个产生的没有统计，作为特殊字符，TTFT统计的是第二个token产生时间，所以“劣化”，bs越大，“劣化”越严重，其实是正常现象，开启RC后可以用第二个token产生时间作为参考也就是AVG_TPOT(sec)；也可以总体参数QPS以及E2E时间，如果（QPS以及E2E时间）无变化说明无劣化
+<h1>大模型架构Qwen、GPT系列、llama系列，Deepseek系列，Transformer</h1>
+<h2>Qwen</h2>
+<p>核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。</p>
+<ol>
+<li>RMSNorm (Root Mean Square Normalization)： RMSNorm 把 减均值和学偏置两步都删了，只剩一个缩放向量 γ</li>
+<li>SwiGLU激活函数： 取代了传统的ReLU或GELU激活函数。SwiGLU是GLU（Gated Linear Unit）的一种，引入了门控机制，被证明在语言模型中能带来更好的性能。</li>
+<li>旋转位置编码 (RoPE, Rotary Position Embedding)： 取代了绝对或相对位置编码。RoPE通过旋转矩阵的方式将位置信息编码到注意力计算中，能更好地处理长序列，并具有很好的外推性（ extrapolation）。</li>
+<li>分组查询注意力 (GQA, Grouped-Query Attention)： 在较大的模型（如Qwen2-7B/72B）中使用了GQA。它介于MHA（多头注意力）和MQA（多查询注意力）之间，在几乎不损失效果的情况下，极大地减少了推理时KV Cache的内存占用，提高了推理速度。</li>
+<li>更长的上下文长度： Qwen2支持128K token的上下文长度，这得益于RoPE和相关的工程优化。</li>
+<li>Tokenizer改进： 使用了更高效的分词器，词汇表大小扩大到152K，压缩率更高（特别是对中文和代码），减少了序列长度，提升了处理效率。</li>
+</ol>
+<h3>RMSNorm以及LayerNorm公式</h3>
+<details><summary>Details</summary>
+<p>
+LayerNorm：
+$\text{LayerNorm}(\mathbf{x}) = \frac{\mathbf{x} - \mu}{\sigma} \odot \mathbf{g} + \mathbf{b}$
+其中 $\mu = \frac{1}{H}\sum_{i=1}^H x_i$, $\sigma = \sqrt{\frac{1}{H}\sum_{i=1}^H (x_i - \mu)^2 + \epsilon}$, $\mathbf{g}$ 和 $\mathbf{b}$ 是可学习的增益和偏置参数。
+</p>
+<p>RMSNorm：<br>
+$\text{RMSNorm}(\mathbf{x}) = \frac{\mathbf{x}}{\text{RMS}(\mathbf{x})} \odot \mathbf{g}$<br>
+其中 $\text{RMS}(\mathbf{x}) = \sqrt{\frac{1}{H}\sum_{i=1}^H x_i^2 + \epsilon}$， 通常省略偏置 $\mathbf{b}$。</p>
+<p>SwiGLU的公式是什么？<br>
+SwiGLU是Swish激活函数和GLU（Gated Linear Unit）结构的结合。</p>
+<p>公式：<br>
+$\text{SwiGLU}(x, W, V, b, c) = \text{Swish}(xW + b) \odot (xV + c)$<br>
+其中：</p>
+<ul>
+<li>
+$x$ 是输入</li>
+<li>
+$W, V$ 是权重矩阵</li>
+<li>
+$b, c$ 是偏置（可选）</li>
+<li>
+$\odot$ 是逐元素乘法（Hadamard product）</li>
+<li>
+$\text{Swish}(x) = x \cdot \sigma(x)$， $\sigma$ 是sigmoid函数。</li>
+</ul>
+<p>GLU：这种 (A) ⊙ (B) 的结构被称为“门控线性单元”（Gated Linear Unit）。Swish(xW1) 是“门”，它控制 (xV) 哪些部分可以通过。<br>
+在Transformer的FFN层中，通常用SwiGLU取代原来的ReLU激活</p>
+<p></p>
+</details> 
+<p>Q，K，V计算的实际过程：</p>
+<details><summary>Details</summary>
+<p>
+</p><ul>
+<li>Query (Q - 查询)：可以理解为“当前正在关注的 token”发出的一个询问：“与我相关的信息是什么？”</li>
+<li>Key (K - 键)：可以理解为所有 token 提供的一个“标识”，用来匹配 Query。Query 会与所有 Key 进行相似度比较。</li>
+<li>Value (V - 值)：可以理解为每个 token 所包含的“实际信息”或“内容”。一旦通过 Q-K 匹配确定了哪些 token 重要，我们就对这些 token 的 Value 进行加权求和。</li>
+</ul>
+<p><strong>实际过程：</strong></p>
+<ol>
+<li>线性投影：通过三个权重矩阵 W^Q, W^K, W^V，将输入 X 分别投影到 Q, K, V 空间。</li>
+<li>Q = X * W^Q, K = X * W^K, V = X * W^V</li>
+<li>计算注意力得分：计算 Query 和所有 Key 的点积，得到相似度得分。Score = Q * K^T</li>
+<li>缩放：为了防止点积结果过大导致 Softmax 梯度消失，将得分除以 Key 向量维度的平方根。Scaled_Score = Score / √d_k</li>
+<li>应用 Softmax：对缩放后的得分应用 Softmax 函数，得到归一化的注意力权重（所有权重和为1）。Attention_Weights = Softmax(Scaled_Score)</li>
+<li>加权求和：用注意力权重对 Value 向量进行加权求和，得到最终的输出。Output = Attention_Weights * V</li>
+</ol>
+<p>这个输出就包含了当前 token 从序列所有其他 token 那里聚合到的上下文信息。</p>
+<ol>
+<li>多头自注意力机制 (Multi-Head Self-Attention)</li>
+</ol>
+<ul>
+<li>“自” (Self) 的含义：输入序列自身内部元素之间进行注意力计算。例如，句子中的每个词都会与句子中的所有词（包括自己）进行关联，从而捕捉词与词之间的语义和语法关系。</li>
+<li>attention核心公式：Attention(Q, K, V) = softmax(QK^T / √d_k) V</li>
+<li>让模型能够“同时看到”整个序列，并理解每个词在上下文中的真正含义。</li>
+</ul>
+<ol>
+<li>前馈神经网络 (Feed-Forward Network, FFN)</li>
+</ol>
+<ul>
+<li>一个简单的全连接网络，通常包含一个隐藏层和激活函数（如 ReLU）。</li>
+<li>对自注意力层的输出进行非线性变换和空间映射，增强模型的表达能力。</li>
+</ul>
+<ol>
+<li>残差连接 (Add) 和层归一化 (Norm)</li>
+</ol>
+<ul>
+<li>残差连接 (Residual Connection)：将子层的输入直接加到其输出上（Output = Sublayer(input) + input）。这有效地缓解了深层网络中的梯度消失问题，使得模型可以堆叠得很深。</li>
+<li>层归一化 (Layer Normalization)：对残差相加后的结果进行归一化，稳定训练过程，加快收敛<br>
+公式表示一个 Encoder Layer：<br>
+EncoderOutput = LayerNorm( SelfAttention(Input) + Input )<br>
+FinalOutput = LayerNorm( FFN(EncoderOutput) + EncoderOutput )</li>
+</ul>
+<p></p>
+</details>
+<p><strong>Decoder解码器组成</strong><br>
+根据 Encoder 产生的中间表示，自回归地（一个一个地）生成输出序列（如翻译后的句子）。</p>
+<details><summary>Details</summary>
+<p>
+</p><ol>
+<li>掩码多头自注意力机制 (Masked Multi-Head Self-Attention)</li>
+</ol>
+<ul>
+<li>“掩码” (Masked) 的含义：为了防止在训练时“偷看”未来信息（即解码第 t 个词时只能看到 1 到 t-1 的词），通过一个掩码矩阵将当前位置之后的所有信息屏蔽掉（设置为负无穷，softmax 后变为 0）。</li>
+</ul>
+<ol>
+<li>多头交叉注意力机制 (Multi-Head Cross-Attention)</li>
+</ol>
+<ul>
+<li>“交叉” (Cross) 的含义：Decoder 的表示 与 Encoder 的最终输出 进行注意力计算。</li>
+<li>Query (Q) 来自 Masked Self-Attention 的输出。</li>
+<li>Key (K) 和 Value (V) 来自 Encoder 的最终输出。</li>
+<li>这是 Encoder 和 Decoder 之间信息交互的桥梁，让 Decoder 在生成每一个词时都能有针对性地关注输入序列中最相关的部分。</li>
+</ul>
+<ol>
+<li>前馈神经网络 (Feed-Forward Network, FFN)<br>
+每个子层都伴随着残差连接和层归一化。</li>
+</ol>
+<p></p>
+</details>
 <h1>不同推理框架</h1>
 <p>目前推理框架包含vllm、SGlang、LMDeploy、TensorRT-LLM</p>
 <p>四者对比：<br>
@@ -522,43 +494,6 @@ SGLang：追求开发效率，适合需要复杂提示词处理和快速迭代�
 </p>
 </details> 
 <h2>vllm推理整体流程</h2>
-<p>vLLM推理整体流程 -- 启动阶段1、初始化engine、加载权重</p>
-<details><summary>Details</summary>
-<p>
-</p><ul>
-<li>LLMEngine (x N)
-<ul>
-<li>vllm/engine/llm_engine.py</li>
-</ul>
-</li>
-</ul>
-<p>一个节点或一个DR是一个engine(AsyncLLM, Engine Core)，每个engine是单独的process。</p>
-<ul>
-<li>Worker (x N)
-<ul>
-<li>vllm/worker/worker.py</li>
-</ul>
-</li>
-</ul>
-<p>一个卡一个worker，例如8TP对应8个worker，一个process。</p>
-<ul>
-<li>Worker.model
-<ul>
-<li>vllm/model_executor/models</li>
-</ul>
-</li>
-</ul>
-<p>初始化模型结构。</p>
-<ul>
-<li>model.load_weights
-<ul>
-<li>vllm/model_executor/models</li>
-</ul>
-</li>
-</ul>
-<p>加载权重；以DeepSeek V3为例：671B(int8) = 40GB*16TP.</p>
-<p></p>
-</details>
 <h3>推理任务的调度与抢占：</h3>
 <p>vllm采用了 FCFS（first-come-first-serve） 的策略；<br>
 vllm中块回收策略：All-or-Nothing</p>
@@ -588,45 +523,7 @@ L：当前已生成 token 数（=seq_len）<br>
 n_kv_heads：GQA 压缩后的 KV 头数（若无压缩 = 原头数） n_kv_heads = n_h // G<br>
 head_dim：每个头的维度<br>
 2：K 与 V 各一份<br>
-sizeof(dtype)：FP16/BF16→2；INT8/FP8→1；FP32→4<br>
-层数：Transformer decoder 层数</p>
-<details><summary>Details</summary>
-<p>
-Kv_memory = gpu-memory-util (0.95) * total_memory - peak_memory
-peak_memory = weights_memory + activation_memory静态部分 动态部分
-hidden_state = 7168 * 128K * 2 = 1.75G
-MLP intermediate hidden = 18432*128K = 4.5G
-MOE_hidden_state= 7168 * 8 * 128K * 2 = 14G
-Kv_block = kv_memory / bytes_pretoken / token_preblock
-bytes_pretoken = num_layer * kv_heads * head_size * 2   (deepseek_v3 = 0.067MB)
-128K = 8.58GB
-</p><ul>
-<li>
-<p><strong>Matmul耗时：</strong></p>
-<p>[ [M, K] *[K, N] = [M, N] ]</p>
-<ul>
-<li>( M=	ext{num_tokens} ); ( K, N=7168 )</li>
-<li>计算量: (2MKKN)</li>
-<li>计算耗时:
-<ul>
-<li>(2MKKN / 376T) flops = 7.95us (M=32)；1018us (M=4096)</li>
-</ul>
-</li>
-<li>访存量:
-<ul>
-<li>(M<em>K + K</em>N);</li>
-</ul>
-</li>
-<li>访存耗时：
-<ul>
-<li>((M<em>K + K</em>N))/(2T) = 46.9us (M=32); 73us (M=4096)</li>
-</ul>
-</li>
-</ul>
-</li>
-</ul>
-<p></p>
-</details> 
+sizeof(dtype)：FP16/BF16→2字节；INT8/FP8→1字节；FP32→4字节</p>
 <h1>HCCL</h1>
 <p>华为对应集合通信库，支持allreduce、broadcast、allgather、reduceScatter、AlltoAll等通信原语<br>
 broadcast：1到多<br>
