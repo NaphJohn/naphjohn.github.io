@@ -92,7 +92,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li><strong>prefill（预填充，并行处理输入的 tokens）</strong>：假设 prompt 的长度是 350 token，那么预填充所需要的时间 = number of tokens * ( number of parameters / accelerator compute bandwidth) = 350 * (2 * 7B) FLOP / 125 TFLOP/s = 39 ms（A10)。这个阶段主要是<strong>计算瓶颈。</strong></li>
 <li><strong>decoding（解码，逐个生成下一个 token。）</strong>：time/token = total number of bytes moved (the model weights) / accelerator memory bandwidth = (2 * 7B) bytes / (600 GB/s) = 23 ms/token（A10)。这个阶段的瓶颈是<strong>带宽。</strong></li>
 </ol>
-<p>kvcache节省了那部分计算？</p>
+<p>kvcache原理：自回归生成时，把之前所有 token 已经算过的 K/V 矩阵缓存到 HBM，下次只算新 token 的 Q/K/V，然后拼接历史 K/V 做注意力，避免 O(n²) 重复计算，<br>
+kvcache节省了那部分计算？</p>
 <details><summary>Details</summary>
 <p>
 1. FFN阶段本质上是两个矩阵乘计算，token之前互不影响，因此使用kv cache可以将计算量节省为原来的1/S
