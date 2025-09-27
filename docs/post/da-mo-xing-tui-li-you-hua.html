@@ -86,92 +86,10 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li>QuaRot、SpinQuant等基于旋转的方法；</li>
 <li>gptq等精度补偿方法</li>
 </ol>
-<p><strong>spinquant旋转量化</strong>：用可学习的正交旋转矩阵把权重 &amp; 激活里的离群值“转平”，再对旋转后的矩阵做 4-bit 量化；旋转过程与网络输出数值等价，只改分布不改结果，却显著降低量化误差。量化步骤如下：</p>
-<details><summary>Details</summary>
-<p>
-量化步骤（四步流程）
-1. 旋转参数化
-在 Transformer 块内插入 4 类正交旋转矩阵 R₁～R₄（见图）
-R₁/R₂ 与权重合并（离线），R₃/R₄ 在线作用于激活 &amp; KV-Cache
-所有 R 满足 R Rᵀ = I，因此 Y = X W ≡ (X R)(Rᵀ W)，输出数值不变
-2. 学习旋转
-冻结原权重，仅优化 R
-用 Cayley SGD 在 Stiefel 流形上更新，保证始终正交
-损失 = 旋转 + 4-bit 量化后 vs 全精度输出的 MSE
-训练 30 min（7B）～3.5 h（70B）自动收敛
-3. 分段校准选量化点
-权重：128×128 超级块 → 32×32 子块，MSE 最优对称缩放 s（z=0）
-激活/KV：1×128 行级动态量化，每行实时算 s
-两级缩放因子 → 硬件张量核友好
-4. 4-bit 部署
-权重 W4，激活 A4，KV-Cache INT4
-推理时 R₃/R₄ 用 Hadamard（±1）零乘实现，额外延迟 &lt;1 %
-</p><p>优势：<br>
-精度高：在w4a4/kv4全4bit场景刷新PTQ记录；<br>
-鲁棒性好：学习选装方差小；<br>
-兼容性强：可叠加GPTQ、AWQ<br>
-推理延迟低：离线旋转零代价</p>
-<p></p>
-</details> 
-<p><strong>smoothquant量化</strong>：校准（离线统计 |X| 的 per-channel 最大值）--平滑变化--量化--int8推理。<br>
+<p><strong>缩放量化方式</strong><br>
+<strong>smoothquant量化</strong>：校准（离线统计 |X| 的 per-channel 最大值）--平滑变化--量化--int8推理。<br>
 SmoothQuant 用「离线 max 统计 + α 幂调和」算出 per-channel 向量 s，把激活离群值先除以 s，再把 s 吸进权重，实现 W8A8 而几乎不掉点</p>
-<p><strong>awq量化</strong>：识别重要权重--找最优缩放因子--量化重建。AWQ 用「校准集平均幅值 + 20 点 α 网格搜索」得到 per-channel 向量 s，只放大显著通道的权重，把量化误差从激活赶到权重，再靠 4 bit 权重吸收掉<br>
-awq与smoothquant量化区别：</p>
-<details><summary>Details</summary>
-<p>
-awq:  量化点只对「输入通道」维度做 per-channel 量化，且只保护 ≈0.1% 的显著通道;
-缩放因子 s 怎么来:
-以「输入校准集在该通道的平均绝对值」sx 当成显著性指标，再引入一个 0≤α≤1 的超参做折中：
-s = sx^α      （逐通道向量）
-α=0  → 不缩放；α=1  → 最激进放大显著权重。
-由于量化函数不可导，作者用 网格搜索 找最优 α：在 [0,1] 区间等距取 20 个点，对每一 α 计算整层输出 MSE，挑损失最小的 α*，从而确定最终 s 
-</p><markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th></th>
-<th>AWQ</th>
-<th>SmoothQuant</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>量化精度</td>
-<td>W4A16</td>
-<td>W8A8</td>
-</tr>
-<tr>
-<td>缩放对象</td>
-<td>仅显著权重（~0.1% 通道）</td>
-<td>所有权重+激活（100% 通道）</td>
-</tr>
-<tr>
-<td>缩放因子</td>
-<td>sx^α（α 搜 20 点）</td>
-<td>sx^α / sw^(1−α)（α 经验）</td>
-</tr>
-<tr>
-<td>搜索方式</td>
-<td>网格搜最小输出 MSE</td>
-<td>闭式公式 + 小范围扫 α</td>
-</tr>
-<tr>
-<td>硬件粒度</td>
-<td>per-channel 权重</td>
-<td>per-token 激活 + per-channel 权重</td>
-</tr>
-<tr>
-<td>推理开销</td>
-<td>零（scale 已融进量化参数）</td>
-<td>零（同样融合）</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<p></p>
-</details> 
-<details><summary>Details</summary>
-<p>
-SmoothQuant 的 s 是通过校准集统计激活和权重的最大绝对值得到的
-</p><p>量化过程：</p>
+<p>SmoothQuant 对应量化过程：</p>
 <ol>
 <li>步骤一：校准（Calibration） - 离线的，只做一次<br>
 准备校准数据：从训练集中选取一小批（几百条）有代表性的样本。<br>
@@ -180,60 +98,99 @@ SmoothQuant 的 s 是通过校准集统计激活和权重的最大绝对值得�
 <ul>
 <li>输入激活值 X 的每通道绝对值最大值（即每个通道的 max(|X_i|)）。</li>
 <li>权重 W 的每输出通道绝对值最大值（即每个输出通道的 max(|W_j|)）。<br>
-计算缩放因子 s：s = max(|X_i|) ^ α / max(|W_j|) ^ (1-α)  通常α选取0.5</li>
+计算缩放因子 s：s = max(|X_i|) ^ α / max(|W_j|) ^ (1-α)  通常α选取0.5。<br>
+缩放因子是基于单个统计量（最大值） 计算的。它平衡了两个张量的最大值，但无法完美平衡整个数值分布（如均值、方差、尾部形状）。是主要误差来源</li>
 </ul>
 <ol start="2">
 <li>步骤二：数学变换（Online Transformation） - 离线的，只做一次</li>
 <li>量化（Quantization） - 离线的，只做一次</li>
 <li>INT8 推理（Inference） - 在线的，每次都用</li>
 </ol>
-<p></p>
-</details> 
-<p>四种量化方式比较：</p>
+<p>主要误差来源：</p>
+<ol>
+<li>迁移不完美误差（最主要）</li>
+<li>权重量化误差增大</li>
+<li>超参数 α选择误差</li>
+<li>基础舍入误差</li>
+</ol>
+<p><strong>awq量化</strong>：识别重要权重--找最优缩放因子--量化重建。AWQ 用「校准集平均幅值 + 20 点 α 网格搜索」得到 per-channel 向量 s，只放大显著通道的权重，把量化误差从激活赶到权重，再靠 4 bit 权重吸收掉</p>
+<p><strong>旋转的量化方式</strong><br>
+<strong>spinquant旋转量化</strong>：用可学习的正交旋转矩阵把权重 &amp; 激活里的离群值“转平”，再对旋转后的矩阵做 4-bit 量化；旋转过程与网络输出数值等价，只改分布不改结果，却显著降低量化误差。量化步骤如下：</p>
+<p>旋转量化，AWQ、smoothquant量化中对应的零点是怎么选的，缩放因子呢：<br>
+“旋转类→先转平再 MSE 选 s，z 恒 0；AWQ→激活统计搜 α 搬 0.1 % 通道；SmoothQuant→max 平滑搬全部通道，s 手工调；三者都用对称量化 z=0，硬件零成本。”</p>
 <details><summary>Details</summary>
 <p>
-核心算法原理详解
-</p><markdown-accessiblity-table><table role="table">
+</p><p>四种量化方式对比，主要包含量化原理，误差来源，量化步骤，增加对应量化公式</p>
+<h3>对比表格</h3>
+<markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
-<th align="left">算法</th>
-<th align="left">核心原理</th>
-<th align="left">解决的核心问题</th>
+<th align="left">特征</th>
+<th align="left">基于缩放（SmoothQuant, AWQ）</th>
+<th align="left">基于旋转（QuaRot, SpinQuant）</th>
+<th align="left">精度补偿（GPTQ）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td align="left"><strong>GPTQ</strong></td>
-<td align="left"><strong>二阶信息补偿</strong>：基于OBQ方法，逐层量化。利用Hessian矩阵（二阶导数）来精确评估每个权重的重要性，并调整其他权重来补偿当前权重量化造成的误差。</td>
-<td align="left">如何在极低比特（4/3/2bit）下，尽可能减少权重量化带来的累积误差。</td>
+<td align="left"><strong>核心思想</strong></td>
+<td align="left">在权重和激活间迁移/调整量化难度</td>
+<td align="left">将权重投影到更易量化的空间</td>
+<td align="left">量化同时更新未量化权重以补偿误差</td>
 </tr>
 <tr>
-<td align="left"><strong>AWQ</strong></td>
-<td align="left"><strong>激活感知</strong>：通过分析校准数据的激活值尺度，识别出“重要权重”，并为这些权重分配更高的量化精度（更宽的量化区间）。</td>
-<td align="left">如何在不依赖复杂二阶计算的情况下，找到更智能的量化保护策略。</td>
+<td align="left"><strong>主要操作</strong></td>
+<td align="left">逐通道缩放（对角矩阵变换）</td>
+<td align="left">正交变换（旋转，如 SVD）</td>
+<td align="left">贪心量化 + 权重更新</td>
 </tr>
 <tr>
-<td align="left"><strong>SmoothQuant</strong></td>
-<td align="left"><strong>难度迁移</strong>：发现激活值比权重更难量化（因有异常值）。通过一个数学上等价的每通道缩放因子，将量化难度从激活值“平滑地”转移到更易于量化的权重上。公式：<code class="notranslate">(X / s) * (W * s) = X * W</code></td>
-<td align="left">如何实现权重和激活值全INT8量化，从而在仅支持INT8的硬件上获得最大加速。</td>
+<td align="left"><strong>误差来源</strong></td>
+<td align="left">缩放因子估计不准、权重误差增大</td>
+<td align="left">变换后的量化误差、计算开销</td>
+<td align="left">贪心顺序、海森矩阵近似误差</td>
 </tr>
 <tr>
-<td align="left"><strong>FP8 (E4M3/E5M2)</strong></td>
-<td align="left"><strong>硬件友好型模拟</strong>：直接使用8位浮点数格式，而非整数。保留指数位，动态范围大。前向推理用E4M3，训练用E5M2。</td>
-<td align="left">如何在不引入复杂算法（如缩放、补偿）的情况下，实现一种通用、高性能、硬件原生支持的全栈（权重+激活+计算）低精度格式。</td>
+<td align="left"><strong>量化步骤</strong></td>
+<td align="left">1. 校准统计量<br>2. 计算缩放因子<br>3. 缩放W和X<br>4. 分别量化</td>
+<td align="left">1. 矩阵分解/优化求变换<br>2. 变换权重<br>3. 量化新权重<br>4. 修改计算图</td>
+<td align="left">1. 计算海森逆近似<br>2. 贪心选择权重量化<br>3. 误差补偿更新<br>4. 迭代至完成</td>
+</tr>
+<tr>
+<td align="left"><strong>关键公式</strong></td>
+<td align="left">( s_j = \frac{(M_X^{(j)})^{\alpha}}{(M_W^{(j)})^{1-\alpha}} ) (SmoothQuant)<br>( s_j = m_j^{\alpha} ) (AWQ)</td>
+<td align="left">( W = U \Sigma V^T ), ( P = \Sigma V^T )</td>
+<td align="left">( \Delta W_{i, \setminus j} = -\frac{\epsilon}{H^{-1}<em>{jj}} H^{-1}</em>{j, \setminus j} )</td>
+</tr>
+<tr>
+<td align="left"><strong>处理离群值</strong></td>
+<td align="left"><strong>显式处理</strong>：通过缩放抑制激活中的离群通道。</td>
+<td align="left"><strong>隐式处理</strong>：通过变换将离群特征“分散”到整个空间中。</td>
+<td align="left"><strong>间接处理</strong>：通过误差补偿来减轻重要权重（可能包含离群值）的量化影响。</td>
+</tr>
+<tr>
+<td align="left"><strong>权重分布</strong></td>
+<td align="left">分布形态不变，但尺度被缩放。AWQ 是非均匀缩放。</td>
+<td align="left">分布被<strong>重塑</strong>，通常变得更均匀/高斯化。</td>
+<td align="left"><strong>不改变</strong>原始分布，但通过补偿改变了最终量化值的分布。</td>
+</tr>
+<tr>
+<td align="left"><strong>优势</strong></td>
+<td align="left">直观有效，尤其适合激活值有离群值的场景，易于部署。</td>
+<td align="left">从数学原理上优化量化空间，可能达到更高的理论极限。</td>
+<td align="left">精度高，通常是Post-Training Quantization中精度最高的方法之一。</td>
+</tr>
+<tr>
+<td align="left"><strong>劣势</strong></td>
+<td align="left">依赖超参数和校准数据，可能无法处理所有情况。</td>
+<td align="left">计算复杂，可能引入额外推理开销，实现难度大。</td>
+<td align="left">校准过程慢，逐层操作耗时，海森矩阵计算对资源要求高。</td>
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
-<p>包含w8a8,w4a16,w8a16,w8a8c8(perchannel以及pertoken)<br>
-一般像w8a8都是激活层pertoken，权重层perchannel量化；一般使用对称量化，非对称对硬件都有要求，计算会变慢，但是精度提升。量化同时降低首token时延和增量推理时延。</p>
-<p>量化中计算参考文章：<a href="https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-quantization" rel="nofollow">https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-quantization</a></p>
-<p>常用的一些数值：<br>
-NRMSE 看整体误差，Skewness/Kurtosis 找离群，Energy_ratio 找主通道，Radio/MaxTail 给 SmoothQuant 放大系数</p>
 <p></p>
-</details>
-<p>旋转量化，AWQ、smoothquant量化中对应的零点是怎么选的，缩放因子呢：<br>
-“旋转类→先转平再 MSE 选 s，z 恒 0；AWQ→激活统计搜 α 搬 0.1 % 通道；SmoothQuant→max 平滑搬全部通道，s 手工调；三者都用对称量化 z=0，硬件零成本。”</p>
-<h2>优化项目</h2>
+</details> 
+<h1>优化项目</h1>
 <p>量化项目一：精度修复<br>
 “先回退保上线，再旋转精修+层/Token级FP16补丁，显存再省12 %且零重启。”<br>
 算子优化项目二：算子优化<br>
