@@ -127,11 +127,11 @@ awq具体过程：<br>
 <strong>spinquant旋转量化</strong>：用可学习的正交旋转矩阵把权重 &amp; 激活里的离群值“转平”，再对旋转后的矩阵做 4-bit 量化；旋转过程与网络输出数值等价，只改分布不改结果，却显著降低量化误差。量化步骤如下：</p>
 <p>旋转量化，AWQ、smoothquant量化中对应的零点是怎么选的，缩放因子呢：<br>
 “旋转类→先转平再 MSE 选 s，z 恒 0；AWQ→激活统计搜 α 搬 0.1 % 通道；SmoothQuant→max 平滑搬全部通道，s 手工调；三者都用对称量化 z=0，硬件零成本。”</p>
+<p>四种量化方式对比，主要包含量化原理，误差来源，量化步骤，增加对应量化公式如下：</p>
 <details><summary>Details</summary>
 <p>
-</p><p>四种量化方式对比，主要包含量化原理，误差来源，量化步骤，增加对应量化公式</p>
-<h3>对比表格</h3>
-<markdown-accessiblity-table><table role="table">
+### 对比表格
+</p><markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th align="left">特征</th>
