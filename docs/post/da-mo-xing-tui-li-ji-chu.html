@@ -295,25 +295,51 @@ K 和 V 的个数减少到 g 个（n_heads &gt;= g）。
 </p>
 </details> 
 <p><strong>MOE架构：</strong><br>
-共享专家，若干路由专家组成，由门控网络选择top-k个专家</p>
+一个共享专家，若干路由专家组成，由门控网络选择top-k个专家。对应结构原理，计算不爆炸原因，好处如下：</p>
 <details><summary>Details</summary>
 <p>
-moe中一个重要的点是控制负载均衡损失 (Load Balancing Loss)：为了解决这个问题，会在损失函数中加入一个辅助损失项，鼓励所有专家都能被均衡地使用。
-</p><p>优势：<br>
-每次只计算少数专家，减少了内存，加快了计算</p>
-<p>参考链接：<br>
-[<a href="https://fancyerii.github.io/2019/03/09/transformer-illustrated/#%E6%AE%8B%E5%B7%AE%E8%BF%9E%E6%8E%A5" rel="nofollow">https://fancyerii.github.io/2019/03/09/transformer-illustrated/#残差连接</a>](<a href="https://fancyerii.github.io/2019/03/09/transformer-illustrated/#%E6%AE%8B%E5%B7%AE%E8%BF%9E%E6%8E%A5" rel="nofollow">https://fancyerii.github.io/2019/03/09/transformer-illustrated/#%E6%AE%8B%E5%B7%AE%E8%BF%9E%E6%8E%A5</a>)</p>
+1. 结构原理：
+| 步骤         | 公式                     | 说明                         |
+| ---------- | ---------------------- | -------------------------- |
+| ① 路由决策     | `g = Softmax(W_r · x)` | 轻量级门控网络，输出 N 个专家的权重        |
+| ② Top-K 选择 | `TopK(g, k=1~2)`       | 只保留最大 1~2 个值，其余置 −∞ → 稀疏门控 |
+| ③ 专家计算     | `y_i = Expert_i(x)`    | 被选中的专家各自做标准 FFN（SwiGLU 等）  |
+| ④ 加权合并     | `y = Σ g_i · y_i`      | 把激活专家的输出按门控权重加回残差流         |
+实际部署：每隔 P 层（P=1,2,4…）把原来的 单层 FFN 换成 MoE 层即可，其余 Attention 保持不变
+</p><ol start="2">
+<li>
+<p>为什么能“参数爆炸而计算不爆炸”<br>
+稀疏激活：每 token 只触达 k/N ≈ 5–10 % 参数<br>
+例：DeepSeek-V3 总 671 B，每次仅 37 B 激活 → FLOPs 降到稠密模型的 30 % 以下。<br>
+计算与参数解耦：增加专家数量 → 容量线性↑，延迟几乎不变（专家并行 + 预取）。<br>
+硬件友好：专家权重分片到不同 GPU，通信量 ≈ 门控向量 + 激活张量，远低于稠密模型 All-Gather。</p>
+</li>
+<li>
+<p>好处<br>
+| 好处                 | 数据佐证                                                                |<br>
+| ------------------ | ------------------------------------------------------------------- |<br>
+| <strong>1. 容量↑ 计算成本≈常数</strong> | 同 FLOP 预算下，MoE 版比 Dense 困惑度低 <strong>10–15 %</strong>；1 T 参数模型训练成本 ≈ 100 B 稠密模型。 |<br>
+| <strong>2. 推理加速</strong>        | 稀疏激活使 <strong>首 token 延迟 ↓ 20–40 %</strong>，吞吐 ↑ 2×（vLLM + 专家并行实测）。              |<br>
+| <strong>3. 专家自动特化</strong>      | 可视化显示：某些专家 80 % 流量来自代码 token，某些专吃中文，<strong>减少任务冲突</strong>→ 多任务精度 ↑。            |<br>
+| <strong>4. 超长序列外推更容易</strong>   | 相同计算预算可把层数/头维加大，<strong>ROPE + 专家特化</strong>在 64 k 上下文上仍保持低困惑度。                  |</p>
+</li>
+</ol>
 <p></p>
 </details>
-<p><strong>Mask原理</strong><br>
-mask 就是布尔矩阵，True 处 logits→−∞，softmax 后概率=0，实现 pad 屏蔽 + 自回归 + 任意可见性控制，形状随场景从 (B,L) 到 (L,L) 不等。<br>
-比如因果掩码：防止标签泄漏，应用在Decoder的自注意力层（在训练和推理中均使用）。<br>
+<p><strong>Mask原理</strong></p>
+<p>今天的大模型掩码全是下三角 Causal，可选 pad/文档屏蔽；形状统一写成 (B,1,L,L) Boolean，True 表示可见。</p>
+<p>比如因果掩码：防止标签泄漏，应用在Decoder的自注意力层（在训练和推理中均使用）。<br>
 填充掩码 (Padding Mask)：忽略填充符号，应用在Encoder和Decoder的自注意力层（主要用于处理批量数据）。</p>
+<p>qwen3的mask如下：</p>
 <details><summary>Details</summary>
 <p>
-在编码器（Encoder）中：通常只需要 Padding Mask，因为Encoder是一次性看到整个输入序列的。
-</p><p>在解码器（Decoder）中：需要同时使用 Padding Mask 和 Causal Mask（两者相加），既不能看Pad token，也不能看未来的token。</p>
-<p></p>
+qwen3
+| 掩码类型          | 形状                           | 值                | 说明            |
+| ------------- | ---------------------------- | ---------------- | ------------- |
+| **默认 Causal** | `(B, 1, L, L)`               | 下三角 1，其余 0       | 单条生成时完全自动     |
+| **序列级 mask**  | `(B, L)` → 扩为 `(B, 1, L, L)` | 有效 token=1，pad=0 | 批处理时屏蔽右侧 pad  |
+| **完全自定义**     | `(B, 1, L, L)`               | 用户任意 Bool        | 支持人工控制可见范围    |
+</p>
 </details>
 <h2>LLM 推理的核心指标</h2>
 <details><summary>Details</summary>
