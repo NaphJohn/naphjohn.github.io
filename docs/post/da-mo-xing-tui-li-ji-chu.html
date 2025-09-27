@@ -82,11 +82,11 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <div class="markdown-body" id="postBody"><h1>LLM的推理/transformer架构/vllm</h1>
 <h2>LLM 推理的推理过程</h2>
 <p>目前主流LLM都是基于transformer的Decoder-only架构，因为 Decoder-only 架构<strong>在“大规模无监督预训练”这个特定范式下，展现出了更好的可扩展性（Scalability）和任务通用性。</strong></p>
-<p>输入文本进入后，经过分词和嵌入转为向量表示，再经过多层堆叠的Decoder Block，每个block中经过Norm（LayerNorm or RMSNorm）、Attention、FFN三个部分，多层这样的 Decoder Block 堆叠后，模型会输出一个隐藏状态序列，最后通过 线性变换 和解码机制（softmax、top-K、top-P、beam serch等）。</p>
+<p>总体过程如下：<br>
+输入Token -&gt; 嵌入 -&gt; 加上位置编码 -&gt; 通过N个Transformer层 -&gt; 最终层归一化 -&gt; 语言模型头 -&gt; 概率分布 -&gt; 输出Token</p>
 <blockquote>
 <p>[!TIP]</p>
 </blockquote>
-<p>输入Token -&gt; 嵌入 -&gt; 加上位置编码 -&gt; 通过N个Transformer层 -&gt; 最终层归一化 -&gt; 语言模型头 -&gt; 概率分布 -&gt; 输出Token</p>
 <p>让我们以 Llama2-7B（4096 序列长度，float16精度）为例，计算一下 batch_size = 1的理想推理速度。</p>
 <ol>
 <li><strong>prefill（预填充，并行处理输入的 tokens）</strong>：假设 prompt 的长度是 350 token，那么预填充所需要的时间 = number of tokens * ( number of parameters / accelerator compute bandwidth) = 350 * (2 * 7B) FLOP / 125 TFLOP/s = 39 ms（A10)。这个阶段主要是<strong>计算瓶颈。</strong></li>
@@ -99,8 +99,9 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 2. RMSNorm本质是对每一个token的隐状态做归一化，token之间是互相独立的，因此计算量为原来的1/S
 3. Attention阶段由于Q和K做gemm，会得到一个shape为[S，S]的向量，在seqlen比较大的情况下，计算复杂度为O(S^2)，使用kv cache之后，Attention计算复杂度变为O(S)，计算Q、K、V的GEMM运算降为GEMV运算，整体计算量为原来的1/S;
 4. 其他的Embedding等计算量比较小，大约也为原来计算量的1/S；
-</p><h3>Transformer 中典型的 Token-wise 操作：</h3>
-<p>对于 Token-wise 操作（如FFN、Norm、新token的QKV投影），它们天然地只需要处理新 token 即可。计算量是固定的，与生成长度 S 无关</p>
+</p><h3>Transformer 中每一层对应细节</h3>
+<p>Transformer 中典型的 Token-wise （“对每个 token 单独做同样的计算，token 之间不交换信息”）操作：<br>
+对于 Token-wise 操作（如FFN、Norm、新token的QKV投影），它们天然地只需要处理新 token 即可。计算量是固定的，与生成长度 S 无关</p>
 <markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
