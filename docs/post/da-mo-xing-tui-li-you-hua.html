@@ -352,32 +352,6 @@ Triton 实现，延迟 &lt;2 µs，占空比 &lt;0.3 %。</li>
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th>粒度</th>
-<th>实现细节</th>
-<th>原因</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Layer</strong></td>
-<td><code class="notranslate">blockIdx.z</code> 直接当 <code class="notranslate">layer_id</code></td>
-<td><strong>硬件 z 维免费</strong>；<strong>0 额外寄存器</strong></td>
-</tr>
-<tr>
-<td><strong>Token</strong></td>
-<td><code class="notranslate">token_id &gt;&gt; 6</code> 映射到 mask 中间 12 bit</td>
-<td><strong>64 token 共用一个 bit</strong> → 12 bit 够 4096 token；<strong>移位在寄存器里完成</strong></td>
-</tr>
-<tr>
-<td><strong>Batch</strong></td>
-<td><code class="notranslate">sample_id</code> 高 5 bit</td>
-<td><strong>一次 launch 最多 32 样本</strong>，5 bit 够用；<strong>其余 bit 留 head/token</strong></td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
 <ol start="4">
 <li>动态兜底<br>
 修改vllm测的代码，包含attention.py，采集中间激活；<br>
