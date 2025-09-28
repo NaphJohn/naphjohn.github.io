@@ -216,7 +216,7 @@ awq具体过程：<br>
 “16-token页式KV+算子重排的方式优化，短序列长尾显存-15 %，吞吐+8 %，碎片归0。”<br>
 W8A8C8优化项目三：<br>
 “8-bit KV+4-bit离群补丁，显存再省12 %，精度还涨1.7，延迟&lt;5 µs看不见。”</p>
-<h3>量化项目一：  低精度解决幻觉问题</h3>
+<h3>量化优化项目一：  低精度解决幻觉问题</h3>
 <p>产生根因原因： INT8 误差 + 自回归放大（语料缺失/强化对齐阶段宁可编也要答） &gt; 模型固有幻觉</p>
 <p>把 INT8 误差拿掉以后，再叠加“不确定时回退”策略，相当于在原始 bf16 之上又加了一层保守校正，于是幻觉率可以反杀 FP32。</p>
 <p><strong>主要思路</strong>  = 「先全局低精度省内存，再精准把 1 % 容易放大误差的层/Token 无缝切回 FP16」，用最小的高精度代价把量化引入的幻觉压回到比原始 FP32 还低的水平。</p>
@@ -259,7 +259,7 @@ W8A8C8优化项目三：<br>
 </table></markdown-accessiblity-table>
 <p><strong>主要过程分为下面四步</strong></p>
 <ol>
-<li>离线体检用「KL + R + Energy_ratio」三选一标敏感层<br>
+<li>离线三选一标敏感层「KL + R + Energy_ratio」<br>
 用 512~2048 条真实线上 prompt 跑一次「伪量化」对照实验，计算每条通道的kl散度，离散值，Energy_ratio</li>
 </ol>
 <ul>
@@ -316,7 +316,7 @@ KL 误差 = 量化前后该层输出分布之间的 KL 散度（Kullback-Leibler
 </details> 
 <p>把「一旦量化就会误差爆炸」的层/Token 标成「必须 bf16」；其余放心 INT4/8。将结果写进 sensitive_layers.json，一次生成，全生命周期复用。</p>
 <ol start="2">
-<li>权重打包只留 8.75 % 层做 bf16，显存省 41 %，无翻倍。<br>
+<li>权重打包只留敏感层做 bf16，显存省 41 %，无翻倍。<br>
 磁盘里同时存两份：</li>
 </ol>
 <ul>
@@ -325,7 +325,8 @@ KL 误差 = 量化前后该层输出分布之间的 KL 散度（Kullback-Leibler
 加载时到同一块显存</li>
 </ul>
 <ol start="3">
-<li>运行时选路<br>
+<li>算子测适配fp16/int8<br>
+用 64-bit 掩码当‘红绿灯’，让同一条kernel 在 layer/token/batch三个维度上细粒度地瞬间选 FP16 还是 INT8<br>
 kernel 里加一条 if (mask &amp; bit) fp16_matmul else int8_matmul，粒度可到层/Token/Batch；<br>
 Triton 实现，延迟 &lt;2 µs，占空比 &lt;0.3 %。</li>
 </ol>
@@ -379,9 +380,13 @@ Triton 实现，延迟 &lt;2 µs，占空比 &lt;0.3 %。</li>
 </table></markdown-accessiblity-table>
 <ol start="4">
 <li>动态兜底<br>
-在线统计每个请求的中间激活，若 KL&gt;0.02或偏度大于3（表面右边有尖刺）立即把该请求剩余 Token 全部切 FP16，单条回退，不影响别人。<br>
-全程热插拔，无需重启服务。</li>
+修改vllm测的代码，包含attention.py，采集中间激活；<br>
+vllm/dynamic_fallback.py-- 在线统计 + 触发回退；<br>
+vllm/core/scheduler.py--掩码热插拔；<br>
+vllm/kernels/custom_quant.py-- Kernel 侧读掩码。</li>
 </ol>
+<p>在线统计每个请求的中间激活，若 KL&gt;0.02或偏度大于3（表面右边有尖刺）立即把该请求剩余 Token 全部切 FP16，单条回退，不影响别人。<br>
+全程热插拔，无需重启服务。</p>
 <details><summary>Details</summary>
 <p>
 </p>
