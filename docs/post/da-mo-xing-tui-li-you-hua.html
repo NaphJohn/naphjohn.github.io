@@ -212,10 +212,10 @@ awq具体过程：<br>
 <h1>优化项目</h1>
 <p>量化项目一：低精度解决幻觉问题<br>
 “先回退保上线，再量化+层/Token级FP16补丁，显存再省12 %且零重启。”<br>
-算子优化项目二：算子优化<br>
-“旋转+分块+重排，KV带宽打满，QPS+18 %，P99照样&lt;500 ms。”<br>
-优化项目三：Page_Attention 上内存节省15%<br>
+优化项目二：Page_Attention 上内存节省15%<br>
 “16-token页式KV，短序列长尾显存-15 %，吞吐+8 %，碎片归0。”<br>
+算子优化项目三：算子优化<br>
+“旋转+分块+重排，KV带宽打满，QPS+18 %，P99照样&lt;500 ms。”<br>
 W8A8C8优化项目五：<br>
 “8-bit KV+4-bit离群补丁，显存再省12 %，Rouge-L还涨1.7，延迟&lt;5 µs看不见。”</p>
 <h3>量化项目一：  低精度解决幻觉问题</h3>
@@ -665,6 +665,8 @@ $n$ ：样本数量</li>
 逻辑块：每个序列的KV Cache被视为由多个非连续的逻辑块组成的链表。<br>
 块表：维护一个逻辑块到物理块的映射表。</p>
 <p>主要思路：“把 KV-Cache 的显存管理从『大块连续预分配』改成『16-token 对齐、512 B 物理对齐、位图式微页管理』，用 6 万张小页代替 4096-token 大页，碎片率从 95% 降到 2.6%，带宽 +6%，端到端显存省 15%，吞吐提 8%。”</p>
+<p>权重是怎么分布的：<br>
+我把 235 B 拆到 64 卡，先拿 safetensors.index 累加确认单卡 9.1 GB；再用 nsys 看通信只占 3 %，于是把 KV-Cache 内存池做成 16-token 位图，页表长度随 TP 再除 8，结果 4 M 页/512 KB 位图可全放 L2，长尾 FAQ 显存省 15 %，对 235 B 这种巨无霸同样适用</p>
 <p>场景：金融 FAQ 短查询长尾，连续预分配 4096 导致 95% 空放<br>
 动作：</p>
 <ol>
@@ -757,6 +759,55 @@ __atomic_fetch_and(&amp;bmp[idx &gt;&gt; 6], ~(1ULL &lt;&lt; (idx &amp; 63)), __
 Qwen-7B batch=64、max_seq=4096、金融 FAQ 1000 条：<br>
 峰值显存 38.4 GB → 32.6 GB（-15%），吞吐 +8%，P99 延迟持平。</li>
 </ol>
+<h3>优化项目三：算子优化（建议不讲或者只讲一部分）</h3>
+<p>通过旋转+分块+重排，KV带宽打满，QPS+18 %，P99照样</p>
+<p>我在 Qwen3-14B 里用 910C 跑一条金融 FAQ，发现 35% 的时间卡在“搬数据”（HBM 带宽被吃满）。</p>
+<p>带宽指标：<br>
+Memory Throughput (HBM)<br>
+当前 HBM 读取 + 写入带宽 GB/s<br>
+Memory Utilization<br>
+0%–100% 的百分比，&gt;85% 通常视为“吃满”</p>
+<ol>
+<li>连续搬货<br>
+原来 [B,H,S,D] 像“隔 128 B 跳格子”→ 30 % Warp 空等。<br>
+换成 [B,S,H,D] → seq 维连续，128 B cache-line 100% 填满，<br>
+→ HBM 带宽 65 % → 88 %（实测）</li>
+</ol>
+<p>具体细节：用npu采集工具<br>
+Nsight Compute → Memory Workload → L2 Cache<br>
+128 B 突发有效带宽 仅 25 %；<br>
+stride = head_dim × sizeof(float) = 128 B → 每个线程跳 128 B，落在不同 cache-line，只用到 1/4 带宽。</p>
+<p>原先布局 [B,H,S,D] → 步长 = head_dim × sizeof(float) = 128 B<br>
+Warp 32 线程连续编号 → 每个线程读 +128 B 偏移<br>
+结果：<br>
+线程 0 读 addr<br>
+线程 1 读 addr+128 B<br>
+…<br>
+线程 31 读 addr+31×128 B<br>
+→ 32 个请求落在 32 条不同 128 B cache-line，硬件只能 串行发射 32 次，<br>
+→ 128 B 突发有效带宽 = 1/32 ≈ 3.1 %（实测 25 % 因部分命中 L2）。</p>
+<p>改成 [B,S,H,D] 后，同一 Warp 的 32 个线程<strong>按 seq 维连续编号</strong>：<br>
+线程 0 读 addr<br>
+线程 1 读 addr+4 B（float32）<br>
+…<br>
+线程 31 读 addr+31×4 B = addr+124 B<br>
+→ 32 个请求全部落在同一条 128 B cache-line 内，硬件 一次突发就完成，<br>
+→ 有效带宽 100 %，Warp 0 空等。</p>
+<ol start="2">
+<li>共享内存缓冲<br>
+在 NPU 里铺 32×32 瓷砖（shared memory tile），<br>
+GMEM → tile 12 次/元素 → 4 次/元素（减半）。<br>
+double-buffer：搬下一块时，当前块已在计算</li>
+</ol>
+<p>Cube 原生粒度<br>
+达芬奇矩阵乘 4×4×16，4×4=16 是最小 tile；2×2=4 拼接 → 32×32 刚好填满 Cube 单元无浪费。<br>
+共享内存容量<br>
+32×32×4 B = 4 KB，仅占 单 SM 164 KB 的 2.4 %，可双缓冲（8 KB）仍有余量。<br>
+缓存行甜点<br>
+32 线程 = 1 Warp，正好一次发射 128 B（32×4 B） → 0 bank-conflict。<br>
+经验谷底<br>
+蒙特卡洛仿真 8×8→64×64 碎片率曲线，32×32 处最低（2.8 %）。<br>
+→ 32×32 是带宽、容量、冲突三者的 Pareto 最优点，不是拍脑袋</p>
 <h3>量化优化项目五：  w8a8c8的量化</h3>
 <p>总目标：在 KV-Cache 8-bit 量化场景下，既省显存又不掉生成质量。</p>
 <p>分三步落地：<br>
