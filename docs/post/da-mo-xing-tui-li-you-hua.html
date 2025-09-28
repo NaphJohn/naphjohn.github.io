@@ -671,15 +671,15 @@ $n$ ：样本数量</li>
 动作：</p>
 <ol>
 <li>页大小量化<br>
-蒙特卡洛 100 k 随机长度仿真 → 16-token（512 KB）碎片率谷底 2.8%，对齐达芬奇 L2 cache-line（512 B）。</li>
+如何找对应的数字：当时做了一个蒙特卡洛 100 k 随机长度仿真 → 16-token（512 KB）碎片率谷底 2.8%，对齐达芬奇 L2 cache-line（512 B）。</li>
 </ol>
-<p>蒙特卡洛 100 k 随机长度仿真：</p>
+<p><strong>蒙特卡洛 100 k 随机长度仿真</strong>：</p>
 <ul>
 <li>用 Python 按金融 FAQ 真实长度分布（平均 200，σ=120，截断 4096）批量生成 10 万条虚拟序列。</li>
 <li>对不同页大小（8/16/32/64 token）分别跑「先分配→后释放」实验，统计无法被复用的空洞字节 → 碎片率。</li>
 <li>画碎片率-页大小曲线，16-token 处出现谷底 2.8%（图1），这就是“蒙特卡洛 100 k 仿真”。</li>
 </ul>
-<p>碎片率谷底 2.8%：</p>
+<p>碎片率最低点2.8%：</p>
 <ul>
 <li>量化“内存管理器”好坏：碎片率越低，同样显存能塞更多真实 token；</li>
 <li>选页大小依据：16-token 页 浪费最少，显存节省 15% 的源头就在这里。</li>
@@ -688,17 +688,17 @@ $n$ ：样本数量</li>
 <ol start="2">
 <li>页内布局优化</li>
 </ol>
-<p>第一步：咋发现的问题<br>
+<p>第一步：发现的问题<br>
 把模型跑起来后，用昇腾自带的 profiler 一看：Cube（矩阵乘单元）经常“发呆”，带宽没跑满。往下钻发现是“bank-conflict”——同一条 128 B 数据里，32 个线程抢同一个 bank，硬件只能排队重放，一个 cycle 变两个 cycle。</p>
 <p>第二步：512 B 怎么来的<br>
-达芬奇 L2 cache 一行就是 512 B；<br>
+<strong>达芬奇 L2 cache 一行就是 512 B</strong>；<br>
 共享内存 32 bank × 4 B = 128 B 一行，<br>
 512 B 正好是 4 行共享内存、1 行 L2 的最小公倍数。<br>
 只要让“每一页”从 512 B 边界开始，后面 32×32 的小方块就永远落在 bank 0-31 的“整整齐齐”位置，谁也不会抢谁的道。</p>
 <p>第三步：具体做了啥</p>
 <ul>
 <li>分配器多一句话：<code class="notranslate">addr = (addr + 511) &amp; ~511;</code></li>
-<li>写 KV 的算子把数据排成 <code class="notranslate">[page, 16, head, dim]</code>，一页 16 个 token，刚好 512 B 的倍数。<br>
+<li><strong>写 KV 的算子把数据排成 <code class="notranslate">[page, 16, head, dim]</code>，一页 16 个 token，刚好 512 B 的倍数</strong>。<br>
 做完这两步，profiler 里 bank-conflict 条直接归零，带宽利用率再提 6 %。</li>
 </ul>
 <ol start="3">
