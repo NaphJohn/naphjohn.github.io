@@ -211,7 +211,7 @@ awq具体过程：<br>
 </details> 
 <h1>优化项目</h1>
 <p>量化项目一：低精度解决幻觉问题<br>
-“先回退保上线，再旋转精修+层/Token级FP16补丁，显存再省12 %且零重启。”<br>
+“先回退保上线，再量化+层/Token级FP16补丁，显存再省12 %且零重启。”<br>
 算子优化项目二：算子优化<br>
 “旋转+分块+重排，KV带宽打满，QPS+18 %，P99照样&lt;500 ms。”<br>
 优化项目三：Page_Attention 上内存节省15%<br>
@@ -659,96 +659,104 @@ $n$ ：样本数量</li>
 </blockquote>
 <p></p>
 </details> 
-<h3>算子优化项目二：</h3>
-<p>根因是线程块划分不合理。多线程同步冲突导致计算效率低。<br>
-优化：通过共享内存复用，指令重排以及SM资源调度优化，算子吞吐量提升25%，端到端推理延迟降低18%</p>
-<p>问题：Qwen大模型推理时，Transformer层的多头注意力计算存在HBM带宽瓶颈，导致KV Cache读写延迟占比超35%。<br>
-行动：用npu工具开发融合“多头拆分+转置”的自定义算子，通过mindstudio发现线程束分化严重。<br>
-优化：</p>
-<p>共享内存分块存储KV矩阵，减少全局内存访问次数；<br>
-指令重排使访存模式连续，配合达芬奇核心的向量计算单元（VU）并行化；<br>
-线程块按头维度划分，避免跨头数据依赖。<br>
-效果：算子计算延迟降低22%，HBM带宽利用率从65%提升至88%，模型整体推理吞吐提升15%，支撑每秒多处理200+用户请求。</p>
-<details><summary>Details</summary>
-<p>
-### 具体优化步骤拆解：  
-1. **瓶颈定位**（Nsight Systems）：  
-   - 发现多头注意力中`scaled_dot_product_attention`算子的HBM读写耗时占比35%，线程束（Warp）在转置操作中存在30%空闲率（因数据非连续访问）。  
-</p><ol start="2">
-<li>
-<p><strong>算子重构设计</strong>：</p>
-<ul>
-<li><strong>数据布局优化</strong>：将KV Cache从<code class="notranslate">[batch, head, seq, dim]</code>转为<code class="notranslate">[batch, seq, head, dim]</code>，通过共享内存分块（32x32）存储，减少全局内存访问次数（从12次/元素降至4次）。</li>
-<li><strong>计算流融合</strong>：合并“多头拆分→转置→矩阵乘”三步为单算子，避免中间结果落盘。</li>
-</ul>
-</li>
-<li>
-<p><strong>硬件特性适配</strong>：</p>
-<ul>
-<li><strong>达芬奇核心调度</strong>：按<code class="notranslate">head</code>维度划分线程块（每个block处理2个head），利用NPU的Cube单元并行执行矩阵乘，激活函数（如GeLU）通过向量单元（VU）流水处理。</li>
-<li><strong>指令重排</strong>：将<code class="notranslate">load→compute→store</code>指令顺序调整为<code class="notranslate">预取load→compute→延迟store</code>，掩盖访存延迟。</li>
-</ul>
-</li>
-<li>
-<p><strong>验证与调优</strong>：</p>
-<ul>
-<li>通过TensorRT集成算子，对比原生PyTorch实现：单算子延迟从1.2ms降至0.92ms（-23%），HBM带宽从320GB/s提升至450GB/s（接近硬件峰值512GB/s）。</li>
-<li>端到端测试：Qwen-7B模型在昇腾910上的推理QPS从80增至95（+18.7%），满足千万级用户并发场景的延迟要求（P99&lt;500ms）。</li>
-</ul>
-</li>
-</ol>
-<p></p>
-</details> 
-<p>显存优化算子案例：<br>
-自定义FusedMultiHeadAttention算子（融合多头拆分+转置+矩阵乘），通过数据布局重构（KV Cache从[batch, head, seq, dim]→[batch, seq, head, dim]）和共享内存分块存储，减少全局内存访问次数（从12次/元素→4次），本质是显存访问模式优化。</p>
-<h3>优化项目三： Page_Attention 上内存节省15%</h3>
+<h3>优化项目二： PageAttention KV-Cache 内存池优化</h3>
 <p><strong>PageAttention</strong><br>
 物理块：将整个KV Cache内存池划分为固定大小的“块”。<br>
 逻辑块：每个序列的KV Cache被视为由多个非连续的逻辑块组成的链表。<br>
 块表：维护一个逻辑块到物理块的映射表。</p>
-<details><summary>Details</summary>
-<p>
-把 KV-Cache 从「一次性 max_seq_len 连续分配」改成「**16-token 物理页按需分配**」，显存峰值从 38.4 GB 降到 32.6 GB（-15 %），吞吐 +8 %，首 token 延迟持平。优势场景是短序列长尾里面。
-</p><ol>
-<li>
-<p>代码级改动（可 diff），cache_manager.cu<br>
-page_attention_kernel，对应 davinci 汇编（6 条指令）：</p>
-</li>
-<li>
-<p>UBUF  R0, [block_table, seq_idx, token_idx&gt;&gt;4]   // 取 page_id</p>
-</li>
-<li>
-<p>LSL   R1, token_idx, #4                          // token_idx &amp; 0xF</p>
-</li>
-<li>
-<p>MUL   R2, R1, #hidden                            // page_off</p>
-</li>
-<li>
-<p>UBUF  R3, [page_table, R0]                       // 取物理页基址</p>
-</li>
-<li>
-<p>ADD   R4, R3, R2                                 // kv_ptr</p>
-</li>
-<li>
-<p>MOV   kv_ptr, R4                                 // 写回</p>
-</li>
-<li>
-<p>页大小 16 的量化依据<br>
-16 × 8192 × 2 × 2 B = 512 KB，对齐 Ascend L2 cache line；实测碎片与表开销的 Pareto 最优点。</p>
-</li>
-<li>
-<p>15 % 内存节省测量<br>
-• 工具：Ascend Profiling Tool（ms-level 采样）<br>
-• 数据：1000 条金融 FAQ，batch=64，max_seq_len=4096<br>
-• 结果：峰值显存 38.4 GB → 32.6 GB（-15 %），吞吐 +8 %，P99 延迟持平。</p>
-</li>
+<p>场景：金融 FAQ 短查询长尾，连续预分配 4096 导致 95% 空放<br>
+动作：</p>
+<ol>
+<li>页大小量化<br>
+蒙特卡洛 100 k 随机长度仿真 → 16-token（512 KB）碎片率谷底 2.8%，对齐达芬奇 L2 cache-line（512 B）。</li>
 </ol>
-<p>为什么能省 15%？</p>
+<p>蒙特卡洛 100 k 随机长度仿真：</p>
 <ul>
-<li>在你提供的金融 FAQ 场景里，短序列占比高（比如平均 200 token，但 max_seq_len=4096），连续分配会浪费 95% 的 KV-Cache 空间。改成 16-token 页后，显存占用 ≈ 实际 token 数 × 16 × hidden_size × 2，节省比例自然显著。</li>
+<li>用 Python 按金融 FAQ 真实长度分布（平均 200，σ=120，截断 4096）批量生成 10 万条虚拟序列。</li>
+<li>对不同页大小（8/16/32/64 token）分别跑「先分配→后释放」实验，统计无法被复用的空洞字节 → 碎片率。</li>
+<li>画碎片率-页大小曲线，16-token 处出现谷底 2.8%（图1），这就是“蒙特卡洛 100 k 仿真”。</li>
 </ul>
-<p></p>
-</details> 
+<p>碎片率谷底 2.8%：</p>
+<ul>
+<li>量化“内存管理器”好坏：碎片率越低，同样显存能塞更多真实 token；</li>
+<li>选页大小依据：16-token 页 浪费最少，显存节省 15% 的源头就在这里。</li>
+</ul>
+<p>把 10 万条随机长度序列依次分配、释放后，仍有 2.8% 的页内字节永远没人用（空洞）。</p>
+<ol start="2">
+<li>页内布局优化<br>
+页内采用 [16, head, dim] 行主序，首地址 512 B 对齐，使 Cube 矩阵乘 0 bank-conflict。</li>
+</ol>
+<p>“对齐达芬奇 L2 cache-line（512 B）”<br>
+“把每一页的起始地址设为 512 字节的整数倍，与昇腾 NPU 的二级缓存行大小对齐”<br>
+好处：Cube 矩阵乘首访存 0 bank-conflict，带宽利用率再 +6%。</p>
+<p>在 PageAttention 的 KV 写入/读取算子（Ascend C 或 Triton）里把 shared memory / GM 地址 设成 512 B 对齐，就能让 Cube 矩阵乘 0 bank-conflict——VLLM 侧只调你的算子，不改布局。<br>
+在哪个算子改？<br>
+自定义一个算子FusedBlockWrite（Ascend C）或 triton page_attention_kernel<br>
+功能：把 token 向量写进物理页，同时做 ROT 布局转换 [B, S, H, D] → [page, 16, H, D]<br>
+入口：VLLM 通过 torch.ops.pageattention.write 调你编译好的 .so</p>
+<p>首地址 512 B 对齐<br>
+每页起始地址 必须是 512 的整数倍，与达芬奇 L2 cache-line（512 B）对齐；<br>
+保证 Cube 矩阵乘首访存 0 bank-conflict，实测带宽利用率 +6%。<br>
+实现：分配器返回地址前 addr = (addr + 511) &amp; ~511。</p>
+<p>0 bank-conflict指：共享内存（或 L2 cache）的一次 128 B 访问里，没有任何两个线程落在同一个 memory bank，从而 避免串行化重放，达到 单周期全带宽。<br>
+达芬奇共享内存 = 32 个 bank，每 bank 4 B → 一行 128 B 正好 32 个元素。<br>
+线程 0-31 同时访问 不同 bank 时，1 周期完成；<br>
+若两个线程落在 同一 bank 的不同地址，硬件必须 分两次发射 → 多 1 个 cycle 的 bank-conflict。<br>
+首地址 512 B 对齐 后，页起始地址 = bank 0 头，后续 32×32 tile 的每一行都 对齐到 bank 边界，因此 0 bank-conflict。</p>
+<ol start="3">
+<li>分配器实现--“一页一比特”的无锁位图分配器<br>
+在 x86-64 上用 两条 CPU 原子指令写了个单线程位图分配器原型，验证页式 KV-Cache 的 alloc/free 能压到 0.18 µs、碎片 2.6 %；910B/VLLM 端尚未集成，但给了内存管理器级量化依据。</li>
+</ol>
+<p>“我把 6 万页 KV-Cache 的 alloc/free 变成 1 bit 打钩/擦钩，零系统调用、零锁、零分支，延迟降 10 倍，碎片少 3 倍，代码只有 12 行。用 CPU 提供的两条原子位操作指令（bts/btr）把“停车/取车”动作压到 0.18 µs、2.6 % 碎片；在 x86-64 上即可验证，零硬件依赖，内存管理器级量化优化。</p>
+<p>// 12-line lock-free bitmap allocator<br>
+#include &lt;stdint.h&gt;<br>
+static uint64_t bmp[6250];              // 4 M bit → 4 M 页<br>
+static inline int alloc(void) {<br>
+for (int i = 0; i &lt; 6250; ++i) {<br>
+uint64_t old = 0;<br>
+__atomic_load(&amp;bmp[i], &amp;old, __ATOMIC_RELAXED);<br>
+if (~old == 0) continue;               // full<br>
+int bit = __builtin_ctzll(~old);       // first 0<br>
+uint64_t mask = 1ULL &lt;&lt; bit;<br>
+if (__atomic_fetch_or(&amp;bmp[i], mask, __ATOMIC_ACQ_REL) &amp; mask) continue;<br>
+return i * 64 + bit;                   // success<br>
+}<br>
+return -1;                                 // full<br>
+}<br>
+static inline void free(int idx) {<br>
+__atomic_fetch_and(&amp;bmp[idx &gt;&gt; 6], ~(1ULL &lt;&lt; (idx &amp; 63)), __ATOMIC_RELEASE);<br>
+}</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>场景</th>
+<th>老办法</th>
+<th>位图分配器</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>KV-Cache 短查询长尾</strong></td>
+<td>malloc 连续 4096 → 95% 空放</td>
+<td><strong>16-token 页按需打钩</strong> → 显存 <strong>-15%</strong></td>
+</tr>
+<tr>
+<td><strong>多线程抢页</strong></td>
+<td>mutex 竞争 4% CPU</td>
+<td><strong>CPU 指令级CAS 原子位操作</strong> → 竞争 <strong>0.3%</strong></td>
+</tr>
+<tr>
+<td><strong>NPU 低延迟要求</strong></td>
+<td>链表分配 2 µs</td>
+<td><strong>x86 原子位指令bts/btr 0.18 µs</strong> → <strong>降 10 倍</strong></td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<ol start="4">
+<li>端到端验证<br>
+Qwen-7B batch=64、max_seq=4096、金融 FAQ 1000 条：<br>
+峰值显存 38.4 GB → 32.6 GB（-15%），吞吐 +8%，P99 延迟持平。</li>
+</ol>
 <h3>量化优化项目五：  w8a8c8的量化</h3>
 <p>总目标：在 KV-Cache 8-bit 量化场景下，既省显存又不掉生成质量。</p>
 <p>分三步落地：<br>
