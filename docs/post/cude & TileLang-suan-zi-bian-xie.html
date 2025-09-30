@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    
+    <link rel="icon" href="https://avatars.githubusercontent.com/u/46772304?v=4"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="1. 算子命名
+2. rag内容read
+
+
+gpu的hopper架构指的是：
+Hopper = 4N 工艺 + 800 亿晶体管 + FP8 Transformer 引擎 + 900 GB/s NVLink，把大模型训练/推理的矩阵乘、通信、内存带宽全部拉满，相对 Ampere 实现 3-9 倍 AI 提速
+
+编写工具：
+
+| 工具           | 语言           | 硬件                  | 成熟度   | 典型场景                   | 2025 市占  |
+| ------------ | ------------ | ------------------- | ----- | ---------------------- | -------- |
+| **CUDA**     | C/C++        | NVIDIA only         | ★★★★★ | 手写 peak kernel、驱动库     | 70%      |
+| **CUTLASS**  | C++ template | NVIDIA only         | ★★★★☆ | cuBLAS 底层、厂商库          | 60%      |
+| **Triton**   | Python       | NVIDIA + AMD ROCm   | ★★★★☆ | LLM 推理/训练 fused kernel | 40%      |
+| **TileLang** | Python       | NVIDIA + AMD + 沐曦\* | ★★★☆☆ | 研究原型→产品 kernel         | 5% 但增速最快 |
+
+1. TileLang = Python 前端 + TVM 编译器 + Tile 级原语，让你用 1/3 代码量写出匹配手写汇编的算子，Hopper/Ada/AMD 通用，是 2025 年最值得关注的高性能 AI Kernel DSL
+https://github.com/tile-ai/tilelang
+
+
+
+# 量化
+        ┌-------------------- 一层 Transformer --------------------┐
+        |                                                        |
+        |  1)  Pre-Norm                                        |
+        |  2)  Attention (Q/K/V)                               |
+        |  3)  Post-Attention Norm                             |
+        |  4)  MoE-FFN Block                                   |
+        |        ┌-----------------------------┐                |
+        |        │  a)  Gate  (Linear)         │◄-- FP16 保留  |
+        |        │  b)  Softmax + Top-K        │                |
+        |        │  c)  Router / Load-Balance  │                |
+        |        │  d)  Expert-0  (Linear×2)   │◄-- W8A8 量化  |
+        |        │  e)  Expert-1  (Linear×2)   │                |
+        |        │  ...                        │                |
+        |        │  f)  Weighted Add (Top-K)   │                |
+        |        └-----------------------------┘                |
+        |                                                        |
+        └--------------------------------------------------------┘
+
+  输入校准集
+      │
+      ▼
+[Anti-Outlier 预处理]
+      │  1) 跑前向 → 记录 99.9 % 分位
+      │  2) 生成 clamp_thr
+      ▼
+  激活 tensor ──► clamp(x, -thr, thr) ──► 计算 scale ──► 量化
+      │                                              ▲
+      ▼                                              │
+  权重 tensor ──► per-channel scale ──► 直接 int8 ──┘
+      │
+      ▼
+  逐层校准 (MSE)  ←-- 50 条 calib prompt
+      │
+      ▼
+  导出混合策略：
+      ├── gate 层 (Linear)          → **FP16**  （不量化）
+      ├── expert-0/1/... down/up    → **W8A8 dynamic**
+      └──其余投影层                 → **W8A8 static**
+
+gate 只占 MoE 层里“一根红线”大小的 Linear，但它是决定 token 走哪条专家的投票器；保持 FP16 即可让雪崩风险归零，而内存代价可忽略不计。">
+<meta property="og:title" content="cude & TileLang算子编写">
+<meta property="og:description" content="1. 算子命名
+2. rag内容read
+
+
+gpu的hopper架构指的是：
+Hopper = 4N 工艺 + 800 亿晶体管 + FP8 Transformer 引擎 + 900 GB/s NVLink，把大模型训练/推理的矩阵乘、通信、内存带宽全部拉满，相对 Ampere 实现 3-9 倍 AI 提速
+
+编写工具：
+
+| 工具           | 语言           | 硬件                  | 成熟度   | 典型场景                   | 2025 市占  |
+| ------------ | ------------ | ------------------- | ----- | ---------------------- | -------- |
+| **CUDA**     | C/C++        | NVIDIA only         | ★★★★★ | 手写 peak kernel、驱动库     | 70%      |
+| **CUTLASS**  | C++ template | NVIDIA only         | ★★★★☆ | cuBLAS 底层、厂商库          | 60%      |
+| **Triton**   | Python       | NVIDIA + AMD ROCm   | ★★★★☆ | LLM 推理/训练 fused kernel | 40%      |
+| **TileLang** | Python       | NVIDIA + AMD + 沐曦\* | ★★★☆☆ | 研究原型→产品 kernel         | 5% 但增速最快 |
+
+1. TileLang = Python 前端 + TVM 编译器 + Tile 级原语，让你用 1/3 代码量写出匹配手写汇编的算子，Hopper/Ada/AMD 通用，是 2025 年最值得关注的高性能 AI Kernel DSL
+https://github.com/tile-ai/tilelang
+
+
+
+# 量化
+        ┌-------------------- 一层 Transformer --------------------┐
+        |                                                        |
+        |  1)  Pre-Norm                                        |
+        |  2)  Attention (Q/K/V)                               |
+        |  3)  Post-Attention Norm                             |
+        |  4)  MoE-FFN Block                                   |
+        |        ┌-----------------------------┐                |
+        |        │  a)  Gate  (Linear)         │◄-- FP16 保留  |
+        |        │  b)  Softmax + Top-K        │                |
+        |        │  c)  Router / Load-Balance  │                |
+        |        │  d)  Expert-0  (Linear×2)   │◄-- W8A8 量化  |
+        |        │  e)  Expert-1  (Linear×2)   │                |
+        |        │  ...                        │                |
+        |        │  f)  Weighted Add (Top-K)   │                |
+        |        └-----------------------------┘                |
+        |                                                        |
+        └--------------------------------------------------------┘
+
+  输入校准集
+      │
+      ▼
+[Anti-Outlier 预处理]
+      │  1) 跑前向 → 记录 99.9 % 分位
+      │  2) 生成 clamp_thr
+      ▼
+  激活 tensor ──► clamp(x, -thr, thr) ──► 计算 scale ──► 量化
+      │                                              ▲
+      ▼                                              │
+  权重 tensor ──► per-channel scale ──► 直接 int8 ──┘
+      │
+      ▼
+  逐层校准 (MSE)  ←-- 50 条 calib prompt
+      │
+      ▼
+  导出混合策略：
+      ├── gate 层 (Linear)          → **FP16**  （不量化）
+      ├── expert-0/1/... down/up    → **W8A8 dynamic**
+      └──其余投影层                 → **W8A8 static**
+
+gate 只占 MoE 层里“一根红线”大小的 Linear，但它是决定 token 走哪条专家的投票器；保持 FP16 即可让雪崩风险归零，而内存代价可忽略不计。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://naphjohn.github.io/post/cude%20%26%20TileLang-suan-zi-bian-xie.html">
+<meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
+<title>cude & TileLang算子编写</title>
+
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+.copy-feedback {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 50px;
+    color: var(--color-fg-on-emphasis);
+    background-color: var(--color-fg-muted);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+}
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">cude & TileLang算子编写</h1>
+<div class="title-right">
+    <a href="https://naphjohn.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/NaphJohn/naphjohn.github.io/issues/16" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><ol>
+<li>算子命名</li>
+<li>rag内容read</li>
+</ol>
+<p>gpu的hopper架构指的是：<br>
+Hopper = 4N 工艺 + 800 亿晶体管 + FP8 Transformer 引擎 + 900 GB/s NVLink，把大模型训练/推理的矩阵乘、通信、内存带宽全部拉满，相对 Ampere 实现 3-9 倍 AI 提速</p>
+<p>编写工具：</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>工具</th>
+<th>语言</th>
+<th>硬件</th>
+<th>成熟度</th>
+<th>典型场景</th>
+<th>2025 市占</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>CUDA</strong></td>
+<td>C/C++</td>
+<td>NVIDIA only</td>
+<td>★★★★★</td>
+<td>手写 peak kernel、驱动库</td>
+<td>70%</td>
+</tr>
+<tr>
+<td><strong>CUTLASS</strong></td>
+<td>C++ template</td>
+<td>NVIDIA only</td>
+<td>★★★★☆</td>
+<td>cuBLAS 底层、厂商库</td>
+<td>60%</td>
+</tr>
+<tr>
+<td><strong>Triton</strong></td>
+<td>Python</td>
+<td>NVIDIA + AMD ROCm</td>
+<td>★★★★☆</td>
+<td>LLM 推理/训练 fused kernel</td>
+<td>40%</td>
+</tr>
+<tr>
+<td><strong>TileLang</strong></td>
+<td>Python</td>
+<td>NVIDIA + AMD + 沐曦*</td>
+<td>★★★☆☆</td>
+<td>研究原型→产品 kernel</td>
+<td>5% 但增速最快</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<ol>
+<li>TileLang = Python 前端 + TVM 编译器 + Tile 级原语，让你用 1/3 代码量写出匹配手写汇编的算子，Hopper/Ada/AMD 通用，是 2025 年最值得关注的高性能 AI Kernel DSL<br>
+<a href="https://github.com/tile-ai/tilelang">https://github.com/tile-ai/tilelang</a></li>
+</ol>
+<h1>量化</h1>
+<pre class="notranslate"><code class="notranslate">    ┌-------------------- 一层 Transformer --------------------┐
+    |                                                        |
+    |  1)  Pre-Norm                                        |
+    |  2)  Attention (Q/K/V)                               |
+    |  3)  Post-Attention Norm                             |
+    |  4)  MoE-FFN Block                                   |
+    |        ┌-----------------------------┐                |
+    |        │  a)  Gate  (Linear)         │◄-- FP16 保留  |
+    |        │  b)  Softmax + Top-K        │                |
+    |        │  c)  Router / Load-Balance  │                |
+    |        │  d)  Expert-0  (Linear×2)   │◄-- W8A8 量化  |
+    |        │  e)  Expert-1  (Linear×2)   │                |
+    |        │  ...                        │                |
+    |        │  f)  Weighted Add (Top-K)   │                |
+    |        └-----------------------------┘                |
+    |                                                        |
+    └--------------------------------------------------------┘
+</code></pre>
+<p>输入校准集<br>
+│<br>
+▼<br>
+[Anti-Outlier 预处理]<br>
+│  1) 跑前向 → 记录 99.9 % 分位<br>
+│  2) 生成 clamp_thr<br>
+▼<br>
+激活 tensor ──► clamp(x, -thr, thr) ──► 计算 scale ──► 量化<br>
+│                                              ▲<br>
+▼                                              │<br>
+权重 tensor ──► per-channel scale ──► 直接 int8 ──┘<br>
+│<br>
+▼<br>
+逐层校准 (MSE)  ←-- 50 条 calib prompt<br>
+│<br>
+▼<br>
+导出混合策略：<br>
+├── gate 层 (Linear)          → <strong>FP16</strong>  （不量化）<br>
+├── expert-0/1/... down/up    → <strong>W8A8 dynamic</strong><br>
+└──其余投影层                 → <strong>W8A8 static</strong></p>
+<p>gate 只占 MoE 层里“一根红线”大小的 Linear，但它是决定 token 走哪条专家的投票器；保持 FP16 即可让雪崩风险归零，而内存代价可忽略不计。</p>
+<details><summary>Details</summary>
+<p>
+</p><h1>Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.</h1>
+<p>import argparse<br>
+import functools<br>
+import json<br>
+import os<br>
+import sys</p>
+<p>import torch<br>
+import torch_npu</p>
+<p>current_directory = os.path.dirname(os.path.abspath(<strong>file</strong>))<br>
+parent_directory = os.path.abspath(os.path.join(current_directory, '..', ".."))<br>
+sys.path.append(parent_directory)</p>
+<p>from example.common.security.path import get_valid_read_path, get_write_directory<br>
+from example.common.security.type import check_number<br>
+from example.common.utils import SafeGenerator, cmd_bool<br>
+from example.common.rot_utils.rot_qwen import rot_model<br>
+from msmodelslim.tools.copy_config_files import copy_config_files, modify_config_json<br>
+from msmodelslim.pytorch.llm_ptq.anti_outlier import AntiOutlierConfig, AntiOutlier<br>
+from msmodelslim.pytorch.llm_ptq.llm_ptq_tools import Calibrator, QuantConfig<br>
+from msmodelslim.utils.logging import set_logger_level<br>
+from msmodelslim import logger</p>
+<p>def parse_args():<br>
+parser = argparse.ArgumentParser()<br>
+parser.add_argument('--model_path', type=str, help="The path of float model and tokenizer"),<br>
+parser.add_argument('--save_path', type=str, help="The path to save quant model"),<br>
+parser.add_argument('--layer_count', type=int, default=0, help="Layer count when loading model")<br>
+parser.add_argument('--anti_dataset', type=str, default="./anti_prompt_50.json",<br>
+help="The calib data for anti outlier")<br>
+parser.add_argument('--calib_dataset', type=str, default="./calib_prompt_50.json",<br>
+help="The calib data for calibration")<br>
+parser.add_argument('--batch_size', type=int, default=4, help="Batch size for anti and calibration")<br>
+parser.add_argument('--mindie_format', action="store_true", help="Enable only mindie config save")<br>
+parser.add_argument('--trust_remote_code', type=cmd_bool, default=False)<br>
+parser.add_argument('--rot', action='store_true', help="rot model")<br>
+return parser.parse_args()</p>
+<p>def custom_hook(model_config):<br>
+model_config["quantize"] = "w8a8_dynamic"</p>
+<p>def get_calib_dataset_batch(model_tokenizer, calib_list, batch_size, device="npu"):<br>
+calib_dataset = []<br>
+calib_list = [calib_list[i:i + batch_size] for i in range(0, len(calib_list), batch_size)]<br>
+for calib_data in calib_list:<br>
+inputs = model_tokenizer(calib_data, return_tensors='pt', padding=True).to(device)<br>
+calib_dataset.append(<br>
+[value.to(device) for key, value in inputs.data.items() if isinstance(value, torch.Tensor)])<br>
+return calib_dataset</p>
+<p>def main():<br>
+args = parse_args()<br>
+set_logger_level("info")</p>
+<pre class="notranslate"><code class="notranslate">model_path = args.model_path
+batch_size = args.batch_size
+
+save_path = get_write_directory(args.save_path, write_mode=0o750)
+check_number(batch_size, int, 1, 16, "batch_size")
+
+safe_generator = SafeGenerator()
+
+config = safe_generator.get_config_from_pretrained(model_path=model_path,
+                                                   trust_remote_code=args.trust_remote_code)
+num_layer = config.num_hidden_layers
+if args.layer_count &lt; 0 or args.layer_count &gt; num_layer:
+    raise ValueError(
+        f"Invalid value for parameter layer_count: {args.layer_count}."
+        f"Must be between 0 and {num_layer}."
+    )
+# Set layer count to 0 means use all layers, otherwise it will only use the first layer_count layers
+config.num_hidden_layers = args.layer_count if args.layer_count != 0 else config.num_hidden_layers
+# Disable use cache because we don't need to use cache, otherwise it will use too much device memory then cause OOM
+config.use_cache = False
+
+tokenizer = safe_generator.get_tokenizer_from_pretrained(model_path=model_path,
+                                                         config=config,
+                                                         trust_remote_code=args.trust_remote_code,
+                                                         use_fast=True,
+                                                         add_eos_token=True)
+
+model = safe_generator.get_model_from_pretrained(model_path=model_path,
+                                                 config=config,
+                                                 trust_remote_code=args.trust_remote_code,
+                                                 device_map={
+                                                     "model.embed_tokens": 0,
+                                                     "model.layers": "cpu",
+                                                     "model.norm": "cpu",
+                                                     "lm_head": 0,
+                                                 },
+                                                 torch_dtype="auto",
+                                                 attn_implementation='eager')
+
+anti_dataset_path = get_valid_read_path(args.anti_dataset, "json", is_dir=False)
+calib_dataset_path = get_valid_read_path(args.calib_dataset, "json", is_dir=False)
+with open(anti_dataset_path, "r") as file:
+    anti_prompt = json.load(file)
+with open(calib_dataset_path, "r") as file:
+    calib_prompt = json.load(file)
+anti_dataset = get_calib_dataset_batch(tokenizer, anti_prompt, batch_size, model.device)
+dataset_calib = get_calib_dataset_batch(tokenizer, calib_prompt, batch_size, model.device)
+
+with torch.no_grad():
+
+    test_prompt = "what is deep learning?"
+    test_input = tokenizer(test_prompt, return_tensors="pt").to(model.device)
+
+    if args.layer_count &gt; 0:
+        ori_out = model(**test_input)
+
+    if args.rot:
+        rot_model(model)
+
+    if args.layer_count &gt; 0:
+        rot_out = model(**test_input)
+        loss = torch.nn.MSELoss()
+        logger.info(loss(ori_out[0], rot_out[0]))
+
+with torch.no_grad():
+    anti_config = AntiOutlierConfig(w_bit=8,
+                                    a_bit=8,
+                                    anti_method='m4',
+                                    dev_type='npu',
+                                    dev_id=model.device.index)
+    anti_outlier = AntiOutlier(model, calib_data=anti_dataset, cfg=anti_config)
+    anti_outlier.process()
+
+disable_names = []
+for ids in range(config.num_hidden_layers):
+    disable_names.append("model.layers." + str(ids) + ".mlp.gate")
+
+quant_config = QuantConfig(
+    a_bit=8,
+    w_bit=8,
+    disable_names=disable_names,
+    dev_type='npu',
+    dev_id=model.device.index,
+    act_method=1,
+    pr=1.0,
+    w_sym=True,
+    mm_tensor=False,
+)
+
+calibrator = Calibrator(model,
+                        quant_config,
+                        calib_data=dataset_calib,
+                        disable_level="L0",
+                        mix_cfg={
+                            "*.mlp.*": "w8a8_dynamic",
+                            "*": "w8a8"
+                        })
+calibrator.run()
+
+if args.mindie_format:
+    quant_model_description_json_name = "quant_model_description_w8a8_dynamic.json"
+else:
+    quant_model_description_json_name = "quant_model_description.json"
+
+save_type = "safe_tensor" if args.mindie_format else "ascendV1"
+calibrator.save(save_path,
+                json_name=quant_model_description_json_name,
+                safetensors_name="quant_model_weight_w8a8_dynamic.safetensors",
+                save_type=[save_type],
+                part_file_size=4)
+
+custom_hooks = {
+    'config.json': functools.partial(modify_config_json, custom_hook=custom_hook)
+}
+copy_config_files(input_path=model_path, output_path=save_path, quant_config=quant_config,
+                  mindie_format=args.mindie_format, custom_hooks=custom_hooks)
+</code></pre>
+<p>if <strong>name</strong> == "<strong>main</strong>":<br>
+# torch_npu will fork a new process to init,<br>
+# it's lazy_init will fail after we load a big model,so we need to init it here<br>
+torch_npu.npu.init()<br>
+# Invoke main process<br>
+main()<br>
+以上代码主要逻辑是啥？</p>
+<p></p>
+</details> </div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://naphjohn.github.io">kaikai的博客</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if(""!=""){
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z', 'copy': 'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z', 'check': 'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","NaphJohn/naphjohn.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const createClipboardHTML = (codeContent, additionalClasses = '') => `
+        <pre class="notranslate"><code class="notranslate">${codeContent}</code></pre>
+        <div class="clipboard-container position-absolute right-0 top-0 ${additionalClasses}">
+            <clipboard-copy class="ClipboardButton btn m-2 p-0" role="button" style="display: inherit;">
+                <svg height="16" width="16" class="octicon octicon-copy m-2"><path d="${IconList["copy"]}"></path></svg>
+                <svg height="16" width="16" class="octicon octicon-check color-fg-success m-2 d-none"><path d="${IconList["check"]}"></path></svg>
+            </clipboard-copy>
+            <div class="copy-feedback">Copied!</div>
+        </div>
+    `;
+
+    const handleCodeElements = (selector = '') => {
+        document.querySelectorAll(selector).forEach(codeElement => {
+            const codeContent = codeElement.innerHTML;
+            const newStructure = document.createElement('div');
+            newStructure.className = 'snippet-clipboard-content position-relative overflow-auto';
+            newStructure.innerHTML = createClipboardHTML(codeContent);
+
+            const parentElement = codeElement.parentElement;
+            if (selector.includes('highlight')) {
+                parentElement.insertBefore(newStructure, codeElement.nextSibling);
+                parentElement.removeChild(codeElement);
+            } else {
+                parentElement.parentElement.replaceChild(newStructure, parentElement);
+            }
+        });
+    };
+
+    handleCodeElements('pre.notranslate > code.notranslate');
+    handleCodeElements('div.highlight > pre.notranslate');
+
+    let currentFeedback = null;
+    document.querySelectorAll('clipboard-copy').forEach(copyButton => {
+        copyButton.addEventListener('click', () => {
+            const codeContent = copyButton.closest('.snippet-clipboard-content').innerText;
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = codeContent;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempTextArea);
+
+            const copyIcon = copyButton.querySelector('.octicon-copy');
+            const checkIcon = copyButton.querySelector('.octicon-check');
+            const copyFeedback = copyButton.nextElementSibling;
+
+            if (currentFeedback && currentFeedback !== copyFeedback) {currentFeedback.style.display = 'none';}
+            currentFeedback = copyFeedback;
+
+            copyIcon.classList.add('d-none');
+            checkIcon.classList.remove('d-none');
+            copyFeedback.style.display = 'block';
+            copyButton.style.borderColor = 'var(--color-success-fg)';
+
+            setTimeout(() => {
+                copyIcon.classList.remove('d-none');
+                checkIcon.classList.add('d-none');
+                copyFeedback.style.display = 'none';
+                copyButton.style.borderColor = '';
+            }, 2000);
+        });
+    });
+});
+
+</script>
+
+
+</html>
