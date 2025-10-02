@@ -17,11 +17,71 @@ RAG（检索增强生成）是通过“外部知识库检索+大模型生成”�
 Pandas）或 Markdown 保留逻辑关系，图片类通过 OCR（PaddleOCR）提取和提炼成文字信息，最后按语义或固定长度分块，确保信息完整性和检索适配性。 
 
 
-
-2. **Rerank层精排**  
-- **两阶段排序**：
+2. **混合检索+Rerank层精排**   
+**两阶段排序**：
 阶段一是混合检索，先用BM25+做文本召回（就是关键词匹配），使用BGE-large-1.5对长查询重点使用向量检索，对两者取并集后再去重，以确保关键字匹配和语义近似的文档都能被召回。Top5 
 召回率从 0.6 提升至 0.78，MRR 从 0.52 提高至 0.63；
+
+BM25以及BM25+区别：
+BM25 只认字面 token，BM25+ 先“拼写-拼音-子词-同义词”四轮扩展，再 BM25 打分，从而把「字面不同但意思一样」的文档也捞回来。
+<details><summary>Details</summary>
+<p>
+
+| 维度      | 经典 BM25    | BM25+                 |
+| ------- | ---------- | --------------------- |
+| 输入单元    | 精确分词 token | token + 子词 + 拼音 + 同义词 |
+| OOV 专业词 | 查无此词 → 0 分 | 拼音/子词仍能命中             |
+| 同义表达    | 必须关键词相同    | 同义词词典自动归一             |
+| 实现成本    | 零，开箱即用     | 轻量预处理 < 5 ms          |
+| 召回效果    | 易漏同义/拼写变体  | 同义/拼写/缩写全覆盖           |
+
+BM25+ 不是改公式，而是给 BM25 前加一层“泛化 token”生成器，让它在关键词通道里就能初步解决同义和 OOV 问题，再与向量路并集互补。
+
+```python
+pip install rank-bm25 hanlp jieba pypinyin
+import jieba, pypinyin, json, hanlp
+from rank_bm25 import BM25Okapi
+from pypinyin import lazy_pinyin
+from typing import List
+
+# 1. 同义词典（金融示例）
+synonym = {
+    "信用卡": ["贷记卡", "credit card"],
+    "逾期": ["违约", "欠款未还"]
+}
+
+# 2. 预处理：子词 + 拼音 + 同义词
+def expand(text: str) -> str:
+    # 同义词替换
+    for k, v in synonym.items():
+        for w in v:
+            text = text.replace(w, k)
+    # 拼音（首字母）
+    py = "".join(lazy_pinyin(text, style=pypinyin.FIRST_LETTER))
+    # 子词（2-gram）
+    tokens = list(jieba.cut(text))
+    sub_words = ["".join(tokens[i:i+2]) for i in range(len(tokens)-1)]
+    return tokens + sub_words + list(py)   # 三路融合
+
+# 3. 建库（假设已清洗）
+docs = ["信用卡逾期后利息如何计算",
+        "贷记卡违约金收费标准",
+        "信用卡最低还款额说明"]
+corpus = [expand(d) for d in docs]
+bm25 = BM25Okapi(corpus)
+
+# 4. 查询
+query = "credit card 违约利息"
+query_tokens = expand(query)
+scores = bm25.get_scores(query_tokens)
+topk = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:5]
+print("BM25+ Top5:", [(docs[i], s) for i, s in topk])
+
+``` 
+
+</p>
+</details> 
+
 
 embedding模型：
 <details><summary>Details</summary>

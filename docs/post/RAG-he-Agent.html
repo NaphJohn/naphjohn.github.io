@@ -104,13 +104,92 @@ RAG = “先把相关文档搜出来，再让大模型照着读”；流程固�
 <p>进行差异化解析与切分，PDF/PPT 用专用库提取文本（PyPDF2、python-pptx），表格类转换为结构化数据（如<br>
 Pandas）或 Markdown 保留逻辑关系，图片类通过 OCR（PaddleOCR）提取和提炼成文字信息，最后按语义或固定长度分块，确保信息完整性和检索适配性。</p>
 <ol start="2">
-<li><strong>Rerank层精排</strong></li>
-</ol>
-<ul>
-<li><strong>两阶段排序</strong>：<br>
+<li><strong>混合检索+Rerank层精排</strong><br>
+<strong>两阶段排序</strong>：<br>
 阶段一是混合检索，先用BM25+做文本召回（就是关键词匹配），使用BGE-large-1.5对长查询重点使用向量检索，对两者取并集后再去重，以确保关键字匹配和语义近似的文档都能被召回。Top5<br>
 召回率从 0.6 提升至 0.78，MRR 从 0.52 提高至 0.63；</li>
-</ul>
+</ol>
+<p>BM25以及BM25+区别：<br>
+BM25 只认字面 token，BM25+ 先“拼写-拼音-子词-同义词”四轮扩展，再 BM25 打分，从而把「字面不同但意思一样」的文档也捞回来。</p>
+<details><summary>Details</summary>
+<p>
+</p><markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>维度</th>
+<th>经典 BM25</th>
+<th>BM25+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>输入单元</td>
+<td>精确分词 token</td>
+<td>token + 子词 + 拼音 + 同义词</td>
+</tr>
+<tr>
+<td>OOV 专业词</td>
+<td>查无此词 → 0 分</td>
+<td>拼音/子词仍能命中</td>
+</tr>
+<tr>
+<td>同义表达</td>
+<td>必须关键词相同</td>
+<td>同义词词典自动归一</td>
+</tr>
+<tr>
+<td>实现成本</td>
+<td>零，开箱即用</td>
+<td>轻量预处理 &lt; 5 ms</td>
+</tr>
+<tr>
+<td>召回效果</td>
+<td>易漏同义/拼写变体</td>
+<td>同义/拼写/缩写全覆盖</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p>BM25+ 不是改公式，而是给 BM25 前加一层“泛化 token”生成器，让它在关键词通道里就能初步解决同义和 OOV 问题，再与向量路并集互补。</p>
+<div class="highlight highlight-source-python"><pre class="notranslate"><span class="pl-s1">pip</span> <span class="pl-s1">install</span> <span class="pl-s1">rank</span><span class="pl-c1">-</span><span class="pl-s1">bm25</span> <span class="pl-s1">hanlp</span> <span class="pl-s1">jieba</span> <span class="pl-s1">pypinyin</span>
+<span class="pl-k">import</span> <span class="pl-s1">jieba</span>, <span class="pl-s1">pypinyin</span>, <span class="pl-s1">json</span>, <span class="pl-s1">hanlp</span>
+<span class="pl-k">from</span> <span class="pl-s1">rank_bm25</span> <span class="pl-k">import</span> <span class="pl-v">BM25Okapi</span>
+<span class="pl-k">from</span> <span class="pl-s1">pypinyin</span> <span class="pl-k">import</span> <span class="pl-s1">lazy_pinyin</span>
+<span class="pl-k">from</span> <span class="pl-s1">typing</span> <span class="pl-k">import</span> <span class="pl-v">List</span>
+
+<span class="pl-c"># 1. 同义词典（金融示例）</span>
+<span class="pl-s1">synonym</span> <span class="pl-c1">=</span> {
+    <span class="pl-s">"信用卡"</span>: [<span class="pl-s">"贷记卡"</span>, <span class="pl-s">"credit card"</span>],
+    <span class="pl-s">"逾期"</span>: [<span class="pl-s">"违约"</span>, <span class="pl-s">"欠款未还"</span>]
+}
+
+<span class="pl-c"># 2. 预处理：子词 + 拼音 + 同义词</span>
+<span class="pl-k">def</span> <span class="pl-en">expand</span>(<span class="pl-s1">text</span>: <span class="pl-smi">str</span>) <span class="pl-c1">-&gt;</span> <span class="pl-smi">str</span>:
+    <span class="pl-c"># 同义词替换</span>
+    <span class="pl-k">for</span> <span class="pl-s1">k</span>, <span class="pl-s1">v</span> <span class="pl-c1">in</span> <span class="pl-s1">synonym</span>.<span class="pl-c1">items</span>():
+        <span class="pl-k">for</span> <span class="pl-s1">w</span> <span class="pl-c1">in</span> <span class="pl-s1">v</span>:
+            <span class="pl-s1">text</span> <span class="pl-c1">=</span> <span class="pl-s1">text</span>.<span class="pl-c1">replace</span>(<span class="pl-s1">w</span>, <span class="pl-s1">k</span>)
+    <span class="pl-c"># 拼音（首字母）</span>
+    <span class="pl-s1">py</span> <span class="pl-c1">=</span> <span class="pl-s">""</span>.<span class="pl-c1">join</span>(<span class="pl-en">lazy_pinyin</span>(<span class="pl-s1">text</span>, <span class="pl-s1">style</span><span class="pl-c1">=</span><span class="pl-s1">pypinyin</span>.<span class="pl-c1">FIRST_LETTER</span>))
+    <span class="pl-c"># 子词（2-gram）</span>
+    <span class="pl-s1">tokens</span> <span class="pl-c1">=</span> <span class="pl-en">list</span>(<span class="pl-s1">jieba</span>.<span class="pl-c1">cut</span>(<span class="pl-s1">text</span>))
+    <span class="pl-s1">sub_words</span> <span class="pl-c1">=</span> [<span class="pl-s">""</span>.<span class="pl-c1">join</span>(<span class="pl-s1">tokens</span>[<span class="pl-s1">i</span>:<span class="pl-s1">i</span><span class="pl-c1">+</span><span class="pl-c1">2</span>]) <span class="pl-k">for</span> <span class="pl-s1">i</span> <span class="pl-c1">in</span> <span class="pl-en">range</span>(<span class="pl-en">len</span>(<span class="pl-s1">tokens</span>)<span class="pl-c1">-</span><span class="pl-c1">1</span>)]
+    <span class="pl-k">return</span> <span class="pl-s1">tokens</span> <span class="pl-c1">+</span> <span class="pl-s1">sub_words</span> <span class="pl-c1">+</span> <span class="pl-en">list</span>(<span class="pl-s1">py</span>)   <span class="pl-c"># 三路融合</span>
+
+<span class="pl-c"># 3. 建库（假设已清洗）</span>
+<span class="pl-s1">docs</span> <span class="pl-c1">=</span> [<span class="pl-s">"信用卡逾期后利息如何计算"</span>,
+        <span class="pl-s">"贷记卡违约金收费标准"</span>,
+        <span class="pl-s">"信用卡最低还款额说明"</span>]
+<span class="pl-s1">corpus</span> <span class="pl-c1">=</span> [<span class="pl-en">expand</span>(<span class="pl-s1">d</span>) <span class="pl-k">for</span> <span class="pl-s1">d</span> <span class="pl-c1">in</span> <span class="pl-s1">docs</span>]
+<span class="pl-s1">bm25</span> <span class="pl-c1">=</span> <span class="pl-en">BM25Okapi</span>(<span class="pl-s1">corpus</span>)
+
+<span class="pl-c"># 4. 查询</span>
+<span class="pl-s1">query</span> <span class="pl-c1">=</span> <span class="pl-s">"credit card 违约利息"</span>
+<span class="pl-s1">query_tokens</span> <span class="pl-c1">=</span> <span class="pl-en">expand</span>(<span class="pl-s1">query</span>)
+<span class="pl-s1">scores</span> <span class="pl-c1">=</span> <span class="pl-s1">bm25</span>.<span class="pl-c1">get_scores</span>(<span class="pl-s1">query_tokens</span>)
+<span class="pl-s1">topk</span> <span class="pl-c1">=</span> <span class="pl-en">sorted</span>(<span class="pl-en">enumerate</span>(<span class="pl-s1">scores</span>), <span class="pl-s1">key</span><span class="pl-c1">=</span><span class="pl-k">lambda</span> <span class="pl-s1">x</span>: <span class="pl-s1">x</span>[<span class="pl-c1">1</span>], <span class="pl-s1">reverse</span><span class="pl-c1">=</span><span class="pl-c1">True</span>)[:<span class="pl-c1">5</span>]
+<span class="pl-en">print</span>(<span class="pl-s">"BM25+ Top5:"</span>, [(<span class="pl-s1">docs</span>[<span class="pl-s1">i</span>], <span class="pl-s1">s</span>) <span class="pl-k">for</span> <span class="pl-s1">i</span>, <span class="pl-s1">s</span> <span class="pl-c1">in</span> <span class="pl-s1">topk</span>])</pre></div>
+<p></p>
+</details> 
 <p>embedding模型：</p>
 <details><summary>Details</summary>
 <p>
