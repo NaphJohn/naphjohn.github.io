@@ -96,7 +96,7 @@ embedding模型：
 </p>
 </details> 
 
-第二阶段是用Cross-Encoder，也就是rerank模型 做语义精排，综合语义、上下文和任务特征，将最相关的文档排到前列，减少噪声干扰。效果是Top10准确率从78%→91%（对比单Embedding检索），MRR 从 0.52 提高至 0.78。  
+第二阶段是用Cross-Encoder，也就是rerank模型做语义精排，综合语义、上下文和任务特征，将最相关的文档排到前列，减少噪声干扰。效果是Top10准确率从78%→91%（对比单Embedding检索），MRR 从 0.52 提高至 0.78。  
 
 上面的rerank模型，可以是bge-small，或者为了追求更高精度，可把 rerank 模型换成 BGE-reranker-large（+2 % MRR，-10 QPS）。
 
