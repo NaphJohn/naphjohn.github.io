@@ -11,13 +11,11 @@
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
 <meta name="description" content="# RAG 检索增强生成（Retrieval-Augmented Generation，RAG）
-
-**RAG的基本结构**有哪些呢？
+RAG的基本结构有哪些呢？
 - 向量化模块：用来将文档片段向量化。">
 <meta property="og:title" content="RAG和Agent">
 <meta property="og:description" content="# RAG 检索增强生成（Retrieval-Augmented Generation，RAG）
-
-**RAG的基本结构**有哪些呢？
+RAG的基本结构有哪些呢？
 - 向量化模块：用来将文档片段向量化。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/RAG-he-Agent.html">
@@ -80,7 +78,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h1>RAG 检索增强生成（Retrieval-Augmented Generation，RAG）</h1>
-<p><strong>RAG的基本结构</strong>有哪些呢？</p>
+<p>RAG的基本结构有哪些呢？</p>
 <ul>
 <li>向量化模块：用来将文档片段向量化。</li>
 <li>文档加载和切分模块：用来加载文档并切分成文档片段。</li>
@@ -90,9 +88,32 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </ul>
 <p><strong>RAG流程</strong><br>
 RAG = “先把相关文档搜出来，再让大模型照着读”；流程固定为 编码→检索→拼装→生成→后处理 五步，离线再配套切块、建索引、存元数据即可上线。</p>
+<p>RAG（检索增强生成）是通过“外部知识库检索+大模型生成”解决幻觉问题的技术，核心是让模型回答基于指定事实。</p>
+<h3>我的项目拆解（技术深度体现）：</h3>
+<h4>1. <strong>Embedding层优化</strong></h4>
+<ul>
+<li><strong>模型选型</strong>：对比BERT-base（通用语义）与Sentence-BERT（句向量专项），最终用<strong>多语言MiniLM-L6-v2</strong>（量化后仅80MB），在业务数据集上召回率提升12%（余弦相似度阈值0.75→0.82）。</li>
+<li><strong>工程优化</strong>：通过FAISS的IVF_HNSW索引将检索延迟从500ms压至80ms，支持100万级文档库（分块策略：按标点+滑动窗口100字符，重叠20字符避免语义割裂）。</li>
+</ul>
+<h4>2. <strong>Rerank层精排</strong></h4>
+<ul>
+<li><strong>两阶段排序</strong>：先用BM25做文本召回（关键词匹配），再用<strong>Cross-Encoder（BERT-small）</strong> 做语义精排，Top10准确率从78%→91%（对比单Embedding检索）。</li>
+<li><strong>效率权衡</strong>：对召回结果采样前50条进入Rerank，而非全量计算，用ONNX Runtime部署INT8量化模型，单query处理耗时控制在150ms内。</li>
+</ul>
+<h4>3. <strong>业务闭环验证</strong></h4>
+<ul>
+<li><strong>离线指标</strong>：构建行业测试集（医疗QA 5000对），生成答案的事实一致性F1分数达89%（对比纯大模型提升23%）。</li>
+<li><strong>线上优化</strong>：针对高频问题缓存检索结果，缓存命中率达35%，整体系统QPS提升40%。</li>
+</ul>
+<h3>核心技术决策逻辑：</h3>
+<ul>
+<li><strong>轻量优先</strong>：嵌入式场景选MiniLM而非GPT-Embedding，平衡精度与部署成本；</li>
+<li><strong>混合检索</strong>：关键词（BM25）+语义（Embedding）互补，解决专业术语OOV问题；</li>
+<li><strong>工程落地</strong>：量化+索引优化+缓存三板斧，确保RAG在边缘设备（如车载中控）的可用性。</li>
+</ul>
+<p>（可补充：“类似我在华为做算子优化时的‘硬件特性适配’思路，这里是‘场景特性适配’——用最小资源实现最大效果。”）</p>
 <h1>LLM Agent</h1>
 <p>Agent 的工作流程如下：</p>
-<p>核心循环：感知--思考--行动--奖励</p>
 <p>接收用户输入。<br>
 调用大模型（如 Qwen），并告知其可用的工具及其 Schema。<br>
 如果模型决定调用工具，Agent 会解析请求，执行相应的 Python 函数。<br>
@@ -100,10 +121,7 @@ Agent 将工具的执行结果返回给模型。<br>
 模型根据工具结果生成最终回复。<br>
 Agent 将最终回复返回给用户。</p>
 <p>agent如何记住历史信息：<br>
-「在线用向量/Key-Value 做短时检索 → 定期摘要/结构化转长时记忆 → 必要时把高价值数据再喂回模型权重」</p>
-<p>具身智能：<br>
-AI脑袋+感知五官+行动四肢<br>
-运动规律：感知-- 思考 -- 行动的循环</p></div>
+「在线用向量/Key-Value 做短时检索 → 定期摘要/结构化转长时记忆 → 必要时把高价值数据再喂回模型权重」</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
