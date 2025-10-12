@@ -11,10 +11,14 @@
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
 <meta name="description" content="# 大模型优化方式/优化特性
-优化主要是从框架测（量化，其它特性），压缩内存，然后算子角度，来提升吞吐。">
+1. 从框架测（量化，其它特性）
+2. 压缩内存，kv cache角度
+3. 算子角度，提升通信算子，算子融合重排等方式来提升吞吐。">
 <meta property="og:title" content="大模型推理优化">
 <meta property="og:description" content="# 大模型优化方式/优化特性
-优化主要是从框架测（量化，其它特性），压缩内存，然后算子角度，来提升吞吐。">
+1. 从框架测（量化，其它特性）
+2. 压缩内存，kv cache角度
+3. 算子角度，提升通信算子，算子融合重排等方式来提升吞吐。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/da-mo-xing-tui-li-you-hua.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -86,21 +90,32 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h1>大模型优化方式/优化特性</h1>
-<p>优化主要是从框架测（量化，其它特性），压缩内存，然后算子角度，来提升吞吐。</p>
+<ol>
+<li>从框架测（量化，其它特性）</li>
+<li>压缩内存，kv cache角度</li>
+<li>算子角度，提升通信算子，算子融合重排等方式来提升吞吐。</li>
+<li>优化算法，比如PD分离，图模式，张量并行，数据并行，序列并行这些方式</li>
+</ol>
 <h2>量化</h2>
 <h3>量化基础概念</h3>
-<p>目的是对模型压缩与加速。量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。<br>
+<p>量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。<br>
 训练后量化主要分为以下三种：</p>
 <ol>
 <li>smoothquant、awq等基于缩放的方法；</li>
 <li>QuaRot、SpinQuant等基于旋转的方法；</li>
 <li>gptq等精度补偿方法</li>
 </ol>
-<p><strong>缩放量化方式</strong><br>
-<strong>smoothquant量化</strong>：校准（离线统计 |X| 的 per-channel 最大值）--平滑变化--量化--int8推理。<br>
-原理：离线地、逐通道地把激活值中的离群值‘抹平’，把因此产生的数值范围膨胀等价地迁移到静态权重上，使得激活和权重都能用 INT8 量化而几乎不掉点<br>
-SmoothQuant 用「离线 max 统计 + α 幂调和」算出 per-channel 向量 s，把激活离群值先除以 s，再把 s 吸进权重，实现 W8A8 而几乎不掉点</p>
-<p>SmoothQuant 对应量化过程：</p>
+<p><strong>缩放量化方式</strong></p>
+<h4>smoothquant</h4>
+<p>smoothquant量化原理：<br>
+SmoothQuant是一种基于感知的量化方法，它通过将模型中的权重和激活值进行动态调整，以减少量化带来的精度损失。具体来说，它会根据每个层的激活分布动态地选择合适的量化参数，从而在保持模型性能的同时降低计算和存储需求。</p>
+<details><summary>Details</summary>
+<p>
+上面的基于感知，具体如下两点：
+1. 敏感度感知：计算每一层激活值的动态范围（如最大绝对值）与权重的比例，识别易受量化误差影响的“敏感层”（如激活波动大的层）；
+2. 平滑迁移：通过缩放因子将激活值的“量化难度”迁移到权重（因权重更抗量化噪声），例如将激活的大动态范围分摊到权重的量化参数中，避免激活值因截断导致精度骤降。
+</p><p>SmoothQuant 对应量化过程：<br>
+校准（离线统计 |X| 的 per-channel 最大值）--平滑变化--量化--int8推理。</p>
 <ol>
 <li>步骤一：校准（Calibration） - 离线的，只做一次<br>
 准备校准数据：从训练集中选取一小批（几百条）有代表性的样本。<br>
@@ -124,7 +139,13 @@ SmoothQuant 用「离线 max 统计 + α 幂调和」算出 per-channel 向量 s
 <li>超参数 α选择误差</li>
 <li>基础舍入误差</li>
 </ol>
-<p><strong>awq量化</strong>：识别重要权重--找最优缩放因子--量化重建。<br>
+<p></p>
+</details> 
+<h4>awq量化</h4>
+<p>awq量化原理：通过分析激活分布，选择性地对权重进行低精度量化（如INT4），同时保留关键层的高精度计算。这种策略能有效减少显存占用，同时避免精度损失过大。</p>
+<details><summary>Details</summary>
+<p>
+</p><p>awq量化过程：识别重要权重--找最优缩放因子--量化重建。<br>
 awq具体过程：<br>
 「把校准数据过一次网络，记下每条通道的激活平均值 → 用网格搜索试 α∈[0.3,1] → 挑 PPL 最小的 α* 生成 s_i = mean(|X_i|)^α* → 把 W 乘 s 后做 group-INT4 量化 → 推理时先反量化再除 s 还原。」</p>
 <p>推理时先反量化再除 s 还原原因如下：<br>
@@ -134,10 +155,18 @@ awq具体过程：<br>
 先把 INT4 结果 反量化 → 得到 Ŵ·X<br>
 再 除以 s → 得到 (Ŵ·X)/s = W·X</p>
 <p>如何得到s：先算每条通道的激活均值 → 在 0.3–1.0 之间以 0.05 步长试 15 档 α → 取校准 PPL 最低的那一档 α → 最终 s_i = mean(|X_i|)^α**。</p>
-<p><strong>旋转的量化方式</strong><br>
-<strong>spinquant旋转量化</strong>：用可学习的正交旋转矩阵把权重 &amp; 激活里的离群值“转平”，再对旋转后的矩阵做 4-bit 量化；旋转过程与网络输出数值等价，只改分布不改结果，却显著降低量化误差。量化步骤如下：</p>
-<p>旋转量化，AWQ、smoothquant量化中对应的零点是怎么选的，缩放因子呢：<br>
+<p></p>
+</details> 
+<h4>旋转量化</h4>
+<p>spinquant旋转量化原理<br>
+利用旋转矩阵对权重进行重参数化，使得量化后的权重能够更接近原始权重的分布。这种方法在保持模型性能的同时，能够实现更高的压缩率。</p>
+<details><summary>Details</summary>
+<p>
+spinquant旋转量化具体过程：用可学习的正交旋转矩阵把权重 &amp; 激活里的离群值“转平”，再对旋转后的矩阵做 4-bit 量化；旋转过程与网络输出数值等价，只改分布不改结果，却显著降低量化误差。量化步骤如下：
+</p><p>旋转量化，AWQ、smoothquant量化中对应的零点是怎么选的，缩放因子呢：<br>
 “旋转类→先转平再 MSE 选 s，z 恒 0；AWQ→激活统计搜 α 搬 0.1 % 通道；SmoothQuant→max 平滑搬全部通道，s 手工调；三者都用对称量化 z=0，硬件零成本。”</p>
+<p></p>
+</details> 
 <p>四种量化方式对比，主要包含量化原理，误差来源，量化步骤，增加对应量化公式如下：</p>
 <details><summary>Details</summary>
 <p>
@@ -211,59 +240,27 @@ awq具体过程：<br>
 <p></p>
 </details> 
 <h1>优化项目</h1>
-<p>量化项目一：低精度解决幻觉问题<br>
-“先回退保上线，再量化+层/Token级FP16补丁，显存再省12 %且零重启。”<br>
-优化项目二：Page_Attention 上内存节省15%<br>
-“16-token页式KV+算子重排的方式优化，短序列长尾显存-15 %，吞吐+8 %，碎片归0。”<br>
-W8A8C8优化项目三：<br>
-“8-bit KV+4-bit离群补丁，显存再省12 %，精度还涨1.7，延迟&lt;5 µs看不见。”</p>
+<p>优化项目一：低精度解决幻觉问题--量化（敏感层动态回退）<br>
+“先回退保上线，再量化+层/Token级FP16补丁，显存再省12 %且零重启。”</p>
+<p>后面优化项目主要是kv cache上的优化：<br>
+KV Cache的两大核心优化：<br>
+微页管理重构：将传统大页分配改为16-token位图微页，碎片率从95%降至2.6%，长尾显存占用减少15%，70B模型推理吞吐提升8%；<br>
+动态量化补偿：在INT8量化基础上设计<strong>4-bit残差补偿机制</strong>，显存再省12%的同时，通过敏感层动态回退方案使Rouge-L指标反超FP16 1.7%。</p>
 <h3>量化优化项目一：  低精度解决幻觉问题</h3>
 <p>产生根因原因： INT8 误差 + 自回归放大（语料缺失/强化对齐阶段宁可编也要答） &gt; 模型固有幻觉</p>
 <p>把 INT8 误差拿掉以后，再叠加“不确定时回退”策略，相当于在原始 bf16 之上又加了一层保守校正，于是幻觉率可以反杀 FP32。</p>
 <p><strong>主要思路</strong>  = 「先全局低精度省内存，再精准把 1 % 容易放大误差的层/Token 无缝切回 FP16」，用最小的高精度代价把量化引入的幻觉压回到比原始 FP32 还低的水平。</p>
-<p>这套方案解决了什么问题，效果如何：</p>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th>痛点</th>
-<th>一刀重量化方案</th>
-<th>项目一做法</th>
-<th>收益</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>① 量化误差 → 自回归放大 → 幻觉</td>
-<td>全 INT8，误差无法收回</td>
-<td>把误差源头精准切回 FP16</td>
-<td>幻觉率 −38 %</td>
-</tr>
-<tr>
-<td>② 敏感层只占 1 %，却得全局 FP16</td>
-<td>显存省不下</td>
-<td>仅 1 % 计算用 bf16</td>
-<td>显存再省 12 %</td>
-</tr>
-<tr>
-<td>③ 线上发现误报需重启换模型</td>
-<td>必须停服务</td>
-<td>32-bit mask 热切换</td>
-<td>7×24 无中断</td>
-</tr>
-<tr>
-<td>④ 不同模型/业务敏感层不同</td>
-<td>人工调参</td>
-<td>离线脚本自动打标签</td>
-<td>移植到任何新模型 &lt;2 h</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<p><strong>主要过程分为下面四步</strong></p>
+<p>具体过程和方案案例，实现效果如下：</p>
 <ol>
-<li>离线三选一标敏感层「KL + R + Energy_ratio」<br>
-用 512~2048 条真实线上 prompt 跑一次「伪量化」对照实验，计算每条通道的kl散度，离散值，Energy_ratio</li>
+<li>离线三选一标敏感层「KL + R + Energy_ratio」，KL 散度（分布歪没歪）；离散度 R（有没有极端值）；奇异值表示该矩阵在该方向上的“能量大小”，R&gt;15 / KL&gt;0.02 / Energy&gt;0.42** 被永久保留 bf16</li>
+<li>权重打包只留敏感层做 bf16</li>
+<li>算子适配bf16/int8</li>
+<li>动态兜底--在线统计每个请求的中间激活，若 KL&gt;0.02或偏度大于3（表面右边有尖刺）立即把该请求剩余 Token 全部切 FP16，单条回退，不影响别人。</li>
 </ol>
-<ul>
+<details><summary>Details</summary>
+<p>
+### 主要过程如下：
+</p><ul>
 <li>KL 散度（分布歪没歪）   具体计算如下：</li>
 </ul>
 <details><summary>Details</summary>
@@ -285,9 +282,7 @@ KL 误差 = 量化前后该层输出分布之间的 KL 散度（Kullback-Leibler
 奇异值表示该矩阵在该方向上的“能量大小”；<br>
 最大奇异值占 trace 比例 = 最大方向对整体方差的贡献，占比越高 → 矩阵越“低秩+极端”，量化用一个 scale 时主方向最容易被掰歪。</li>
 </ul>
-<details><summary>Details</summary>
-<p>
-</p><markdown-accessiblity-table><table role="table">
+<markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th>值范围</th>
@@ -313,9 +308,7 @@ KL 误差 = 量化前后该层输出分布之间的 KL 散度（Kullback-Leibler
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
-<p></p>
-</details> 
-<p>把「一旦量化就会误差爆炸」的层/Token 标成「必须 bf16」；其余放心 INT4/8。将结果写进 sensitive_layers.json，一次生成，全生命周期复用。</p>
+<p>把「一旦量化就会误差爆炸」的层/Token 标成「必须 bf16」；其余放心 INT4/8。将结果写进对应json文件中，sensitive_layers.json，一次生成，全生命周期复用。</p>
 <ol start="2">
 <li>权重打包只留敏感层做 bf16，显存省 41 %，无翻倍。<br>
 磁盘里同时存两份：</li>
@@ -362,10 +355,12 @@ vllm/kernels/custom_quant.py-- Kernel 侧读掩码。</li>
 </ol>
 <p>在线统计每个请求的中间激活，若 KL&gt;0.02或偏度大于3（表面右边有尖刺）立即把该请求剩余 Token 全部切 FP16，单条回退，不影响别人。<br>
 全程热插拔，无需重启服务。</p>
+<p></p>
+</details> 
+<p>下面用 <strong>Qwen3-235B</strong> 做完整 walk-through：</p>
 <details><summary>Details</summary>
 <p>
-</p>
-<p>下面用 <strong>Qwen3-235B</strong> 做完整 walk-through，把四步全部跑通，并给出真实能测到的离散度 R、Energy_ratio、KL 数值。<br>
+</p><p>下面用 <strong>Qwen3-235B</strong> 做完整 walk-through，把四步全部跑通，并给出真实能测到的离散度 R、Energy_ratio、KL 数值。<br>
 （数据来自我们内部 910B-NPU 校准日志，235B 对应 80 层，hidden 18432，ffn_inter 49152）</p>
 <hr>
 <p>一、离线体检（单卡 80 GB 足够，用时 25 min）</p>
@@ -378,11 +373,9 @@ vllm/kernels/custom_quant.py-- Kernel 侧读掩码。</li>
 <p>伪量化 kernel（Triton）</p>
 <ul>
 <li>权重对称量化到 INT8：<br>
-<code class="notranslate">scale = 127 / max(abs(W))</code>
-</li>
+<code class="notranslate">scale = 127 / max(abs(W))</code></li>
 <li>反量化：<br>
-<code class="notranslate">Ŵ = scale⁻¹ · W_quant</code>
-</li>
+<code class="notranslate">Ŵ = scale⁻¹ · W_quant</code></li>
 <li>激活不量化，只量化权重 → W-only 方案，显存省一半。</li>
 </ul>
 </li>
@@ -390,7 +383,7 @@ vllm/kernels/custom_quant.py-- Kernel 侧读掩码。</li>
 <p>逐通道统计（关键结果抽 3 层示例）</p>
 </li>
 </ol>
-<table role="table">
+<markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th>layer_id</th>
@@ -443,7 +436,7 @@ vllm/kernels/custom_quant.py-- Kernel 侧读掩码。</li>
 <td>per-channel INT8</td>
 </tr>
 </tbody>
-</table>
+</table></markdown-accessiblity-table>
 <p>阈值经验（235B 通用）</p>
 <ul>
 <li>KL &gt; 0.02 → 敏感</li>
@@ -456,12 +449,11 @@ vllm/kernels/custom_quant.py-- Kernel 侧读掩码。</li>
 表格里 5 行全部来自 <strong>同一副 Qwen3-235B 权重</strong>（一次跑 1024 条金融 FAQ），<strong>不是不同模型</strong>。</p>
 <p>第二步 界限怎么定</p>
 <ul>
-<li>
-<strong>先扫 80 层全部指标</strong> → 拿到 240 组 (KL, R, Energy)；</li>
+<li><strong>先扫 80 层全部指标</strong> → 拿到 240 组 (KL, R, Energy)；</li>
 <li>用 <strong>ROC 原则</strong>：
 <ul>
 <li>让「被标 bf16」层数 ≈ 8–10 %；</li>
-<li>在此约束下 <strong>最大化量化后验证集 PPL 下降 &lt;1 %</strong>；</li>
+<li>在此约束下 <strong>最大化量化后验证集 PPL（困惑度，越小越懂人话）下降 &lt;1 %</strong>；</li>
 </ul>
 </li>
 <li>网格搜索后得到 <strong>235B 通用阈值</strong>：<br>
@@ -469,8 +461,7 @@ KL &gt; 0.02 <strong>或</strong> R &gt; 15 <strong>或</strong> Energy &gt; 0.4
 </ul>
 <p>第三步 跨模型通用性</p>
 <ul>
-<li>
-<strong>235B、70B、13B</strong> 都按同一流程扫一遍，<strong>阈值基本稳态</strong>（±10 % 层数浮动）；</li>
+<li><strong>235B、70B、13B</strong> 都按同一流程扫一遍，<strong>阈值基本稳态</strong>（±10 % 层数浮动）；</li>
 <li>新模型只需 <strong>重新跑一次校准</strong>，<strong>阈值不变</strong>，<strong>只改 sensitive_layers.json</strong> 即可。</li>
 </ul>
 <ol start="4">
@@ -484,7 +475,7 @@ KL &gt; 0.02 <strong>或</strong> R &gt; 15 <strong>或</strong> Energy &gt; 0.4
 <p>共 <strong>7 层</strong>被标 bf16，占总量 8.75 %。</p>
 <hr>
 <p>二、权重打包（235B 真实体积）</p>
-<table role="table">
+<markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th>精度</th>
@@ -505,8 +496,7 @@ KL &gt; 0.02 <strong>或</strong> R &gt; 15 <strong>或</strong> Energy &gt; 0.4
 </tr>
 <tr>
 <td>仅敏感层 bf16</td>
-<td>470 GB × 8.75 % ≈ <strong>41 GB</strong>
-</td>
+<td>470 GB × 8.75 % ≈ <strong>41 GB</strong></td>
 <td>model-235b.sen.bf16</td>
 </tr>
 <tr>
@@ -515,13 +505,11 @@ KL &gt; 0.02 <strong>或</strong> R &gt; 15 <strong>或</strong> Energy &gt; 0.4
 <td></td>
 </tr>
 </tbody>
-</table>
+</table></markdown-accessiblity-table>
 <p>加载流程</p>
 <ol>
-<li>INT8 文件 → 得到 <code class="notranslate">d_int8_ptr</code>
-</li>
-<li>sen_bf16 文件 → 得到 <code class="notranslate">d_sen_ptr</code>
-</li>
+<li>INT8 文件 → 得到 <code class="notranslate">d_int8_ptr</code></li>
+<li>sen_bf16 文件 → 得到 <code class="notranslate">d_sen_ptr</code></li>
 <li>host 端创建 80-bit 掩码表（layer 粒度），下发到 kernel 常量缓存。</li>
 </ol>
 <hr>
@@ -538,19 +526,15 @@ KL &gt; 0.02 <strong>或</strong> R &gt; 15 <strong>或</strong> Energy &gt; 0.4
 <ul>
 <li>粒度实现
 <ul>
-<li>
-<strong>层</strong>：<code class="notranslate">blockIdx.z</code> 直接当 layer_id</li>
-<li>
-<strong>Token</strong>：把 <code class="notranslate">token_id &gt;&gt; 6</code> 映射到 mask 中间 12 bit</li>
-<li>
-<strong>Batch</strong>：<code class="notranslate">sample_id</code> 映射到高 5 bit</li>
+<li><strong>层</strong>：<code class="notranslate">blockIdx.z</code> 直接当 layer_id</li>
+<li><strong>Token</strong>：把 <code class="notranslate">token_id &gt;&gt; 6</code> 映射到 mask 中间 12 bit</li>
+<li><strong>Batch</strong>：<code class="notranslate">sample_id</code> 映射到高 5 bit</li>
 </ul>
 </li>
 </ul>
 <p>实测 235B、seq=4096、bs=16</p>
 <ul>
-<li>额外延迟 <strong>1.1 µs</strong>
-</li>
+<li>额外延迟 <strong>1.1 µs</strong></li>
 <li>占空比 <strong>0.28 %</strong>（选路时钟 / 总计算时钟）</li>
 </ul>
 <hr>
@@ -561,71 +545,11 @@ KL &gt; 0.02 <strong>或</strong> R &gt; 15 <strong>或</strong> Energy &gt; 0.4
 <li>实现：把对应 sample_id 的 mask 所有 bit 置 1，<strong>下发即生效</strong>，老请求继续跑完，无重启。</li>
 </ul>
 <hr>
-<p>五、端到端效果（235B 线上 3 天）</p>
-<table role="table">
-<thead>
-<tr>
-<th>指标</th>
-<th>纯 bf16</th>
-<th>纯 INT8</th>
-<th>项目一</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>显存</td>
-<td>470 GB</td>
-<td>235 GB</td>
-<td>
-<strong>276 GB</strong>（省 41 %）</td>
-</tr>
-<tr>
-<td>首 token 延迟</td>
-<td>420 ms</td>
-<td>415 ms</td>
-<td><strong>418 ms</strong></td>
-</tr>
-<tr>
-<td>增量延迟</td>
-<td>38 ms</td>
-<td>37 ms</td>
-<td><strong>37.4 ms</strong></td>
-</tr>
-<tr>
-<td>幻觉率（人工抽 1 k）</td>
-<td>11.2 ‰</td>
-<td>14.9 ‰</td>
-<td>
-<strong>7.5 ‰</strong>（↓ 33 %）</td>
-</tr>
-<tr>
-<td>回退覆盖率</td>
-<td>—</td>
-<td>—</td>
-<td>
-<strong>98.7 %</strong> 请求无感知</td>
-</tr>
-</tbody>
-</table>
-<hr>
-<p>一句话总结<br>
+<p><strong>实现效果</strong><br>
+一句话总结 ：<br>
 用 1024 条线上 prompt 把 235B 体检一遍，<strong>7 层</strong>因 <strong>R&gt;15 / KL&gt;0.02 / Energy&gt;0.42</strong> 被永久保留 bf16；<br>
 运行时只占 <strong>8.75 % 计算量</strong>，却把量化带来的额外幻觉 <strong>全部吃掉</strong>，显存占比还比原始 bf16 模型再低 <strong>33 %</strong>。首 Token &amp; 增量延迟持平，线上 7 天无幻觉回退，且全程无需重启。</p>
 <p>样本偏度（Skewness）最常用的公式是 <strong>Pearson 第三动差</strong>：</p>
-<p>$$<br>
-\hat{\gamma}<em>1 = \frac{1}{n} \sum</em>{i=1}^{n} \left( \frac{x_i - \bar{x}}{s} \right)^3<br>
-$$</p>
-<p>其中</p>
-<ul>
-<li>
-$x_i$ ：样本值（一层输出通道的激活值，或权重值）</li>
-<li>
-$\bar{x}$ ：样本均值</li>
-<li>
-$s$ ：样本标准差</li>
-<li>
-$n$ ：样本数量</li>
-</ul>
 <hr>
 <p>PyTorch 一行代码即可</p>
 <div class="highlight highlight-source-python"><pre class="notranslate"><span class="pl-k">import</span> <span class="pl-s1">torch</span>
@@ -1647,6 +1571,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 </script>
-<script>MathJax = {tex: {inlineMath: [["$", "$"]]}};</script><script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
 
 </html>
