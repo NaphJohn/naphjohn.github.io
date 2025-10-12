@@ -562,25 +562,20 @@ KL &gt; 0.02 <strong>或</strong> R &gt; 15 <strong>或</strong> Energy &gt; 0.4
 <p></p>
 </details> 
 <h3>优化项目二： PageAttention KV-Cache 内存池优化--内存管理器优化</h3>
-<p>PageAttention原理：</p>
+<p>主要思路：“把 KV-Cache 的显存管理从『大块连续预分配』改成16-token 微页 + 位图分配器。实现效果：用小页代替 4096-token 大页，碎片率从 95% 降到 2.6%，带宽 +6%，端到端显存省 15%，吞吐提 8%。”</p>
+<p>主要过程：</p>
 <ol>
-<li>分页切块<br>
-KV cache 不再整段连续，而是按固定块大小（如 1 MB ≈ 256 tokens）切成等长块，块号→物理块表。</li>
-<li>逻辑→物理映射<br>
-每个序列维护一张逻辑块号 → 物理块号的表，生成新 token 时只给最后一个逻辑块追加；前面块只读共享。</li>
-<li>引用计数 &amp; 写时复制<br>
-物理块被多序列共享时计数 +1；只要有一个序列要继续写，就复制出新块，其余序列仍读旧块——零浪费、零等待。</li>
+<li>页大小量化--蒙特卡洛仿真，找到碎片率谷底的最小token数</li>
+<li>页内布局优化--采集profiling，算子重排以及融合角度提升带宽或者效率</li>
+<li>位图思想，更细粒度管理kv cache<br>
+profiling 显示 8 % CPU 时间花给 KV-Cache 申请/归还显存，通过位图将这部分移动到SRAM，分配/释放kv cache更快</li>
 </ol>
-<p>主要思路：“把 KV-Cache 的显存管理从『大块连续预分配』改成『16-token 对齐、512 B 物理对齐、位图式微页管理』，用 6 万张小页代替 4096-token 大页，碎片率从 95% 降到 2.6%，带宽 +6%，端到端显存省 15%，吞吐提 8%。”</p>
-<p>权重是怎么分布的：<br>
-我把 235 B 拆到 64 卡，先拿 safetensors.index 累加确认单卡 9.1 GB；再用 nsys 看通信只占 3 %，于是把 KV-Cache 内存池做成 16-token 位图，页表长度随 TP 再除 8，结果 4 M 页/512 KB 位图可全放 L2，长尾 FAQ 显存省 15 %，对 235 B 这种巨无霸同样适用</p>
-<p>场景：金融 FAQ 短查询长尾，连续预分配 4096 导致 95% 空放<br>
-动作：</p>
-<ol>
-<li>页大小量化<br>
-如何找对应的数字：当时做了一个蒙特卡洛 100 k 随机长度仿真 → 16-token（512 KB）碎片率谷底（曲线最低点——再换别的页大小，浪费反而变多） 2.8%，对齐达芬奇 L2 cache-line（512 B）。</li>
-</ol>
-<p><strong>蒙特卡洛 100 k 随机长度仿真</strong>：</p>
+<p>具体实现过程如下：</p>
+<details><summary>Details</summary>
+<p>
+**1. 页大小量化**
+如何找对应的数字：当时做了一个蒙特卡洛 100 k 随机长度仿真 → 16-token（512 KB）碎片率谷底（曲线最低点——再换别的页大小，浪费反而变多） 2.8%，对齐达芬奇 L2 cache-line（512 B）。
+</p><p><strong>蒙特卡洛 100 k 随机长度仿真</strong>：</p>
 <ul>
 <li>用 Python 按金融 FAQ 真实长度分布（平均 200，σ=120，截断 4096）批量生成 10 万条虚拟序列。</li>
 <li>对不同页大小（8/16/32/64 token）分别跑「先分配→后释放」实验，统计无法被复用的空洞字节 → 碎片率。</li>
@@ -592,12 +587,10 @@ KV cache 不再整段连续，而是按固定块大小（如 1 MB ≈ 256 tokens
 <li>选页大小依据：16-token 页 浪费最少，显存节省 15% 的源头就在这里。</li>
 </ul>
 <p>把 10 万条随机长度序列依次分配、释放后，仍有 2.8% 的页内字节永远没人用（空洞）。</p>
-<ol start="2">
-<li>页内布局优化<br>
+<p><strong>2. 页内布局优化</strong><br>
 原来 [B,H,S,D] 像“隔 128 B 跳格子”→ 30 % Warp 空等。<br>
 换成 [B,S,H,D] → seq 维连续，128 B cache-line 100% 填满，<br>
-→ HBM 带宽 65 % → 88 %（实测）</li>
-</ol>
+→ HBM 带宽 65 % → 88 %（实测），这样让相邻 token 在物理地址上连续</p>
 <p>第一步：发现的问题<br>
 把模型跑起来后，用昇腾自带的 profiler 一看：Cube（矩阵乘单元）经常“发呆”，带宽没跑满。往下钻发现是“bank-conflict”——同一条 128 B 数据里，32 个线程抢同一个 bank。</p>
 <p>定位原因：<br>
@@ -606,116 +599,23 @@ KV cache 不再整段连续，而是按固定块大小（如 1 MB ≈ 256 tokens
 结果一个 128 B cache-line 只能扫到零星几个 token，带宽浪费</p>
 <p>[B,H,S,D] 把 head 维提到最前，同一 head 的 token 在内存里被拉开 H×D×sizeof(fp16) 的步长，导致 GPU 的 128 B cache-line 只能用到一小段，其余 Warp 空等。<br>
 换成 [B,S,H,D]（seq 维紧跟 batch）后，相邻 token 连续存储，cache-line 利用率 100%，带宽立刻涨 30%。</p>
-<details><summary>Details</summary>
-<p>
-</p><p>通过旋转+分块+重排，KV带宽打满</p>
-<p>我在 Qwen3-14B 里用 910C 跑一条金融 FAQ，发现 35% 的时间卡在“搬数据”（HBM 带宽被吃满）。</p>
-<p>带宽指标：<br>
-Memory Throughput (HBM)<br>
-当前 HBM 读取 + 写入带宽 GB/s<br>
-Memory Utilization<br>
-0%–100% 的百分比，&gt;85% 通常视为“吃满”</p>
-<ol>
-<li>连续搬货<br>
-原来 [B,H,S,D] 像“隔 128 B 跳格子”→ 30 % Warp 空等。<br>
-换成 [B,S,H,D] → seq 维连续，128 B cache-line 100% 填满，<br>
-→ HBM 带宽 65 % → 88 %（实测）</li>
-</ol>
-<p>具体细节：用npu采集工具<br>
-Nsight Compute → Memory Workload → L2 Cache<br>
-128 B 突发有效带宽 仅 25 %；<br>
-stride = head_dim × sizeof(float) = 128 B → 每个线程跳 128 B，落在不同 cache-line，只用到 1/4 带宽。</p>
-<p>原先布局 [B,H,S,D] → 步长 = head_dim × sizeof(float) = 128 B<br>
-Warp 32 线程连续编号 → 每个线程读 +128 B 偏移<br>
-结果：<br>
-线程 0 读 addr<br>
-线程 1 读 addr+128 B<br>
-…<br>
-线程 31 读 addr+31×128 B<br>
-→ 32 个请求落在 32 条不同 128 B cache-line，硬件只能 串行发射 32 次，<br>
-→ 128 B 突发有效带宽 = 1/32 ≈ 3.1 %（实测 25 % 因部分命中 L2）。</p>
-<p>改成 [B,S,H,D] 后，同一个线程束（Warp）的 32 个线程<strong>按 seq 维连续编号</strong>：<br>
-线程 0 读 addr<br>
-线程 1 读 addr+4 B（float32）<br>
-…<br>
-线程 31 读 addr+31×4 B = addr+124 B<br>
-→ 32 个请求全部落在同一条 128 B cache-line 内，硬件 一次突发就完成，<br>
-→ 有效带宽 100 %，Warp 0 空等。</p>
-<ol start="2">
-<li>共享内存缓冲<br>
-在 NPU 里铺 32×32 瓷砖（shared memory tile），<br>
-GMEM → tile 12 次/元素 → 4 次/元素（减半）。<br>
-double-buffer：搬下一块时，当前块已在计算</li>
-</ol>
-<p>Cube 原生粒度<br>
-达芬奇矩阵乘 4×4×16，4×4=16 是最小 tile；2×2=4 拼接 → 32×32 刚好填满 Cube 单元无浪费。<br>
-共享内存容量<br>
-32×32×4 B = 4 KB，仅占 单 SM 164 KB 的 2.4 %，可双缓冲（8 KB）仍有余量。<br>
-缓存行甜点<br>
-32 线程 = 1 Warp，正好一次发射 128 B（32×4 B） → 0 bank-conflict。<br>
-经验谷底<br>
-蒙特卡洛仿真 8×8→64×64 碎片率曲线，32×32 处最低（2.8 %）。<br>
-→ 32×32 是带宽、容量、冲突三者的 Pareto 最优点，不是拍脑袋</p>
-<p></p>
-</details> 
 <ol start="3">
 <li>分配器实现--“一页一比特”的无锁位图分配器<br>
 profiling 显示 8 % CPU 时间花给 KV-Cache 申请/归还显存</li>
 </ol>
-<p>在 x86-64 上用 两条 CPU 原子指令写了个单线程位图分配器原型，验证页式 KV-Cache 的 alloc/free 能压到 0.18 µs、碎片 2.6 %；910B/VLLM 端尚未集成，但给了内存管理器级量化依据。</p>
-<p>“我把 6 万页 KV-Cache 的 alloc/free 变成 1 bit 打钩/擦钩，零系统调用、零锁、零分支，延迟降 10 倍，碎片少 3 倍，代码只有 12 行。用 CPU 提供的两条原子位操作指令（bts/btr）把“停车/取车”动作压到 0.18 µs、2.6 % 碎片；在 x86-64 上即可验证，零硬件依赖，内存管理器级量化优化。</p>
-<p>通俗比喻<br>
-原来：每来一个客户（token 序列）就临时去前台开/退一间 4096 人大套房——前台阿姨忙到飞起。<br>
-现在：提前把大楼隔成 16 人小单间，进门自己拿钥匙（位图打钩），出门把钥匙扔回去（位图擦钩）——前台阿姨直接下岗，CPU 瞬间清闲。</p>
-<p>// 12-line lock-free bitmap allocator<br>
-#include &lt;stdint.h&gt;<br>
-static uint64_t bmp[6250];              // 4 M bit → 4 M 页<br>
-static inline int alloc(void) {<br>
-for (int i = 0; i &lt; 6250; ++i) {<br>
-uint64_t old = 0;<br>
-__atomic_load(&amp;bmp[i], &amp;old, __ATOMIC_RELAXED);<br>
-if (~old == 0) continue;               // full<br>
-int bit = __builtin_ctzll(~old);       // first 0<br>
-uint64_t mask = 1ULL &lt;&lt; bit;<br>
-if (__atomic_fetch_or(&amp;bmp[i], mask, __ATOMIC_ACQ_REL) &amp; mask) continue;<br>
-return i * 64 + bit;                   // success<br>
-}<br>
-return -1;                                 // full<br>
-}<br>
-static inline void free(int idx) {<br>
-__atomic_fetch_and(&amp;bmp[idx &gt;&gt; 6], ~(1ULL &lt;&lt; (idx &amp; 63)), __ATOMIC_RELEASE);<br>
-}</p>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th>场景</th>
-<th>老办法</th>
-<th>位图分配器</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>KV-Cache 短查询长尾</strong></td>
-<td>malloc 连续 4096 → 95% 空放</td>
-<td><strong>16-token 页按需打钩</strong> → 显存 <strong>-15%</strong></td>
-</tr>
-<tr>
-<td><strong>多线程抢页</strong></td>
-<td>mutex 竞争 4% CPU</td>
-<td><strong>CPU 指令级CAS 原子位操作</strong> → 竞争 <strong>0.3%</strong></td>
-</tr>
-<tr>
-<td><strong>NPU 低延迟要求</strong></td>
-<td>链表分配 2 µs</td>
-<td><strong>x86 原子位指令bts/btr 0.18 µs</strong> → <strong>降 10 倍</strong></td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
+<p>在NPU 里中将位图放进片上 SRAM（紧挨着计算单元的「超高速小内存」，我们把 512 kB 的位图扔进去，分配/释放一个 KV-Cache 页只需 1 个时钟周期，比去 DRAM 找链表节点快两个数量级。），调用 AICore 的 atomic_or/and 指令，就能实现零 Host、零锁、亚微秒级的 KV-Cache 分配，比CPU 原型更快更省。</p>
+<p>使用位图思想：<br>
+这种方式的巨大优势：<br>
+极低的内存开销：管理6万个页面，只需要 60,000 / 8 = 7.5 KB 的额外内存，小到可以放进L2缓存。<br>
+极快的分配速度：对于CPU/GPU来说，按字（word，如32位或64位）扫描位图，寻找第一个非全1的字，然后使用 ffs（寻找第一个置位）指令快速定位空闲位，速度非常快。<br>
+解决外部碎片：因为所有页面大小相同，所以不存在外部碎片。任何空闲页面都可以分配给任何请求。</p>
 <ol start="4">
 <li>端到端验证<br>
 Qwen-7B batch=64、max_seq=4096、金融 FAQ 1000 条：<br>
 峰值显存 38.4 GB → 32.6 GB（-15%），吞吐 +8%，P99 延迟持平。</li>
 </ol>
+<p></p>
+</details> 
 <h3>量化优化项目三：  w8a8c8的量化</h3>
 <p>总目标：在 KV-Cache 8-bit 量化场景下，既省显存又不掉生成质量。</p>
 <p>分三步落地：<br>
