@@ -328,6 +328,15 @@ K 和 V 的个数减少到 g 个（n_heads &gt;= g）。
 </ol>
 <p></p>
 </details>
+<p><strong>PageAttention原理：</strong></p>
+<ol>
+<li>分页切块<br>
+KV cache 不再整段连续，而是按固定块大小（如 1 MB ≈ 256 tokens）切成等长块，块号→物理块表。</li>
+<li>逻辑→物理映射<br>
+每个序列维护一张逻辑块号 → 物理块号的表，生成新 token 时只给最后一个逻辑块追加；前面块只读共享。</li>
+<li>引用计数 &amp; 写时复制<br>
+物理块被多序列共享时计数 +1；只要有一个序列要继续写，就复制出新块，其余序列仍读旧块——零浪费、零等待。</li>
+</ol>
 <p><strong>Mask原理</strong></p>
 <p>今天的大模型掩码全是下三角 Causal，可选 pad/文档屏蔽；形状统一写成 (B,1,L,L) Boolean，True 表示可见。</p>
 <p>比如因果掩码：防止标签泄漏，应用在Decoder的自注意力层（在训练和推理中均使用）。<br>
