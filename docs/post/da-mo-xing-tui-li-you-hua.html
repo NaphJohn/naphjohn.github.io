@@ -674,9 +674,8 @@ token-wise 残差补偿 = 对每个 token 的 KV-Cache 8-bit 量化误差做“�
 </ol>
 <p></p>
 </details> 
-<ol>
-<li>原生NZ格式KV缓存等</li>
-</ol>
+<h2>LLM中一些优化特性</h2>
+<p><strong>NZ格式KV缓存</strong></p>
 <details><summary>Details</summary>
 <p>
  - nz格式：一种专为注意力机制优化的稀疏块状存储格式，用于存储Key和Value缓存。NZ格式将KV缓存组织为更小的、对齐的数据块（Blocks）。这种格式与NPU计算单元（如3D Cube）处理数据的模式高度匹配。
@@ -684,9 +683,7 @@ token-wise 残差补偿 = 对每个 token 的 KV-Cache 8-bit 量化误差做“�
     - MTP感知平铺：MTP（Multi-Thread Parallelism）指昇腾NPU内部的多线程并行架构。具体分以下三步：算法会动态分析MatMul操作的维度（M, N, K）；此优化指根据NPU硬件线程的特性来智能地切分（Tiling）计算任务；确保切分后的子任务大小均匀。
 </p>
 </details> 
-<ol start="2">
-<li>数据并行/流水线并行/张量并行/序列并行</li>
-</ol>
+<p><strong>数据并行/流水线并行/张量并行/序列并行</strong></p>
 <details><summary>Details</summary>
 <p>
 数据并行：把输入的 batch 切分成多份，分配到多张卡上，每张卡独立执行完整的模型推理。
@@ -699,7 +696,6 @@ token-wise 残差补偿 = 对每个 token 的 KV-Cache 8-bit 量化误差做“�
 可以将SP+TP视为TP的一种特殊形式，每层做两次AllGather，2次ReduceScatter操作，通信量和纯TP相同（AllReduce = AllGather+ReduceScatter）,Add+Norm块的计算量变为1/SP</p>
 <p></p>
 </details> 
-<h2>LLM中一些优化特性</h2>
 <h3>flash attention</h3>
 <p>原理：针对全局内存和共享存储的 I/O 速 度的不同，尽可能的避免 HBM 中读取或写入注意力矩阵。FlashAttention 目标是尽可能高效地使 用 SRAM 来加快计算速度，避免从全局内存中读取和写入注意力矩阵。</p>
 <details><summary>Details</summary>
