@@ -629,6 +629,14 @@ FMA = Fused Multiply-Add：<br>
 一条指令同时完成 "a×b + c" 运算，比先乘后加两条指令更快、精度更高。</li>
 </ol>
 <p>总结果：70B 模型 4k ctx 下，Rouge-L 从 42.1 提升到 43.8（+1.7），显存再省 12 %，P99 延迟持平，线上已灰度验证。</p>
+<p>w8a8C8优势：</p>
+<ul>
+<li>存得小：C8 只把 KV 写成 INT8 → 带宽减半、容量减半，QPS 先提一倍。</li>
+<li>算得对：Attention 的 matmul 必须是 FP16 精度 → 所以加载瞬间就用融合指令 INT8*scale → FP16，不再额外占周期，也不写回内存。</li>
+</ul>
+<p>结果：存储层省 50 % 流量，计算层仍拿 FP16 结果 → 既提速又不掉精度。<br>
+一句话：<br>
+「存 INT8 是为了省 IO，反量化 FP16 是为了能正确计算，而融合指令让这两步在同一周期完成，所以省带宽的同时不增加延迟。」</p>
 <p>W8A8C8上技术路线/token-wise残差补偿：</p>
 <details><summary>Details</summary>
 <p>
