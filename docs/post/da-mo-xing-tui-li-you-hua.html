@@ -562,10 +562,15 @@ KL &gt; 0.02 <strong>或</strong> R &gt; 15 <strong>或</strong> Energy &gt; 0.4
 <p></p>
 </details> 
 <h3>优化项目二： PageAttention KV-Cache 内存池优化--内存管理器优化</h3>
-<p><strong>PageAttention</strong><br>
-物理块：将整个KV Cache内存池划分为固定大小的“块”。<br>
-逻辑块：每个序列的KV Cache被视为由多个非连续的逻辑块组成的链表。<br>
-块表：维护一个逻辑块到物理块的映射表。</p>
+<p>PageAttention原理：</p>
+<ol>
+<li>分页切块<br>
+KV cache 不再整段连续，而是按固定块大小（如 1 MB ≈ 256 tokens）切成等长块，块号→物理块表。</li>
+<li>逻辑→物理映射<br>
+每个序列维护一张逻辑块号 → 物理块号的表，生成新 token 时只给最后一个逻辑块追加；前面块只读共享。</li>
+<li>引用计数 &amp; 写时复制<br>
+物理块被多序列共享时计数 +1；只要有一个序列要继续写，就复制出新块，其余序列仍读旧块——零浪费、零等待。</li>
+</ol>
 <p>主要思路：“把 KV-Cache 的显存管理从『大块连续预分配』改成『16-token 对齐、512 B 物理对齐、位图式微页管理』，用 6 万张小页代替 4096-token 大页，碎片率从 95% 降到 2.6%，带宽 +6%，端到端显存省 15%，吞吐提 8%。”</p>
 <p>权重是怎么分布的：<br>
 我把 235 B 拆到 64 卡，先拿 safetensors.index 累加确认单卡 9.1 GB；再用 nsys 看通信只占 3 %，于是把 KV-Cache 内存池做成 16-token 位图，页表长度随 TP 再除 8，结果 4 M 页/512 KB 位图可全放 L2，长尾 FAQ 显存省 15 %，对 235 B 这种巨无霸同样适用</p>
@@ -778,16 +783,6 @@ token-wise 残差补偿 = 对每个 token 的 KV-Cache 8-bit 量化误差做“�
 可以将SP+TP视为TP的一种特殊形式，每层做两次AllGather，2次ReduceScatter操作，通信量和纯TP相同（AllReduce = AllGather+ReduceScatter）,Add+Norm块的计算量变为1/SP</p>
 <p></p>
 </details> 
-<p><strong>- page attention</strong><br>
-原理：通过<strong>逻辑 block 与物理 block</strong> 的映射，实现内存上的非连续存储（映射关系由 block table 维护）。</p>
-<p>核心思想<br>
-把「连续 KV-Cache」切成固定大小的 block（通常 4 KB ≈ 1k tokens），用块表做虚拟-物理映射，实现三大收益：<br>
-非连续分配：块可以散落在碎片化显存中，彻底消除预分配带来的浪费。<br>
-按需扩容：序列变长时只追加新 block，不用一次性 reserve max-seq。<br>
-块级共享：同一前缀的 block 可在多请求间引用计数，Prefix Caching 的基础</p>
-<h3>显存优化</h3>
-<p>下面给出一段“能直接写进简历”的 VLLM-on-NPU 落地项目示例，把前面所有“加料”浓缩成 4 个可验证的 Git-commit + 1 组线上指标，面试时一句话就能讲清：</p>
-<hr>
 <h2>优化项目五</h2>
 <p><strong>VLLM-Ascend：Qwen3-8B的实时推理系统（POC-2024Q2）</strong></p>
 <h3>一句话面试总结</h3>
