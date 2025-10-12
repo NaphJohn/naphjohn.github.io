@@ -667,26 +667,6 @@ SGLang：追求开发效率，适合需要复杂提示词处理和快速迭代�
 <li>V0架构: - 使用BlockManager和Scheduler作为独立组件 - 调度器直接与BlockManager交互管理KV缓存 - 在LLMEngine中集成了大量功能逻辑；</li>
 <li>V1架构: - 引入了更模块化的设计，将功能分散到专门的组件中 - 使用KVCacheManager替代BlockManager，提供更抽象的接口 - 引入EngineCoreClient和Processor等组件实现更清晰的职责分离 - 采用更统一的调度方式，不再严格区分预填充和解码阶段</li>
 </ul>
-<p>用户请求<br>
-↓<br>
-AsyncLLM / Client 进程（Process-0）<br>
-├─ tokenize + 参数校验<br>
-└─ 通过 ZMQ 把「request_id + prompt_ids」发给 EngineCore</p>
-<p>EngineCore 进程（Process-1）  ←─── 双进程异步，CPU-GPU 并行<br>
-├─ Scheduler 产出 {req_id: num_tokens} 调度表<br>
-├─ KVCacheManager 分配/复用 paged block<br>
-├─ prepare_input 只增量更新张量（persistent batch）<br>
-├─ model_forward → logits<br>
-├─ sampling → next_token<br>
-├─ 把新 token 写回 req 对象<br>
-└─ ZMQ 返回给 Client 做 detokenize / 回包</p>
-<p>关键加速点</p>
-<ul>
-<li>双进程：Process-0 做前后处理，Process-1 只做调度和推理，CPU 流水线重叠。</li>
-<li>Persistent Batch：每步只改「新增 token」那一列，省掉 V0 的“全表重建”开销。</li>
-<li>Prefix Caching 默认开：0% 命中率时吞吐量下降 &lt;1%，高命中率时数倍提升。</li>
-<li>Chunked Prefill：长 prompt 被切成多段，与 decode 混跑，decode 延迟更平滑。</li>
-</ul>
 <h3>推理任务的调度与抢占：</h3>
 <p>vllm采用了 FCFS（first-come-first-serve） 的策略；<br>
 vllm中块回收策略：All-or-Nothing</p>
