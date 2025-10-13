@@ -765,7 +765,14 @@ kv cache检查：如果没有KV传输组，直接返回空结果</li>
 </ul>
 <ol start="8">
 <li>通信算子优化：优先走 昇腾 HCCL 专用 all-to-all 算子（hcclAlltoAll），省掉 PyTorch 通用路径的 view-flatten + 额外空 buffer，消除一次内存拷贝与形状变换开销</li>
+<li>NZ格式优化（支持qkvo-matmul nz）<br>
+ascend_vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w8a8_int8.py<br>
+layer.weight.data = torch_npu.npu_format_cast(weight.data.t().contiguous(), FORMAT_FRACTAL_NZ)<br>
+layer.antiquantized_weight.data = torch_npu.npu_format_cast(antiquantized_weight.t(), FORMAT_FRACTAL_NZ)</li>
 </ol>
+
+
+
 <details><summary>Details</summary>
 <p>
 </p><p>问题：<br>
