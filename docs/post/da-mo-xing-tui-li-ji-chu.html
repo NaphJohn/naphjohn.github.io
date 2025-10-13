@@ -692,7 +692,11 @@ reduce：多个npu获取数据并做规约运算</p>
 <p>allreduce：从多个npu获取数据到所有npu并做归约运算<br>
 reduce scatter：按维度执行规约并发送到对应npu<br>
 allgather：收集每个npu所有的数据到每个npu上<br>
-alltoallv：所有npu互相scatter和gather数据</p></div>
+alltoallv：所有npu互相scatter和gather数据</p>
+<h1>DSA</h1>
+<p>MHA：同时用 H 个固定头算注意力，显存 ∝ H；<br>
+DSA：每个 token 动态选 1 个“最优单头” 计算，显存 ≈ 1；<br>
+靠在线路由把“多头多样性”转成“时序多样性”，KV 缓存与计算量都降 H 倍，长序列成本直降 50 % 以上。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
