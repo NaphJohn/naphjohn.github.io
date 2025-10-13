@@ -769,11 +769,27 @@ kv cache检查：如果没有KV传输组，直接返回空结果</li>
 ascend_vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w8a8_int8.py<br>
 layer.weight.data = torch_npu.npu_format_cast(weight.data.t().contiguous(), FORMAT_FRACTAL_NZ)<br>
 layer.antiquantized_weight.data = torch_npu.npu_format_cast(antiquantized_weight.t(), FORMAT_FRACTAL_NZ)</li>
-<li>APC中oom修复<br>
-修复apc中oom，使用prefix cache功能时，当前每层都会新建一个pa out tensor，并保存在类成员变量中，不及时释放，导致oom，如图所示；并且在实际场景中，输入长度几乎不可能和上一次一致，所以其实每次都需要重新创建tensor，基本没有复用的场景。<br>
-vllm_npu/common/attention/backends/fx_base_attn.py<br>
-pa_out = torch.empty_like(query)</li>
+<li>避免大张量concat操作的内存开销，切分长序列下的激活，减少峰值显存占用</li>
 </ol>
+<details><summary>Details</summary>
+<p>
+长序列场景 (N &gt;= MOE_SEQ_SPLIT_LENGTH):
+传统: 创建 [N, 2*H] 的大张量 → 高内存峰值
+优化: 分别处理两个 [N, H] 张量 → 内存减半
+moe中vllm_npu/fx/model_executor/models/deepseek_v3_mtp.py
+if tok_embeds.shape[0] &gt;= MOE_SEQ_SPLIT_LENGTH:
+    # 长序列：使用split优化路径，避免大张量concat
+    inputs_embeds = self.eh_proj.forward_split(tok_embeds, previous)
+else:
+    # 短序列：正常concat路径
+    cat_hidden_states = concat([tok_embeds, previous], -1)
+    inputs_embeds = self.eh_proj.forward(cat_hidden_states)
+</p>
+</details> 
+11. APC中oom修复
+修复apc中oom，使用prefix cache功能时，当前每层都会新建一个pa out tensor，并保存在类成员变量中，不及时释放，导致oom，如图所示；并且在实际场景中，输入长度几乎不可能和上一次一致，所以其实每次都需要重新创建tensor，基本没有复用的场景。
+vllm_npu/common/attention/backends/fx_base_attn.py
+pa_out = torch.empty_like(query)
 
 
 
