@@ -731,6 +731,38 @@ cache_engine.py → 加 residual_cache tensor（uint8 pack）</p>
 </ol>
 <p></p>
 </details> 
+<h2>PD分离中优化</h2>
+<p>ascend_vllm/v1/core/sched/scheduler.py<br>
+ascend_vllm/v1/worker/model_runner_v1.py</p>
+<ol>
+<li>在KV消费者模式（多个请求共享和复用KV Cache内存空间）下，从头开始调度以确保KV Cache的高效利用</li>
+<li>预算感知调度<br>
+基于token预算进行调度，确保计算资源不被过度分配<br>
+动态调整调度数量，避免资源浪费</li>
+<li>防重复调度检查</li>
+<li>资源边界保护<br>
+强制实施运行请求数量上限，防止资源过载<br>
+在非KV消费者模式下验证调度总数不超过运行中请求数，确保调度逻辑正确性</li>
+<li>空调度以及分布式优化<br>
+空调度时候：<br>
+数据并行环境 (world_size &gt; 1)，运行一个虚拟的前向传播（_dummy_run(1)：）；（保持分布式进程间的同步，避免死锁）；<br>
+单机环境，短暂释放GIL（time.sleep(0.0001)）；<br>
+kv cache检查：如果没有KV传输组，直接返回空结果</li>
+</ol>
+<details><summary>Details</summary>
+<p>
+</p><p>问题：<br>
+新cann包 TTFT劣化10ms；<br>
+GE图PD分离下TPOT劣化2~3ms；<br>
+prefill卡住；<br>
+decode拉kv卡住，可能是cann包问题</p>
+<p>一些优化手段：<br>
+PD分离下添加APC，prefill 5-10ms<br>
+增加多步，decode 0.4ms，长序列或固定输出长度有收益，不支持流式<br>
+compile图</p>
+<p>投机（eager3投机）  动态图/GE图，和muti-step冲突</p>
+<p></p>
+</details> 
 <h2>LLM中一些优化特性</h2>
 <p><strong>NZ格式KV缓存</strong></p>
 <details><summary>Details</summary>
