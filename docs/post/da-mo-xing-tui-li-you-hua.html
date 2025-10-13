@@ -97,9 +97,20 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li>优化算法，比如PD分离，图模式，张量并行，数据并行，序列并行这些方式</li>
 </ol>
 <h2>量化</h2>
-<h3>量化基础概念</h3>
-<p>量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。<br>
-训练后量化主要分为以下三种：</p>
+<h3>量化原理</h3>
+<p>量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。</p>
+<p>量化压缩了哪一部分：<br>
+W4A16 / W8A16：仅对 权重（Weight） 做 INT4/INT8 量化，激活和 GEMM 计算仍保持 FP16/BF16，推理时先 dequantize→FP16 GEMM 。<br>
+W8A8：把 权重 + 激活（Activation） 全部压成 INT8，GEMM 直接走 INT8 TensorCore，结果再一次性反量化回 FP16 。<br>
+在 vLLM 的实现里，改的是 权重张量（layer.weight）和激活张量（layer.input_scale）的量化参数，最终落到 GEMM kernel 的 A、B 两个输入端，而非 Action 概念。</p>
+<p>GEMM 公式 C = α·A·B + β·C 里：<br>
+M = 一次要算多少行（batch×seq 展平后的 token 数）<br>
+K = 共享求和维，即 hidden_size（也是上一层 hidden_size）<br>
+N = 输出维，即 下一层 hidden_size（或 ffn 的 inter_dim）<br>
+所以<br>
+A[M, K] × B[K, N] → C[M, N]<br>
+就是 每个 token (M) 把 K 维向量用 N 个线性权重做一次仿射变换，得到 N 维输出。</p>
+<p>训练后量化主要分为以下三种：</p>
 <ol>
 <li>smoothquant、awq等基于缩放的方法；</li>
 <li>QuaRot、SpinQuant等基于旋转的方法；</li>
