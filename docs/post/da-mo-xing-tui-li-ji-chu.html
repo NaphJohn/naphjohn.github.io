@@ -671,7 +671,7 @@ SGLang：追求开发效率，适合需要复杂提示词处理和快速迭代�
 </p>
 </details> 
 <h2>vllm推理整体流程</h2>
-<p>V1 把「调度-执行-IO」拆成独立进程，用增量通信换掉全局广播，默认打开 chunk-prefill、前缀缓存等新优化，同等 GPU 下吞吐提升 10-30%，TTFT 降 30% 以上。</p>
+<p>vLLM V1 是一次意义重大的架构升级，把「调度-执行-IO」拆成独立进程，用增量通信换掉全局广播，默认打开 chunk-prefill、前缀缓存，对称张量并行和持久化批次等新优化，同等 GPU 下吞吐提升 10-30%，TTFT 降 30% 以上。</p>
 <ul>
 <li>V0架构: - 使用BlockManager和Scheduler作为独立组件 - 调度器直接与BlockManager交互管理KV缓存 - 在LLMEngine中集成了大量功能逻辑；</li>
 <li>V1架构: - 引入了更模块化的设计，将功能分散到专门的组件中 - 使用KVCacheManager替代BlockManager，提供更抽象的接口 - 引入EngineCoreClient和Processor等组件实现更清晰的职责分离 - 采用更统一的调度方式，不再严格区分预填充和解码阶段</li>
