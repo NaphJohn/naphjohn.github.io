@@ -671,11 +671,75 @@ SGLang：追求开发效率，适合需要复杂提示词处理和快速迭代�
 </p>
 </details> 
 <h2>vllm推理整体流程</h2>
-<p>vLLM 构建了一套面向分布式推理的执行架构。</p>
+<p>V1 把「调度-执行-IO」拆成独立进程，用增量通信换掉全局广播，默认打开 chunk-prefill、前缀缓存等新优化，同等 GPU 下吞吐提升 10-30%，TTFT 降 30% 以上。</p>
 <ul>
 <li>V0架构: - 使用BlockManager和Scheduler作为独立组件 - 调度器直接与BlockManager交互管理KV缓存 - 在LLMEngine中集成了大量功能逻辑；</li>
 <li>V1架构: - 引入了更模块化的设计，将功能分散到专门的组件中 - 使用KVCacheManager替代BlockManager，提供更抽象的接口 - 引入EngineCoreClient和Processor等组件实现更清晰的职责分离 - 采用更统一的调度方式，不再严格区分预填充和解码阶段</li>
 </ul>
+<details><summary>Details</summary>
+<p>
+</p><markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>维度</th>
+<th>V0 现状</th>
+<th>V1 改动</th>
+<th>收益</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>进程模型</strong></td>
+<td>单进程+AsyncLLMEngine 包装</td>
+<td><strong>EngineCore</strong> 独立进程，<strong>EngineCoreClient</strong> RPC 调用</td>
+<td>故障隔离、CPU-GPU 并行度↑</td>
+</tr>
+<tr>
+<td><strong>通信</strong></td>
+<td>每步广播完整请求状态</td>
+<td><strong>只传增量 diff</strong>（Δ-state）</td>
+<td>张量并行时通信量↓5-10×</td>
+</tr>
+<tr>
+<td><strong>调度器</strong></td>
+<td>分 prefill / decode 两阶段</td>
+<td><strong>统一调度</strong> <code class="notranslate">{req_id: #tokens}</code> 字典</td>
+<td>支持动态 chunk、推测解码无侵入</td>
+</tr>
+<tr>
+<td><strong>KV 缓存</strong></td>
+<td><code class="notranslate">BlockManager</code> 中心化</td>
+<td><code class="notranslate">KVCacheManager</code> 进程本地 + <strong>零开销前缀缓存</strong></td>
+<td>默认开启，命中 0% 时性能下降 &lt;1%</td>
+</tr>
+<tr>
+<td><strong>CPU 瓶颈</strong></td>
+<td>前端线程与 GPU 同进程</td>
+<td><strong>输入 Processor / 输出 Processor</strong> 异步进程</td>
+<td>5 ms 级小模型 GPU 执行不再被 CPU 拖慢</td>
+</tr>
+<tr>
+<td><strong>连续批处理</strong></td>
+<td>已实现</td>
+<td><strong>更激进 chunk-prefill</strong> 默认开</td>
+<td>长序列 TTFT 线性化，显存峰值↓30-40%</td>
+</tr>
+<tr>
+<td><strong>代码可维护性</strong></td>
+<td>2000+ 行 LLMEngine 单文件</td>
+<td><strong>模块化</strong> SchedulerInterface、Processor、OutputProcessor</td>
+<td>新特性接入成本降低</td>
+</tr>
+<tr>
+<td><strong>切换方式</strong></td>
+<td>默认</td>
+<td><code class="notranslate">export VLLM_USE_V1=1</code></td>
+<td>无缝回退（<code class="notranslate">=0</code> 即回 V0）</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p></p>
+</details> 
 <h3>推理任务的调度与抢占：</h3>
 <p>vllm采用了 FCFS（first-come-first-serve） 的策略；<br>
 vllm中块回收策略：All-or-Nothing</p>
