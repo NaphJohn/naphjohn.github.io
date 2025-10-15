@@ -145,7 +145,41 @@ C++ 语言定义了一些头文件，这些头文件包含了程序中必需的�
 <p>结构体优点：</p>
 <p>简单数据封装：适合封装多种类型的简单数据，通常用于数据的存储。<br>
 轻量级：相比 class，结构体语法更简洁，适合小型数据对象。<br>
-面向对象支持：支持构造函数、成员函数和访问权限控制，可以实现面向对象的设计。</p></div>
+面向对象支持：支持构造函数、成员函数和访问权限控制，可以实现面向对象的设计。</p>
+<h3>C+++基础问题</h3>
+<p>一、基础篇（校招/初中级 90% 覆盖率）</p>
+<ol>
+<li>new/delete 与 malloc/free 区别<br>
+答纲：new 调用构造函数、返回类型安全、不可重载；malloc 只干内存分配。</li>
+<li>指针与引用区别<br>
+答纲：引用必须初始化且不可改指向；指针可空可改可算术。</li>
+<li>struct 与 class 区别<br>
+答纲：默认访问级别不同（public vs private），其余一样。</li>
+<li>const 与 #define 差异<br>
+答纲：const 有类型/作用域/调试信息；宏纯文本替换。</li>
+<li>static 关键字 3 种用法<br>
+答纲：文件内链接、函数内静态变量、类静态成员/函数。</li>
+<li>C++ 四种类型转换<br>
+答纲：static_const 编译期；dynamic_cast 运行时多态；const_cast 去常性；reinterpret_cast 最低级位模式。</li>
+<li>深拷贝 vs 浅拷贝<br>
+答纲：深拷贝重新分配资源，浅拷贝只复制指针值。</li>
+<li>拷贝构造函数何时被调用<br>
+答纲：对象以值传参、以值返回、显式拷贝初始化。</li>
+<li>赋值运算符与拷贝构造区别<br>
+答纲：拷贝构造是从无到有；赋值是改写已有对象。</li>
+<li>vector/list/deque 复杂度对比<br>
+答纲：随机访问 O(1)/O(n)/O(1)；中间插入 O(n)/O(1)/O(n)。</li>
+<li>map 与 unordered_map 差异<br>
+答纲：红黑树 vs 哈希表；有序 vs 无序；O(logN) vs 平均 O(1)。</li>
+<li>RAII 思想<br>
+答纲：资源获取即初始化，利用对象生命周期管理资源，异常安全。</li>
+<li>构造函数能否是虚函数？<br>
+答纲：不能，对象还没构造完无虚表。</li>
+<li>析构函数何时必须虚？<br>
+答纲：类会被继承且可能通过基类指针删除派生对象。</li>
+<li>重载、重写、隐藏对比<br>
+答纲：同一作用域参数不同→重载；派生类改虚函数→重写；派生类同名非虚→隐藏。</li>
+</ol></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
