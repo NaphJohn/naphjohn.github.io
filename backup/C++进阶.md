@@ -106,3 +106,35 @@ C++ 语言定义了一些头文件，这些头文件包含了程序中必需的�
 答纲：类会被继承且可能通过基类指针删除派生对象。
 15. 重载、重写、隐藏对比
 答纲：同一作用域参数不同→重载；派生类改虚函数→重写；派生类同名非虚→隐藏。
+
+### C++高级
+1. 虚函数表与动态分派机制
+答纲：每个多态类一张 vtable，对象首地址前 8 字节存 vptr，运行时查表定位函数。
+2. 模板实例化与代码膨胀控制
+答纲：显式实例化、common_type 技巧、extern template 声明。
+3. SFINAE 与 enable_if 写法
+答纲：替换失败不是错误，用于模板重载决议；C++17 后用 if constexpr 替代。
+4. move 语义完美转发实现
+答纲：std::move 强制右值引用，std::forward 保持值类别，配合引用折叠规则。
+5. 内存模型与 std::memory_order
+答纲：六种顺序，relaxed/acquire/release/acq_rel/seq_cst；无锁队列用 acq/rel 保证可见性。
+6. ABA 问题及解决
+答纲：CAS 检查值相同但已改回；用版本号/双宽 CAS/ hazard pointer。
+7. shared_ptr 控制块与循环引用
+答纲：引用计数+弱引用计数；weak_ptr 打破循环；make_shared 一次分配优化。
+8. chrono 与 自定义时钟
+答纲：steady_clock 单调、system_clock 可映射日历；可写自己的 clock 满足 TrivialClock。
+9. 协程（C++20 co_await）状态机
+答纲：compiler 生成 promise_type、coroutine_frame、挂起点恢复点；注意对称转移。
+10. 零开销抽象反例
+答纲：std::function 动态分配+类型擦除，虚函数调用无法内联；function_ref 替代方案。
+11. consteval/constinit 区别
+答纲：consteval 强制编译期求值，constinit 只保证静态初始化线程安全。
+12. 模块化（C++20 Modules）解决什么问题
+答纲：替代头文件，减少重复解析，提供 BMI 二进制接口，缩短构建时间。
+13. 设计一个线程池——任务窃取如何实现
+答纲：每个线程本地双端队列，pop 从队尾 steal 从队头，减少竞争；用 std::atomic 索引。
+14. placement new 与显式析构顺序
+答纲：先构造数组再逐个析构，需手动调用析构函数，再 operator delete(p, buf)。
+15. C++23 新特性 pick one
+答纲：std::expected 替代错误码，std::mdspan 非拥有多维视图，if consteval 简化编译期分支。

@@ -179,6 +179,39 @@ C++ 语言定义了一些头文件，这些头文件包含了程序中必需的�
 答纲：类会被继承且可能通过基类指针删除派生对象。</li>
 <li>重载、重写、隐藏对比<br>
 答纲：同一作用域参数不同→重载；派生类改虚函数→重写；派生类同名非虚→隐藏。</li>
+</ol>
+<h3>C++高级</h3>
+<ol>
+<li>虚函数表与动态分派机制<br>
+答纲：每个多态类一张 vtable，对象首地址前 8 字节存 vptr，运行时查表定位函数。</li>
+<li>模板实例化与代码膨胀控制<br>
+答纲：显式实例化、common_type 技巧、extern template 声明。</li>
+<li>SFINAE 与 enable_if 写法<br>
+答纲：替换失败不是错误，用于模板重载决议；C++17 后用 if constexpr 替代。</li>
+<li>move 语义完美转发实现<br>
+答纲：std::move 强制右值引用，std::forward 保持值类别，配合引用折叠规则。</li>
+<li>内存模型与 std::memory_order<br>
+答纲：六种顺序，relaxed/acquire/release/acq_rel/seq_cst；无锁队列用 acq/rel 保证可见性。</li>
+<li>ABA 问题及解决<br>
+答纲：CAS 检查值相同但已改回；用版本号/双宽 CAS/ hazard pointer。</li>
+<li>shared_ptr 控制块与循环引用<br>
+答纲：引用计数+弱引用计数；weak_ptr 打破循环；make_shared 一次分配优化。</li>
+<li>chrono 与 自定义时钟<br>
+答纲：steady_clock 单调、system_clock 可映射日历；可写自己的 clock 满足 TrivialClock。</li>
+<li>协程（C++20 co_await）状态机<br>
+答纲：compiler 生成 promise_type、coroutine_frame、挂起点恢复点；注意对称转移。</li>
+<li>零开销抽象反例<br>
+答纲：std::function 动态分配+类型擦除，虚函数调用无法内联；function_ref 替代方案。</li>
+<li>consteval/constinit 区别<br>
+答纲：consteval 强制编译期求值，constinit 只保证静态初始化线程安全。</li>
+<li>模块化（C++20 Modules）解决什么问题<br>
+答纲：替代头文件，减少重复解析，提供 BMI 二进制接口，缩短构建时间。</li>
+<li>设计一个线程池——任务窃取如何实现<br>
+答纲：每个线程本地双端队列，pop 从队尾 steal 从队头，减少竞争；用 std::atomic 索引。</li>
+<li>placement new 与显式析构顺序<br>
+答纲：先构造数组再逐个析构，需手动调用析构函数，再 operator delete(p, buf)。</li>
+<li>C++23 新特性 pick one<br>
+答纲：std::expected 替代错误码，std::mdspan 非拥有多维视图，if consteval 简化编译期分支。</li>
 </ol></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
