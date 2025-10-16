@@ -810,8 +810,9 @@ Colossal-AI 的序列并行（CP），CP则是对所有线性层（如QKV投影�
 <p></p>
 </details> 
 <h3>flash attention</h3>
-<p>原理：针对全局内存和共享存储的 I/O 速 度的不同，尽可能的避免 HBM 中读取或写入注意力矩阵（N×N 的 S/P 矩阵）。FlashAttention 目标是尽可能高效地使 用 SRAM 来分块计算，避免从全局内存中读取和写入注意力矩阵。<br>
-V3 再叠加 TMA 异步、Warp 专用化、块量化，把 Hopper 张量核吃满，成为 长上下文大模型训练/推理的默认内核。</p>
+<p>FlashAttention 用 SRAM 分块 tiling + 分段 softmax + 单 kernel 融合 把内存-bound 改成计算-bound，避免从全局内存中读取和写入注意力矩阵。训练/长序列推理 2–4× 加速、显存 10× 省；<br>
+FlashInfer 在此基础上针对 GQA/MQA decode 加 预取页表 + 分组 warp-GEMM + 量化融合，decode 延迟再降 30%。</p>
+<p>V3 再叠加 TMA 异步、Warp 专用化、块量化，把 Hopper 张量核吃满，成为 长上下文大模型训练/推理的默认内核。</p>
 <details><summary>Details</summary>
 <p>
 同一层级falshattention 实现的方式有哪些？比如flashinfer
