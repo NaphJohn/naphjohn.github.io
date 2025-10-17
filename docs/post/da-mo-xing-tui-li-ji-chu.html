@@ -13,12 +13,26 @@
 <meta name="description" content="# LLM的推理/transformer架构/vllm
 
 ## LLM 推理的推理过程
-目前主流LLM都是基于transformer的Decoder-only架构，因为 Decoder-only 架构**在“大规模无监督预训练”这个特定范式下，展现出了更好的可扩展性（Scalability）和任务通用性。">
+### QKV
+将QKV三条独立线拆开原因,核心原因是 ‘参数专属 + 梯度解耦’,原因如下：
+<details><summary>Details</summary>
+<p>
+把 Q、K、V 拆成 三条独立线性 而不是一个权重乘三次，核心原因是 ‘参数专属 + 梯度解耦’：
+一份权重乘三遍 → Q/K/V 被迫共享同一参数空间，梯度累加在同一矩阵，导致：
+更新方向被平均，query 要高频、key 要低秩、value 要高熵 的冲突需求互相拉扯；
+秩被压缩，多头子空间重叠度↑，注意力退化趋同。">
 <meta property="og:title" content="大模型推理基础">
 <meta property="og:description" content="# LLM的推理/transformer架构/vllm
 
 ## LLM 推理的推理过程
-目前主流LLM都是基于transformer的Decoder-only架构，因为 Decoder-only 架构**在“大规模无监督预训练”这个特定范式下，展现出了更好的可扩展性（Scalability）和任务通用性。">
+### QKV
+将QKV三条独立线拆开原因,核心原因是 ‘参数专属 + 梯度解耦’,原因如下：
+<details><summary>Details</summary>
+<p>
+把 Q、K、V 拆成 三条独立线性 而不是一个权重乘三次，核心原因是 ‘参数专属 + 梯度解耦’：
+一份权重乘三遍 → Q/K/V 被迫共享同一参数空间，梯度累加在同一矩阵，导致：
+更新方向被平均，query 要高频、key 要低秩、value 要高熵 的冲突需求互相拉扯；
+秩被压缩，多头子空间重叠度↑，注意力退化趋同。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/da-mo-xing-tui-li-ji-chu.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -81,6 +95,18 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     <div id="content">
 <div class="markdown-body" id="postBody"><h1>LLM的推理/transformer架构/vllm</h1>
 <h2>LLM 推理的推理过程</h2>
+<h3>QKV</h3>
+<p>将QKV三条独立线拆开原因,核心原因是 ‘参数专属 + 梯度解耦’,原因如下：</p>
+<details><summary>Details</summary>
+<p>
+把 Q、K、V 拆成 三条独立线性 而不是一个权重乘三次，核心原因是 ‘参数专属 + 梯度解耦’：
+一份权重乘三遍 → Q/K/V 被迫共享同一参数空间，梯度累加在同一矩阵，导致：
+更新方向被平均，query 要高频、key 要低秩、value 要高熵 的冲突需求互相拉扯；
+秩被压缩，多头子空间重叠度↑，注意力退化趋同。
+独立线性层 → 各学各的投影，梯度不打架，子空间正交性↑，模型容量直接×3，无需增加深度就能提升表达能力；
+训练稳定、收敛更快，这是 Transformer 比单矩阵×3 更深却不难训的关键。
+</p>
+</details> 
 <p>目前主流LLM都是基于transformer的Decoder-only架构，因为 Decoder-only 架构<strong>在“大规模无监督预训练”这个特定范式下，展现出了更好的可扩展性（Scalability）和任务通用性。</strong></p>
 <p>总体过程如下：<br>
 输入Token -&gt; 嵌入 -&gt; 加上位置编码 -&gt; 通过N个Transformer层 -&gt; 最终层归一化 -&gt; 语言模型头 -&gt; 概率分布 -&gt; 输出Token</p>
@@ -102,7 +128,7 @@ n_kv_heads：GQA 压缩后的 KV 头数（若无压缩 = 原头数） n_kv_heads
 head_dim：每个头的维度<br>
 2：K 与 V 各一份<br>
 sizeof(dtype)：FP16/BF16→2字节；INT8/FP8→1字节；FP32→4字节</p>
-<p>相关问题： kvcache节省了那部分计算？以及transformer中每一层信息</p>
+<p>相关问题： kvcache节省了那部分计算？</p>
 <details><summary>Details</summary>
 <p>
 1. FFN阶段本质上是两个矩阵乘计算，token之前互不影响，因此使用kv cache可以将计算量节省为原来的1/S
