@@ -730,6 +730,8 @@ SGLang：追求开发效率，适合需要复杂提示词处理和快速迭代�
 <li>控制面负责请求调度、显存管理和资源分配，核心是 <em>Scheduler</em> 和 <em>BlockSpaceManager</em>。</li>
 <li>执行面负责模型计算和推理任务执行，核心是 <em>Worker</em>（内含 ModelRunner 负责模型前向传播，CacheEngine 管理 KV Cache）</li>
 </ul>
+<p>一条请求发送到vllm全过程：<br>
+请求进 api_server → 预算调度 scheduler.schedule() → Worker execute_model 一次 forward → sample 得 next_token → ZMQ （嵌入进程的异步通信库）流回客户端；token 完立即 free_blocks 回收 KV。</p>
 <h2>请求调度</h2>
 <p>vLLM 的调度器 (Scheduler) 是大脑，其核心策略是 Continuous Batching (连续批处理)</p>
 <details><summary>Details</summary>
