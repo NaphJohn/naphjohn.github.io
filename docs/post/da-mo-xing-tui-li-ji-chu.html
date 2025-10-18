@@ -769,7 +769,8 @@ reduce：多个npu获取数据并做规约运算</p>
 reduce scatter：按维度执行规约并发送到对应npu<br>
 allgather：收集每个npu所有的数据到每个npu上<br>
 alltoallv：所有npu互相scatter和gather数据</p>
-<h1>DSA</h1>
+<p>前沿思想：</p>
+<h2>DSA</h2>
 <p>MHA：同时用 H 个固定头算注意力，显存 ∝ H；<br>
 DSA：细粒度稀疏注意力<br>
 • 动态分层稀疏：结合粗粒度压缩与细粒度选择，保留全局和局部信息。<br>
@@ -792,15 +793,17 @@ vllm/v1/core/lightning_indexer.py      → Lightning Indexer 实现</p>
 <p>相关文章：<a href="https://mp.weixin.qq.com/s/-dBxaYyisXwIvPNRFZCrCQ" rel="nofollow">https://mp.weixin.qq.com/s/-dBxaYyisXwIvPNRFZCrCQ</a></p>
 <p></p>
 </details> 
-<h1>AFD思想</h1>
+<h2>AFD思想</h2>
 <p>Transformer模型中的Attention层和FFN层具有截然不同的计算和访存特性。<br>
 Attention层：在解码阶段通常是内存带宽瓶颈型的，需要频繁访问KV缓存，对内存带宽要求高。<br>
 FFN层（尤其是MoE模型中的专家）：则更多是计算瓶颈型的，涉及大量矩阵运算，对计算能力要求高。</p>
 <p>将两者分离，允许我们为它们分别匹配最合适的硬件资源。例如，可以将Attention模块部署在高带宽内存的GPU上，而将FFN/专家模块部署在高算力的GPU或NPU上，并通过高速网络连接。这种异构部署能够显著提升整体系统的吞吐量和资源利用率。</p>
 <p>AFD作为一种前沿的系统架构思想，正受到业界越来越多的关注和应用：</p>
 <p>vLLM的集成计划：高效能的LLM推理框架vLLM项目已经在GitHub上开启了关于为MoE模型引入ATTN-FFN解耦（AFD） 的提案和讨论，旨在未来版本中支持这一特性。<br>
-与Prefill-Decoding解耦的结合：AFD通常被构建在Prefill-Decoding (PD) 分离的架构之上，这使得系统设计可以更专注于优化解码阶段，从而实现更精细化的资源管理和调度<br>
-相关论文：</p></div>
+与Prefill-Decoding解耦的结合：AFD通常被构建在Prefill-Decoding (PD) 分离的架构之上，这使得系统设计可以更专注于优化解码阶段，从而实现更精细化的资源管理和调度</p>
+<h2>TPA（Tensor Product Attention）</h2>
+<p>背景通点：标准 MHA 的 KV 缓存 = O(T·h·d_h)，序列一拉长显存指数级膨胀；MLA 虽压缩但难与 RoPE 直接兼容（旋转要作用在最终 key/token 维，而 MLA 存的是压缩向量）。<br>
+TPA 用上下文张量分解把 KV 缓存压到 1/10，即时重算全尺寸 key/query → 既省内存又天然兼容 RoPE，T6 模型已证明长序列 PPL 再降 12%，是 2025 首个**‘压缩+旋转’一举两得**的注意力升级。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
