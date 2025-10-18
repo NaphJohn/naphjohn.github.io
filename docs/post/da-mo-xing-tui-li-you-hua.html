@@ -1033,7 +1033,10 @@ p与d按其计算特点使用不用的并行方式</p>
 <li>算子融合：将多个小算子融合成一个大算子，减少数据搬运，提升计算效率。</li>
 </ul>
 <p><strong>chunked-prefill</strong><br>
-Chunked Prefill（Splitfuse）特性的目的是将一个长prompt分解成更小的块，并在多个forward step中进行调度，只有最后一块的forward完成后才开始这个prompt request的生成</p>
+修改位置：<br>
+vllm_npu/common/attention/backends/fx_base_attn.py<br>
+vllm_npu/common/core/scheduler.py</p>
+<p>Chunked Prefill（Splitfuse）特性的目的是将一个长prompt分解成更小的块，并在多个forward step中进行调度，只有最后一块的forward完成后才开始这个prompt request的生成</p>
 <p>华为 NPU（Ascend）上 chunk 并不是越小越好，也不是越大越好；1024 左右（或 512/2048 的 tile-size 整数倍）是实测值。<br>
 低于 256 会显著掉吞吐，高于 4096 又容易把 NPU 静态图缓存/片上内存撑爆，需要回退到 CPU 或产生额外 memcpy。<br>
 一句话记住<br>
