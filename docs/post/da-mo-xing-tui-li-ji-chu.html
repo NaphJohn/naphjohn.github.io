@@ -14,7 +14,7 @@
 
 ## LLM 推理的推理过程
 ### QKV
-将QKV三条独立线拆开原因,核心原因是 ‘参数专属 + 梯度解耦’,原因如下：
+**将QKV三条独立线拆开原因**,核心原因是 ‘参数专属 + 梯度解耦’,原因如下：
 <details><summary>Details</summary>
 <p>
 把 Q、K、V 拆成 三条独立线性 而不是一个权重乘三次，核心原因是 ‘参数专属 + 梯度解耦’：
@@ -26,7 +26,7 @@
 
 ## LLM 推理的推理过程
 ### QKV
-将QKV三条独立线拆开原因,核心原因是 ‘参数专属 + 梯度解耦’,原因如下：
+**将QKV三条独立线拆开原因**,核心原因是 ‘参数专属 + 梯度解耦’,原因如下：
 <details><summary>Details</summary>
 <p>
 把 Q、K、V 拆成 三条独立线性 而不是一个权重乘三次，核心原因是 ‘参数专属 + 梯度解耦’：
@@ -96,7 +96,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <div class="markdown-body" id="postBody"><h1>LLM的推理/transformer架构/vllm</h1>
 <h2>LLM 推理的推理过程</h2>
 <h3>QKV</h3>
-<p>将QKV三条独立线拆开原因,核心原因是 ‘参数专属 + 梯度解耦’,原因如下：</p>
+<p><strong>将QKV三条独立线拆开原因</strong>,核心原因是 ‘参数专属 + 梯度解耦’,原因如下：</p>
 <details><summary>Details</summary>
 <p>
 把 Q、K、V 拆成 三条独立线性 而不是一个权重乘三次，核心原因是 ‘参数专属 + 梯度解耦’：
@@ -107,8 +107,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 训练稳定、收敛更快，这是 Transformer 比单矩阵×3 更深却不难训的关键。
 </p>
 </details> 
-<p>目前主流LLM都是基于transformer的Decoder-only架构，因为 Decoder-only 架构<strong>在“大规模无监督预训练”这个特定范式下，展现出了更好的可扩展性（Scalability）和任务通用性。</strong></p>
-<p>总体过程如下：<br>
+<p>目前主流LLM都是基于transformer的Decoder-only架构，因为 Decoder-only 架构在“大规模无监督预训练”这个特定范式下，展现出了更好的可扩展性（Scalability）和任务通用性。</p>
+<p>输入token经过transformer总体过程如下：<br>
 输入Token -&gt; 嵌入 -&gt; 加上位置编码 -&gt; 通过N个Transformer层 -&gt; 最终层归一化 -&gt; 语言模型头 -&gt; 概率分布 -&gt; 输出Token</p>
 <blockquote>
 <p>[!TIP]</p>
@@ -205,7 +205,7 @@ EncoderOutput = LayerNorm( SelfAttention(Input) + Input )<br>
 FinalOutput = LayerNorm( FFN(EncoderOutput) + EncoderOutput )</p>
 <p><strong>位置编码positional encoding</strong><br>
 提供单词在序列中的绝对或相对位置信息，增加语言的有序性，使 Transformer 能够理解顺序。</p>
-<p><strong>ROPE</strong><br>
+<p><strong>ROPE位置编码</strong><br>
 “把 Q、K 向量拆成二维一对，在每对构成的复平面上按位置序号等比例旋转不同角度，再点积；旋转差构成相对距离，点积随距离衰减——零参数量、可外推、相对位置一次到位。”<br>
 零参数量，长度外推、远程衰减、并行友好</p>
 <details><summary>Details</summary>
@@ -730,8 +730,6 @@ SGLang：追求开发效率，适合需要复杂提示词处理和快速迭代�
 <li>控制面负责请求调度、显存管理和资源分配，核心是 <em>Scheduler</em> 和 <em>BlockSpaceManager</em>。</li>
 <li>执行面负责模型计算和推理任务执行，核心是 <em>Worker</em>（内含 ModelRunner 负责模型前向传播，CacheEngine 管理 KV Cache）</li>
 </ul>
-<p>一条请求发送到vllm全过程：<br>
-请求进 api_server → 预算调度 scheduler.schedule() → Worker execute_model 一次 forward → sample 得 next_token → ZMQ （嵌入进程的异步通信库）流回客户端；token 完立即 free_blocks 回收 KV。</p>
 <h2>请求调度</h2>
 <p>vLLM 的调度器 (Scheduler) 是大脑，其核心策略是 Continuous Batching (连续批处理)</p>
 <details><summary>Details</summary>
@@ -747,75 +745,13 @@ SGLang：追求开发效率，适合需要复杂提示词处理和快速迭代�
 </p>
 </details> 
 <h2>vllm推理整体流程</h2>
+<h3>一条请求发送到vllm全过程：</h3>
+<p>请求进 api_server → 预算调度 scheduler.schedule() → Worker execute_model 一次 forward → sample 得 next_token → ZMQ （嵌入进程的异步通信库）流回客户端；token 完立即 free_blocks 回收 KV。</p>
 <p>vLLM V1 是一次意义重大的架构升级，把「调度-执行-IO」拆成独立进程，用增量通信换掉全局广播，默认打开 chunk-prefill、前缀缓存，对称张量并行和持久化批次等新优化，同等 GPU 下吞吐提升 10-30%，TTFT 降 30% 以上。</p>
 <ul>
 <li>V0架构: - 使用BlockManager和Scheduler作为独立组件 - 调度器直接与BlockManager交互管理KV缓存 - 在LLMEngine中集成了大量功能逻辑；</li>
 <li>V1架构: - 引入了更模块化的设计，将功能分散到专门的组件中 - 使用KVCacheManager替代BlockManager，提供更抽象的接口 - 引入EngineCoreClient和Processor等组件实现更清晰的职责分离 - 采用更统一的调度方式，不再严格区分预填充和解码阶段</li>
 </ul>
-<details><summary>Details</summary>
-<p>
-</p><markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th>维度</th>
-<th>V0 现状</th>
-<th>V1 改动</th>
-<th>收益</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>进程模型</strong></td>
-<td>单进程+AsyncLLMEngine 包装</td>
-<td><strong>EngineCore</strong> 独立进程，<strong>EngineCoreClient</strong> RPC 调用</td>
-<td>故障隔离、CPU-GPU 并行度↑</td>
-</tr>
-<tr>
-<td><strong>通信</strong></td>
-<td>每步广播完整请求状态</td>
-<td><strong>只传增量 diff</strong>（Δ-state）</td>
-<td>张量并行时通信量↓5-10×</td>
-</tr>
-<tr>
-<td><strong>调度器</strong></td>
-<td>分 prefill / decode 两阶段</td>
-<td><strong>统一调度</strong> <code class="notranslate">{req_id: #tokens}</code> 字典</td>
-<td>支持动态 chunk、推测解码无侵入</td>
-</tr>
-<tr>
-<td><strong>KV 缓存</strong></td>
-<td><code class="notranslate">BlockManager</code> 中心化</td>
-<td><code class="notranslate">KVCacheManager</code> 进程本地 + <strong>零开销前缀缓存</strong></td>
-<td>默认开启，命中 0% 时性能下降 &lt;1%</td>
-</tr>
-<tr>
-<td><strong>CPU 瓶颈</strong></td>
-<td>前端线程与 GPU 同进程</td>
-<td><strong>输入 Processor / 输出 Processor</strong> 异步进程</td>
-<td>5 ms 级小模型 GPU 执行不再被 CPU 拖慢</td>
-</tr>
-<tr>
-<td><strong>连续批处理</strong></td>
-<td>已实现</td>
-<td><strong>更激进 chunk-prefill</strong> 默认开</td>
-<td>长序列 TTFT 线性化，显存峰值↓30-40%</td>
-</tr>
-<tr>
-<td><strong>代码可维护性</strong></td>
-<td>2000+ 行 LLMEngine 单文件</td>
-<td><strong>模块化</strong> SchedulerInterface、Processor、OutputProcessor</td>
-<td>新特性接入成本降低</td>
-</tr>
-<tr>
-<td><strong>切换方式</strong></td>
-<td>默认</td>
-<td><code class="notranslate">export VLLM_USE_V1=1</code></td>
-<td>无缝回退（<code class="notranslate">=0</code> 即回 V0）</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<p></p>
-</details> 
 <h3>推理任务的调度与抢占：</h3>
 <p>vllm采用了 FCFS（first-come-first-serve） 的策略；<br>
 vllm中块回收策略：All-or-Nothing</p>
