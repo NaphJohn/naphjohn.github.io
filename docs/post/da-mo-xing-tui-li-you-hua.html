@@ -89,8 +89,26 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p>按照量化压缩、内存管理、算子融合、并行算法四条线做优化。<br>
 框架压缩上，用 NZ 格式把权重预转 Fractal，激活 8-bit 算子；内存里用预算调度+split 长序列，峰值降 40 %；算子侧把 HCCL A2A 直接接进 vLLM，省一次 memcpy；算法层做 TP+SP 双并行，128 k 序列 TTFT 线性加速 8 倍，同时引入 PD 分离 fast-fail，长尾重试归零。四条线一共落地 12 项 patch，生产集群 768 卡，同等 SLO 吞吐提升 1.7 倍。</p>
 <h2>量化</h2>
-<h3>量化原理</h3>
-<p>量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。</p>
+<h3>量化原理以及基本概念</h3>
+<p>量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。<br>
+反量化：把量化后的数值恢复为浮点范围。</p>
+<p>量化过程:  1.除以缩放因子  2. 取整  3. 反量化乘以缩放因子<br>
+量化误差来源：量化过程中截断和取整操作后的数值无法完全还原至原来的浮点数值。浮点数值分布范围越广,量化分辨率越低,精度也越低<br>
+对称量化：零点就是0，不需要平移因子，计算量更小;<br>
+非对称量化：需要引入平移因子，计算量更大。<br>
+量化粒度：</p>
+<ul>
+<li>per-tensor:对整个层或整个张量进行量化,使用一组共同的</li>
+<li>量化参数(如缩放因子和零点)。</li>
+<li>per-channel/per-token:以通道为单位,每个通道单独使用一组量化参数。per-token针对激活×而言,每行对应一个量化</li>
+<li>系数。per-channel针对权重w而言,每列对应一个量化系数。</li>
+<li>per-group:逐组量化以组为单位,每个group使用一组S和Z。</li>
+</ul>
+<p>X*W: 对于激活一般是per-tensor * pertensor     或者  per-token * per-channel （行与列切分）</p>
+<p>离群值:某些元素的数值明显高于其他维度平均值的情况(通常为5倍以上)。离群值会扩大量化步长,从而导致显著的精度损失；<br>
+离群值基本是基于channel的。我们发现激活难量化，权重分布更均匀，容易量化。<br>
+比如qwen3-32b，layer50_q_input,以及layer50_q_weight，横轴是hidden_dimension_index,纵轴分别是value（0-10），（0.0-0.3）。layer63_k_input,以及layer63_k_weight。<br>
+大规模离群值:数值非常大,通常单点分布,对模型精度起到重要作用。</p>
 <p>量化压缩了哪一部分：<br>
 W4A16 / W8A16：仅对 权重（Weight） 做 INT4/INT8 量化，激活和 GEMM 计算仍保持 FP16/BF16，推理时先 dequantize→FP16 GEMM 。<br>
 W8A8：把 权重 + 激活（Activation） 全部压成 INT8，GEMM 直接走 INT8 TensorCore，结果再一次性反量化回 FP16 。<br>
@@ -121,7 +139,7 @@ N = 输出维，即 下一层 hidden_size（或 ffn 的 inter_dim）<br>
 所以<br>
 A[M, K] × B[K, N] → C[M, N]<br>
 就是 每个 token (M) 把 K 维向量用 N 个线性权重做一次仿射变换，得到 N 维输出。</p>
-<p>训练后量化主要分为以下三种：</p>
+<p>量化主要分为以下三种：</p>
 <ol>
 <li>smoothquant、awq等基于缩放的方法；</li>
 <li>QuaRot、SpinQuant等基于旋转的方法；</li>
