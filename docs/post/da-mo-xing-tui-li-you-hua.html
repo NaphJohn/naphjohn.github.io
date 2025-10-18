@@ -784,6 +784,16 @@ TP+SP 双并行，128 k 序列切成 2 k-4 k 块，TTFT 线性下降 8×。</li>
 Token-wise 残差补偿，&lt;0.5% 参数把 5% KV 压缩场景精度拉回 99%。<br>
 结果：同等 SLO 下，吞吐↑1.7×、TTFT↓8×、显存峰值↓40%，且全链路零拷贝、零重训。”</li>
 </ol>
+<h3>算子测优化</h3>
+<p>通过mst后者mindstudio 工具识别算子下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；<br>
+针对双向注意力机制：因没有attention mask，可使用torch_npu.npu_fusion_attention算子的varlen功能，使用2维输入即可，相比现有算子的实现，降低实际计算量；</p>
+<h3>框架测</h3>
+<ol>
+<li>reasoning_content长度控制</li>
+<li>针对embedding模型只进行全量推理的特点，跳过kv cache相关tensor等的计算；</li>
+<li>针对离线大批量处理场景，优化非必要cpu操作耗时，如array转list、list转tuple等；</li>
+<li>调度优化，比如异步调度，原先一个scheduler，一个forward；现在是一个schedule N steps，三个forward，优势是降低调度次数和准备输入</li>
+</ol>
 <h2>LLM中一些优化特性</h2>
 <p><strong>NZ格式KV缓存</strong></p>
 <details><summary>Details</summary>
