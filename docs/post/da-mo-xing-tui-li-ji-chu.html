@@ -612,7 +612,7 @@ FinalOutput = LayerNorm( FFN(EncoderOutput) + EncoderOutput )</li>
 <p>四者对比：<br>
 图编译器（生成引擎） → TensorRT-LLM  ，优化是预编译+算子融合+FP8-TC，编译慢，但是执行快<br>
 推理引擎（动态调度） → vLLM，适合需要处理大量并发请求的在线服务<br>
-前缀缓存 → SGLang<br>
+前缀缓存 → SGLang。SGLang = “前端结构化生成语言 + 后端三层推理引擎”，用 RadixAttention 做 KV-Cache 前缀复用，再辅以 PD 分离、Rust 高并发 Router 与 多精度 Cube 内核，把大模型推理的延迟、吞吐、显存一起打下来。<br>
 服务框架（HTTP/gRPC+批处理）→ Triton，优化是动态批+并发执行+多模型编排<br>
 国产化/训练推理一体 → LMDeploy<br>
 具体区别如下：</p>
