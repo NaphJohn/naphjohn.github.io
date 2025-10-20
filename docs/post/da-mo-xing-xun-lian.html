@@ -189,14 +189,66 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <h3>verl框架</h3>
 <p><strong>verl框架</strong>：verl 是一个专为大语言模型（LLM） 设计的强化学习（RL）训练框架</p>
 <p>核心创新：HybridFlow 与 3D-HybridEngine<br>
-verl 的核心是其 HybridFlow 架构和 3D-HybridEngine。</p>
+verl是论文《HybridFlow》的开源实现。verl 的核心是其 HybridFlow 架构和 3D-HybridEngine。<br>
+核心创新点是提出了基于3D-HybridEngine的高效actor模型动态分片:消除内存冗余,显著降低训练与生成阶段切换时的通信开销。</p>
 <p>HybridFlow 通过混合编程模型解耦了RLHF训练中的控制流（高层逻辑，如多个模型角色的交互）和计算流（底层执行，如单个模型的前向/反向传播）。这使得算法工程师可以更专注于高层逻辑的设计，而无需过度纠缠于底层的分布式执行细节。</p>
-<p>强化学习算法（GRPO、DAPO、PPO）；sglang推理后端；vllm推理后端；训练后端（FSDP）</p>
+<p>强化学习算法（GRPO、DAPO、PPO）；推理后端（sglang、vllm）；训练后端（Pytorch FSDP）</p>
+<p>HybridFlow内部实际执行过程为:</p>
+<ol>
+<li>dispatch_fn 将数据分发到每个worker</li>
+<li>execute_fn 执行真正的远程操作</li>
+<li>collect_fn 汇总计算的结果</li>
+</ol>
+<p>HybridEngine流程：<br>
+在RLHF的第i+1轮迭代中,3D-HybridEngine执行以下流程:<br>
+1.参数收集 获取第:轮迭代更新的actor模型参数,用于更新各micro-DP组内的推理任务。<br>
+2.提示词分发 将prompts加载至每个模型副本,生成response(RLHF的rollout阶段)<br>
+3.结果聚合 在micro-DP组内对生成结果执行全收集操作(all-gather)<br>
+4.参数重分区 根据3D并行策略重新分配模型参数,准备行动者训练。(实际是直接放弃推理权重,从cpu上加载回训练权重+优化器)<br>
+5.模型训练 1、计算actor模型的损失;2、按RLHF算法更新actor模型权重</p>
+<p>主要特点：</p>
+<details><summary>Details</summary>
+<p>
+</p><p>主要特点：</p>
+<ol>
+<li>易于扩展的多样化RL算法:采用 Hybrid 编程模型,结合了单控制器和多控制器范式的优点,用户只需几行代码即可构建复杂的 RL数据流。</li>
+<li>与现有 LLM 基础设施的无缝集成:通过解耦计算和数据依赖,veRL 能够与现有的 LLM 框架(如 PyTorch FSDP、Megatron-LM 和 vLLM、SGLang)无缝集成,用户也可以轻松扩展到其他 LLM 训练和推理框架。</li>
+<li>灵活的设备映射和并行化:支持将模型灵活地映射到不同的GPU 组上,以实现高效的资源利用,并在不同规模的集群上具有良好的扩展性。</li>
+<li>与 HuggingFace 模型的轻松集成:veRL能够方便地与 HuggingFace 模型进行集成,提升开发效率。</li>
+</ol>
+<p>我们将 actor 的推理特定称为 rollout,而其他模型的推理称为 inference。<br>
+Rollout 过程是auto-regressive decoding,是进行训练数据生成,为了性能提升会使用VLLM或SGLang。<br>
+Inference过程只会prefill, 为了精度会使用训练框架(FSDP、 Megatron)的前向进行。<br>
+训练会使用FSDP、 Megatron。<br>
+VeRL可以实现任意方式的资源分配,但是默认的ppo代码实现类似于DeepSpeed-Chat,是将所有的所有的模型都放置在一组资源池上。在不同阶段通过onload/offload和resharding操作来切换。训练和rollout是必须串行的。verl通过hydra工具来管理训练配置。</p>
+<p>RL框架的设计问题:</p>
+<ol>
+<li>多个模型之间怎么进行调度的,数据是怎么流动的?<br>
+2.多个模型是怎么进行资源分配的?,</li>
+<li>Actor模型在训练和推理阶段是怎么做的权重更新?</li>
+</ol>
+<p><strong>问题一</strong><br>
+single controller vs multi controller<br>
+single controller: 整个训练或推理流程由一个中央节点(Controller) 统一协调,所有工作节点(Worker) 接收来自该控制器的指令,执行计算,任务并返回结果。例如pytorch训练中的 DataParallel。代码改起来简单方便。</p>
+<p>Single-controller选择Ray作为verl的资源管理后端。然而,Ray默认仅支持"- 个方法调用对应一次RPC”, 而训练LLM通常需要跨多个进程进行协调。为了向用户隐藏这种"单个方法需要调用多个Ray actors"的复杂性,VeRL引入了以下组件:<br>
+WorkerGroup(工作进程组)——管理一组远程工作进程,为多进程分布式计算提供统一接口;<br>
+ResourcePool (资源池) -将计算资源与工作进程绑定;<br>
+ClassWithArgs(带参类)—-支持通过指定初始化参数实现延迟远程实例化。</p>
+<p>multi controller: 多个控制器分布式协作管理任务,每个控制器可能负责一部分工作节点或数据分片,通过通信协议(如ring-allreduce算法)协<br>
+调全局状态。例如pytorch训练中的 DDP。</p>
+<p>当前主流的训练引擎都是 multi controller的,譬如 FSDP、 Megatron 和DeepSpeed, 各个节点之间的状态通过集合通信算法(HCCL/NCCL) 同步当前VLLM 0.7.x版本以上已经支持SPMD,也是multi controller的。</p>
+<p></p>
+</details> 
 <p><strong>工作流程（以PPO为例）：</strong><br>
-一个典型的RL训练循环（例如PPO）在verl中大致包含以下步骤：<br>
-生成 (Generation): Actor模型 接收一批提示词（prompts），生成回应（responses）。<br>
-准备 (Preparation): 生成的回应会交由Critic模型（评估状态价值）、奖励模型(RM)（计算即时奖励）和参考模型(Reference Model)（计算与初始模型的KL散度，防止策略偏离太远）进行评估。<br>
-训练 (Training): 利用步骤2中计算出的优势函数和损失，更新Actor和Critic模型的参数。</p>
+一个典型的RL训练循环（例如PPO）在verl中大致包含以下步骤：</p>
+<ol>
+<li>准备一个 batch 的 prompts;</li>
+<li>将这个 batch 的 prompts 输入给 Actor, 通过rollout 得到 responses;<br>
+生成 (Generation): Actor模型 接收一批提示词（prompts），生成回应（responses）。</li>
+<li>将 prompt+ responses 输入给 Critic/Reward/Reference, 进行inference,分别计算得到 values、reward score和 log probs, 将这些整合称为 experiences;<br>
+也就是生成的回应会交由Critic模型（评估状态价值）、奖励模型(RM)（计算即时奖励）和参考模型(Reference Model)（计算与初始模型的KL散度，防止策略偏离太远）进行评估。</li>
+<li>根据 experiences 多轮计算 actor loss 和 critic loss 并更新Actor和Critic</li>
+</ol>
 <h3>llama-factory</h3>
 <p>底层是transformers+deepspeed<br>
 优点：<br>
@@ -237,6 +289,11 @@ verl 的核心是其 HybridFlow 架构和 3D-HybridEngine。</p>
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
+<p>Ascendfactory适配<br>
+#3个步骤<br>
+ascendfactory-cli config #生成内置模板   --  分布式训练后端MindSpeed（后端基于Megatron-LLM），LlamaFactory（deepspeed+Transformer），Verl；选择模型；训练场景比如grpo<br>
+按实际情况修改模板的内容 (***标识的必须修改)<br>
+ascendfactory-cli train xxx.yaml</p>
 <p>目前大厂主流落地答案 → “PTQ 为主，QA-LoRA 为辅”<br>
 大厂上线 90% 用 PTQ；</p>
 <p>比如现在deepseek的训练路线：预训练+SFT VS 纯强化学习<br>
@@ -244,6 +301,13 @@ V3：14.8 T token → FP8 预训练 → SFT → RLHF，成本 557 万美元<br>
 R1：用 5 k 条冷启动 CoT → 纯 GRPO 强化学习（无 SFT）→ 二阶段混合训练，激活自我反思与回滚</p>
 <p>GPTQ/AWQ 压到 W4A16（权重 4bit，激活 16bit）已成“事实标准”；同样 7B 模型显存 28 GB→7 GB，首 token 延迟降 2-3×<br>
 量化方案前沿技术：比如FP8 混合量化</p>
+<h3>训练结果、参考指标</h3>
+<p>actor/entropy 模型(Actor)输出的结果分布的熵(entropy),用于模型的探索 熵会逐渐降低,回答趋于稳定程度<br>
+critic/score/mean 对当前模型回答结果的评分 持续上升<br>
+response_length/mean rollout生成序列的平均长度 先上升后下降(取决于奖励函数的设计)<br>
+timing_s/generate sequences 推理需要的时间 和response_length相关<br>
+timing_s/update actor Actor训练的时间 和response_length相关<br>
+timing_s/step 一个完整step所需要的时间 和response_length相关</p>
 <h2>强化学习中用到算法：</h2>
 <p><strong>PPO原理</strong>：<br>
 核心思想: 在更新策略时，避免步长太长（更新幅度太大）导致策略崩溃（性能急剧下降）<br>
