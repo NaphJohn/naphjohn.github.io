@@ -833,6 +833,29 @@ host执行时间长,经常因为是python侧代码执行耗时长;比如:for循�
 <p>通用的一些优化方法:<br>
 1.绑核:PyTorch host侧主要是由单一的主线程下发算子,更依赖单核性能,对PTA主要线程进行CPU绑核,减少切换代价;通过绑核一般有1-2%的提升<br>
 2.下发队列:通过优化TaskQueue,提高线程交互效率;减少下发耗时和下发抖动的</p>
+<h4>前缀kv cache复用</h4>
+<p>在 vLLM V1 的 APC（Attention Prefix Caching）模块里，我负责提高 KV-Cache 复用率、降低首 token 延迟。<br>
+场景：线上 30B 模型 TTFT 波动大，p99 2.1 s，发现 40 % 请求前缀重复但缓存命中率仅 55 %。<br>
+任务：把命中率提至 80 % 以上，TTFT 下降 30 %，且不能引入正确性风险。</p>
+<p>把请求按 block_size 拆成一串“指纹”后，去全局缓存池里找“已经算过的块”，能找多少算多少，返回给调度器直接复用，省计算、降 TTFT。<br>
+下面用 4 句“人话”讲清主干逻辑：</p>
+<ol>
+<li>先算最多能拆几块<br>
+max_num_blocks = max_length // self.block_size</li>
+<li>合并块模式（combine_block_num &gt; 1）<br>
+把相邻 C 块当成一个“大逻辑块”去查表：<br>
+先查尾部那块在不在；<br>
+在就往前补齐前 C-1 块，必须连续且 block_id 严格递减；<br>
+缺一块就整段放弃，打 warning 并禁止本次 APC，防止错复用。<br>
+最后如果开了投机采样，直接抛异常（当前实现不允许合并块+投机）。</li>
+<li>逐块模式（combine_block_num == 1）<br>
+最简单：顺序扫 hash 链，遇到第一个缺失就停；<br>
+若开了 EAGLE 且命中长度&gt;0，把最后一块 pop 掉，留给投机采样重新计算，避免只读冲突。</li>
+<li>返回结果<br>
+computed_blocks 里就是可以 100 % 复用的 KV-Cache 块列表，顺序与请求前缀完全一致；调度器后续只算剩下的块即可。<br>
+再浓缩成一行：<br>
+“拼拼图”——能拼几段拼几段，拼不齐就放弃，绝不拿错块糊弄人。</li>
+</ol>
 <h2>LLM中一些优化特性</h2>
 <p><strong>NZ格式KV缓存</strong></p>
 <details><summary>Details</summary>
