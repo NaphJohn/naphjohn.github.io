@@ -692,36 +692,16 @@ FMA = Fused Multiply-Add：<br>
 <p><strong>在vllm中对应修改位置</strong></p>
 <details><summary>Details</summary>
 <p>
-</p><ol>
-<li>
-<p>W8A8 在 vLLM 中的落点（权重/激活 INT8）<br>
-| 模块         | 文件                                                | 改动点                                                                               |<br>
-| ---------- | ------------------------------------------------- | --------------------------------------------------------------------------------- |<br>
-| 量化入口       | <code class="notranslate">vllm/model_executor/layers/quantization/w8a8.py</code> | 新增 <code class="notranslate">W8A8Config</code> + <code class="notranslate">W8A8Linear</code>                                                    |<br>
-| 线性层替换      | <code class="notranslate">vllm/model_executor/layers/linear.py</code>            | <code class="notranslate">LinearBase.__init__</code> 根据 <code class="notranslate">quant_config.policy</code> 把 <code class="notranslate">torch.nn.Linear</code> → <code class="notranslate">W8A8Linear</code> |<br>
-| 权重加载       | <code class="notranslate">vllm/model_executor/model_loader/loader.py</code>      | <code class="notranslate">load_weights</code> 时读 <code class="notranslate">*.scales.npy</code> 并注册为 <code class="notranslate">Parameter</code>                                 |<br>
-| 自定义 kernel | <code class="notranslate">csrc/quantization/int8_mm.cu</code>                    | 调 <code class="notranslate">cublasLtMatmul</code> 或 CUTLASS，支持 <code class="notranslate">per-channel scales</code>                              |</p>
-</li>
-<li>
-<p>C8（KV-Cache INT8）在 vLLM 中的落点<br>
-| 功能               | 文件                                                                | 关键类/函数                                 | 备注                                         |<br>
-| ---------------- | ----------------------------------------------------------------- | -------------------------------------- | ------------------------------------------ |<br>
-| Cache 分配         | <code class="notranslate">vllm/worker/cache_engine.py</code>                                     | <code class="notranslate">allocate_kv_cache</code>                    | dtype 从 <code class="notranslate">torch.float16</code> → <code class="notranslate">torch.int8</code>     |<br>
-| Block 管理         | <code class="notranslate">vllm/core/block_manager.py</code> + <code class="notranslate">vllm/v1/core/kv_cache_manager.py</code> | <code class="notranslate">BlockSpaceManager</code> / <code class="notranslate">KVCacheManager</code> | 页大小 16/64 token 可配置                        |<br>
-| 量化/反量化           | <code class="notranslate">vllm/model_executor/layers/quantization/kv_cache_quant.py</code>（新增）   | <code class="notranslate">KVCacheQuantizer</code>                     | 提供 <code class="notranslate">quantize_cache</code> / <code class="notranslate">dequantize_cache</code>   |<br>
-| Attention kernel | <code class="notranslate">csrc/attention/attention_kernels.cu</code>                             | <code class="notranslate">paged_attention_v1/v2</code>                | 内部调 <code class="notranslate">__ldg</code> 后先 <code class="notranslate">*scale</code> 再 <code class="notranslate">+ residual</code>     |<br>
-| 静态 scale 入口      | <code class="notranslate">vllm/model_executor/layers/quantization/kv_cache_static.py</code>      | <code class="notranslate">C8StaticConfig</code>                       | <strong>C8-S 线路</strong>：离线 <code class="notranslate">activation_scales.json</code> 加载 |<br>
-| 动态 scale 入口      | <code class="notranslate">vllm/model_executor/layers/quantization/kv_cache_dynamic.py</code>     | <code class="notranslate">C8DynamicConfig</code>                      | <strong>C8-D 线路</strong>：运行时 <code class="notranslate">reduce(abs(x))</code>           |</p>
-</li>
-<li>
+W8 – weight 8-bit 整型量化（静态，校准集一次性算完）
+A8 – activation 8-bit 整型量化（动态，每 batch 实时算 min-max）
+C8 – KV-Cache 8-bit 整型量化（动态，每 head/每 token 实时算 scale，zero-point 固定 0）
+</p><p>C8 就是 KV-Cache 的动态对称整型量化——每轮 forward 对 K/V 实时算 max(abs(x))/127 当 scale，zero-point 固定 0；代码里只预留 k_scale/v_scale 向量，具体数值由 NPU kernel 在线写入，无需校准集，纯动态，随 token 更新</p>
 <p>你的项目 = C8-S + token-wise 4-bit 残差<br>
 因此真正改动的文件是：<br>
 kv_cache_static.py → 加 outlier_mask 字段；<br>
 kv_cache_quant.py → 加 quantize_with_4bit_residual()；<br>
 attention_kernels.cu → 加 load_int8_add_fp4 融合 kernel；<br>
 cache_engine.py → 加 residual_cache tensor（uint8 pack）</p>
-</li>
-</ol>
 <p></p>
 </details> 
 <p><strong>4-bit-token-wise残差补偿具体过程</strong>：</p>
