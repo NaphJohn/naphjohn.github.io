@@ -109,36 +109,6 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 离群值基本是基于channel的。我们发现激活难量化，权重分布更均匀，容易量化。<br>
 比如qwen3-32b，layer50_q_input,以及layer50_q_weight，横轴是hidden_dimension_index,纵轴分别是value（0-10），（0.0-0.3）。layer63_k_input,以及layer63_k_weight。<br>
 大规模离群值:数值非常大,通常单点分布,对模型精度起到重要作用。</p>
-<p>量化压缩了哪一部分：<br>
-W4A16 / W8A16：仅对 权重（Weight） 做 INT4/INT8 量化，激活和 GEMM 计算仍保持 FP16/BF16，推理时先 dequantize→FP16 GEMM 。<br>
-W8A8：把 权重 + 激活（Activation） 全部压成 INT8，GEMM 直接走 INT8 TensorCore，结果再一次性反量化回 FP16 。<br>
-在 vLLM 的实现里，改的是 权重张量（layer.weight）和激活张量（layer.input_scale）的量化参数，最终落到 GEMM kernel 的 A、B 两个输入端，而非 Action 概念。</p>
-<p>比如w8a8量化收益</p>
-<details><summary>Details</summary>
-<p>
-</p><p>在 W8A8（INT8 权重 + INT8 激活）方案里，Attention 量化只改「两个 MatMul 的输入/权重」，不碰 Softmax/LayerNorm；权重形状保持 [hidden, hidden] 不变，但物理布局会做一次 NK→KN 转置 + 连续 + 分形 NZ 打包，以便昇腾 INT8 TensorCore 直接吃。</p>
-<p>收益就来自这两个 MatMul（QKᵀ 和 AV） ——它们占 Attention 总计算量 ≥ 80 %、访存量 ≥ 70 %：</p>
-<ol>
-<li>算力翻倍<br>
-昇腾 INT8 TensorCore 峰值是 FP16 的 2×；两个 GEMM 改 INT8 后直接把这部分 FLOPS 吃满，理论提速 2×。</li>
-<li>带宽减半<br>
-权重从 2 Byte → 1 Byte，K/V 若也 INT8 则 cache 读写再减半；长序列下 HBM 带宽瓶颈缓解，实测 TTFT 再降 10-20 %。</li>
-<li>显存省一半<br>
-KV-int8 让 cache 容量 ×2，128 k seq 原本 OOM 的 batch 现在能跑起来，等效吞吐 ↑30-50 %。</li>
-<li>精度无损<br>
-Softmax、LayerNorm 仍 FP16，只把乘加密集部分量化，模型质量下降 &lt;0.3 %（LLaMA-65B 千条任务平均）。<br>
-一句话：<br>
-“ Attention 里两个 GEMM 是唯一的平方项和算力大户，把它们压成 INT8 就能用翻倍算力、减半带宽、省一半显存，而精度几乎不掉——这就是全部收益。”</li>
-</ol>
-<p></p>
-</details> 
-<p>GEMM 公式 C = α·A·B + β·C 里：<br>
-M = 一次要算多少行（batch×seq 展平后的 token 数）<br>
-K = 共享求和维，即 hidden_size（也是上一层 hidden_size）<br>
-N = 输出维，即 下一层 hidden_size（或 ffn 的 inter_dim）<br>
-所以<br>
-A[M, K] × B[K, N] → C[M, N]<br>
-就是 每个 token (M) 把 K 维向量用 N 个线性权重做一次仿射变换，得到 N 维输出。</p>
 <p>量化主要分为以下三种：</p>
 <ol>
 <li>smoothquant、awq等基于缩放的方法；</li>
@@ -689,7 +659,38 @@ FMA = Fused Multiply-Add：<br>
 <p>结果：存储层省 50 % 流量，计算层仍拿 FP16 结果 → 既提速又不掉精度。<br>
 一句话：<br>
 「存 INT8 是为了省 IO，反量化 FP16 是为了能正确计算，而融合指令让这两步在同一周期完成，所以省带宽的同时不增加延迟。」</p>
-<p><strong>在vllm中对应修改位置</strong></p>
+<p><strong>在vllm中对应修改位置</strong><br>
+量化压缩了哪一部分：<br>
+W4A16 / W8A16：仅对 权重（Weight） 做 INT4/INT8 量化，激活和 GEMM 计算仍保持 FP16/BF16，推理时先 dequantize→FP16 GEMM 。<br>
+W8A8：把 权重 + 激活（Activation） 全部压成 INT8，GEMM 直接走 INT8 TensorCore，结果再一次性反量化回 FP16 。<br>
+在 vLLM 的实现里，改的是 权重张量（layer.weight）和激活张量（layer.input_scale）的量化参数，最终落到 GEMM kernel 的 A、B 两个输入端，而非 Action 概念。</p>
+<p>展开说明w8a8量化中修改地方</p>
+<details><summary>Details</summary>
+<p>
+</p><p>在 W8A8（INT8 权重 + INT8 激活）方案里，Attention 量化只改「两个 MatMul 的输入/权重」，不碰 Softmax/LayerNorm；权重形状保持 [hidden, hidden] 不变，但物理布局会做一次 NK→KN 转置 + 连续 + 分形 NZ 打包，以便昇腾 INT8 TensorCore 直接吃。</p>
+<p>收益就来自这两个 MatMul（QKᵀ 和 AV） ——它们占 Attention 总计算量 ≥ 80 %、访存量 ≥ 70 %：</p>
+<ol>
+<li>算力翻倍<br>
+昇腾 INT8 TensorCore 峰值是 FP16 的 2×；两个 GEMM 改 INT8 后直接把这部分 FLOPS 吃满，理论提速 2×。</li>
+<li>带宽减半<br>
+权重从 2 Byte → 1 Byte，K/V 若也 INT8 则 cache 读写再减半；长序列下 HBM 带宽瓶颈缓解，实测 TTFT 再降 10-20 %。</li>
+<li>显存省一半<br>
+KV-int8 让 cache 容量 ×2，128 k seq 原本 OOM 的 batch 现在能跑起来，等效吞吐 ↑30-50 %。</li>
+<li>精度无损<br>
+Softmax、LayerNorm 仍 FP16，只把乘加密集部分量化，模型质量下降 &lt;0.3 %（LLaMA-65B 千条任务平均）。<br>
+一句话：<br>
+“ Attention 里两个 GEMM 是唯一的平方项和算力大户，把它们压成 INT8 就能用翻倍算力、减半带宽、省一半显存，而精度几乎不掉——这就是全部收益。”</li>
+</ol>
+<p>GEMM 公式 C = α·A·B + β·C 里：<br>
+M = 一次要算多少行（batch×seq 展平后的 token 数）<br>
+K = 共享求和维，即 hidden_size（也是上一层 hidden_size）<br>
+N = 输出维，即 下一层 hidden_size（或 ffn 的 inter_dim）<br>
+所以<br>
+A[M, K] × B[K, N] → C[M, N]<br>
+就是 每个 token (M) 把 K 维向量用 N 个线性权重做一次仿射变换，得到 N 维输出。</p>
+<p></p>
+</details> 
+<p>展开说下kvcache int8的量化（C8量化）</p>
 <details><summary>Details</summary>
 <p>
 W8 – weight 8-bit 整型量化（静态，校准集一次性算完）
