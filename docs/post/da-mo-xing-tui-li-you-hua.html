@@ -695,7 +695,10 @@ FMA = Fused Multiply-Add：<br>
 W8 – weight 8-bit 整型量化（静态，校准集一次性算完）
 A8 – activation 8-bit 整型量化（动态，每 batch 实时算 min-max）
 C8 – KV-Cache 8-bit 整型量化（动态，每 head/每 token 实时算 scale，zero-point 固定 0）
-</p><p>C8 就是 KV-Cache 的动态对称整型量化——每轮 forward 对 K/V 实时算 max(abs(x))/127 当 scale，zero-point 固定 0；代码里只预留 k_scale/v_scale 向量，具体数值由 NPU kernel 在线写入，无需校准集，纯动态，随 token 更新</p>
+</p><p>静态 C8 把量化因子当常量打进去，kernel 侧零 reduce，极致延迟。静态 C8 把校准得到的 scale 写进 k_scale/v_scale，推理只读不刷新，kernel 侧零 reduce，TTFT 再降 5-8 %<br>
+动态 C8 量化把 Parameter 当运行时装载器，token-by-token 更新，自适应漂移。”  （max(abs(x))/127）无校准也能用。<br>
+两种路线 zero-point 都固定 0，对称量化，kernel 一条融合算子走完 reduce+quantize+matmul。</p>
+<p>C8 就是 KV-Cache 的动态对称整型量化——每轮 forward 对 K/V 实时算 max(abs(x))/127 当 scale，zero-point 固定 0；代码里只预留 k_scale/v_scale 向量，具体数值由 NPU kernel 在线写入，无需校准集，纯动态，随 token 更新。</p>
 <p>你的项目 = C8-S + token-wise 4-bit 残差<br>
 因此真正改动的文件是：<br>
 kv_cache_static.py → 加 outlier_mask 字段；<br>
