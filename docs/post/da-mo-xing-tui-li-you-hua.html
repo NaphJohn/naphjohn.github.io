@@ -10,11 +10,13 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="# 大模型优化目前思路
-按照量化压缩、内存管理、算子融合、并行算法四条线做优化。">
+<meta name="description" content="## 量化
+### 量化原理以及基本概念
+量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。">
 <meta property="og:title" content="大模型推理优化">
-<meta property="og:description" content="# 大模型优化目前思路
-按照量化压缩、内存管理、算子融合、并行算法四条线做优化。">
+<meta property="og:description" content="## 量化
+### 量化原理以及基本概念
+量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/da-mo-xing-tui-li-you-hua.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -85,10 +87,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><h1>大模型优化目前思路</h1>
-<p>按照量化压缩、内存管理、算子融合、并行算法四条线做优化。<br>
-框架压缩上，用 NZ 格式把权重预转 Fractal，激活 8-bit 算子；内存里用预算调度+split 长序列，峰值降 40 %；算子侧把 HCCL A2A 直接接进 vLLM，省一次 memcpy；算法层做 TP+SP 双并行，128 k 序列 TTFT 线性加速 8 倍，同时引入 PD 分离 fast-fail，长尾重试归零。四条线一共落地 12 项 patch，生产集群 768 卡，同等 SLO 吞吐提升 1.7 倍。</p>
-<h2>量化</h2>
+<div class="markdown-body" id="postBody"><h2>量化</h2>
 <h3>量化原理以及基本概念</h3>
 <p>量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到整数范围。<br>
 反量化：把量化后的数值恢复为浮点范围。</p>
@@ -116,7 +115,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li>gptq等精度补偿方法</li>
 </ol>
 <p><strong>缩放量化方式</strong></p>
-<h4>smoothquant</h4>
+<h3>smoothquant</h3>
 <p>smoothquant量化原理：<br>
 SmoothQuant是一种基于感知的量化方法，它通过将模型中的权重和激活值进行动态调整，以减少量化带来的精度损失。具体来说，它会根据每个层的激活分布动态地选择合适的量化参数，从而在保持模型性能的同时降低计算和存储需求。</p>
 <details><summary>Details</summary>
@@ -151,8 +150,11 @@ SmoothQuant是一种基于感知的量化方法，它通过将模型中的权重
 </ol>
 <p></p>
 </details> 
-<h4>awq量化</h4>
+<h3>awq量化</h3>
 <p>awq量化原理：通过分析激活分布，选择性地对权重进行低精度量化（如INT4），同时保留关键层的高精度计算。这种策略能有效减少显存占用，同时避免精度损失过大。</p>
+<p>AWQ 不会降低 TTFT，在 高 QPS 区间甚至反而略增；低 QPS（&lt;8 并发） 下 TPOT 有 5-15 % 收益，QPS ↑ 主要靠“同卡可跑更大 batch” 而非单请求变快。<br>
+根本原因是 AWQ 属于 W4A16——权重 4-bit 但激活仍 16-bit，每次 GEMM 前都要在线反量化，计算量增加 + kernel launch 额外开销，TTFT 这种 compute-bound 场景基本占不到便宜。</p>
+<p><strong>awq量化过程</strong></p>
 <details><summary>Details</summary>
 <p>
 </p><p>awq量化过程：识别重要权重--找最优缩放因子--量化重建。<br>
@@ -170,6 +172,7 @@ awq具体过程：<br>
 <h4>旋转量化</h4>
 <p>spinquant旋转量化原理<br>
 利用旋转矩阵对权重进行重参数化，使得量化后的权重能够更接近原始权重的分布。这种方法在保持模型性能的同时，能够实现更高的压缩率。</p>
+<p><strong>spinquant旋转量化具体过程</strong></p>
 <details><summary>Details</summary>
 <p>
 spinquant旋转量化具体过程：用可学习的正交旋转矩阵把权重 &amp; 激活里的离群值“转平”，再对旋转后的矩阵做 4-bit 量化；旋转过程与网络输出数值等价，只改分布不改结果，却显著降低量化误差。量化步骤如下：
@@ -535,15 +538,6 @@ KL &gt; 0.02 <strong>或</strong> R &gt; 15 <strong>或</strong> Energy &gt; 0.4
 </ol>
 <hr>
 <p>三、运行时选路（C++编码 on NPU）</p>
-<p>kernel 伪代码</p>
-<div class="highlight highlight-source-c++"><pre class="notranslate">__global__ <span class="pl-k">void</span> <span class="pl-en">gemm_select</span>(..., <span class="pl-c1">uint64_t</span> mask) {
-    <span class="pl-k">int</span> layer_id = blockIdx.<span class="pl-smi">z</span>;
-    <span class="pl-k">bool</span> use_bf16 = mask &amp; (<span class="pl-c1">1UL</span> &lt;&lt; layer_id);
-    <span class="pl-k">if</span> (use_bf16)
-        C = <span class="pl-c1">cube_bf16</span>(A, B_bf16);
-    <span class="pl-k">else</span>
-        C = <span class="pl-c1">cube_int8</span>(A, B_int8, scale);
-}</pre></div>
 <ul>
 <li>粒度实现
 <ul>
@@ -552,11 +546,6 @@ KL &gt; 0.02 <strong>或</strong> R &gt; 15 <strong>或</strong> Energy &gt; 0.4
 <li><strong>Batch</strong>：<code class="notranslate">sample_id</code> 映射到高 5 bit</li>
 </ul>
 </li>
-</ul>
-<p>实测 235B、seq=4096、bs=16</p>
-<ul>
-<li>额外延迟 <strong>1.1 µs</strong></li>
-<li>占空比 <strong>0.28 %</strong>（选路时钟 / 总计算时钟）</li>
 </ul>
 <hr>
 <p>四、动态兜底（在线）</p>
@@ -691,7 +680,7 @@ A[M, K] × B[K, N] → C[M, N]<br>
 就是 每个 token (M) 把 K 维向量用 N 个线性权重做一次仿射变换，得到 N 维输出。</p>
 <p></p>
 </details> 
-<p>展开说下kvcache int8的量化（C8量化）</p>
+<p><strong>展开说下kvcache int8的量化</strong>（C8量化）</p>
 <details><summary>Details</summary>
 <p>
 W8 – weight 8-bit 整型量化（静态，校准集一次性算完）
@@ -701,6 +690,10 @@ C8 – KV-Cache 8-bit 整型量化（动态，每 head/每 token 实时算 scale
 动态 C8 量化把 Parameter 当运行时装载器，token-by-token 更新，自适应漂移。”  （max(abs(x))/127）无校准也能用。<br>
 两种路线 zero-point 都固定 0，对称量化，kernel 一条融合算子走完 reduce+quantize+matmul。</p>
 <p>C8 就是 KV-Cache 的动态对称整型量化——每轮 forward 对 K/V 实时算 max(abs(x))/127 当 scale，zero-point 固定 0；代码里只预留 k_scale/v_scale 向量，具体数值由 NPU kernel 在线写入，无需校准集，纯动态，随 token 更新。</p>
+<p>在vllm中对应修改只动三处：<br>
+vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w8a8_int8.py<br>
+vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_kvcache.py<br>
+Python 侧留 k_scale/v_scale 容器，TP 切片保证并行正确，一条融合 kernel 完成 reduce+quantize+matmul，输出即 FP16/BF16，零显存回写</p>
 <p>你的项目 = C8-S + token-wise 4-bit 残差<br>
 因此真正改动的文件是：<br>
 kv_cache_static.py → 加 outlier_mask 字段；<br>
