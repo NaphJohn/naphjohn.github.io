@@ -737,7 +737,39 @@ TPA 用上下文张量分解把 KV 缓存压到 1/10，即时重算全尺寸 key
 <li>骨干序列：根据上述相似度阈值策略动态增长。为了防止其无限膨胀，也可以设置一个最大骨干数量。当超过时，可以基于一些启发式方法（如最久未使用）合并或移除最不重要的骨干。</li>
 </ul>
 <p></p>
-</details> </div>
+</details> 
+<p><strong>一张卡上的显存占用结构</strong>（以 7B 模型为例）</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>组件</th>
+<th>占用大小（近似）</th>
+<th>是否可调整</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>模型权重</td>
+<td>~14 GB</td>
+<td>❌ 固定</td>
+</tr>
+<tr>
+<td>KV Cache</td>
+<td>~9–10 GB</td>
+<td>✅ 调 <code class="notranslate">gpu_memory_utilization</code></td>
+</tr>
+<tr>
+<td>激活值</td>
+<td>~4–5 GB</td>
+<td>✅ 调 <code class="notranslate">max_num_seqs</code>、<code class="notranslate">max_model_len</code></td>
+</tr>
+<tr>
+<td>非 Torch 显存</td>
+<td>~0.1–2 GB</td>
+<td>❌ 较难控制</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
