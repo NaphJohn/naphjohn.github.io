@@ -625,6 +625,12 @@ profiling 显示 8 % CPU 时间花给 KV-Cache 申请/归还显存</li>
 Qwen-7B batch=64、max_seq=4096、金融 FAQ 1000 条：<br>
 峰值显存 38.4 GB → 32.6 GB（-15%），吞吐 +8%，P99 延迟持平。</li>
 </ol>
+<p>16-token 页 = 256 KB 连续显存块，是 KV-Cache 分配器的逻辑单位，不是物理搬运单位；页内数据紧凑、连续、对齐 cache-line，不会有搬运问题，反而是内存利用率最高、带宽最友好 的选择。</p>
+<p><strong>Attention 计算时如何走访页</strong><br>
+计算 QK^T 之前，先算 seq_idx_start = seq_len - 16，seq_idx_end = seq_len<br>
+用块表把区间拆成若干 16-token 段，得到 page_id 列表<br>
+对每页发一次 coalesced memory access（256 KB 连续加载），L2 命中率 ≈ 100 %<br>
+计算完立即写回 同一页（KV 共用一页），无额外拷贝</p>
 <p></p>
 </details> 
 <h3>量化优化项目三：  w8a8c8的量化</h3>
