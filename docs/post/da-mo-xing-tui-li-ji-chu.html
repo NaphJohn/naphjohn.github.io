@@ -647,11 +647,33 @@ SGLang：追求开发效率，适合需要复杂提示词处理和快速迭代�
 <h2>vllm推理整体流程</h2>
 <h3>一条请求发送到vllm全过程：</h3>
 <p>请求进 api_server → 预算调度 scheduler.schedule() → Worker execute_model 一次 forward → sample 得 next_token → ZMQ （嵌入进程的异步通信库）流回客户端；token 完立即 free_blocks 回收 KV。</p>
-<p>vLLM V1 是一次意义重大的架构升级，把「调度-执行-IO」拆成独立进程，用增量通信换掉全局广播，默认打开 chunk-prefill、前缀缓存，对称张量并行和持久化批次等新优化，同等 GPU 下吞吐提升 10-30%，TTFT 降 30% 以上。</p>
+<p><strong>vllm中v0与v1区别</strong><br>
+vLLM V1 是一次意义重大的架构升级，把「调度-执行-IO」拆成独立进程，用增量通信换掉全局广播，默认打开 chunk-prefill、前缀缓存，对称张量并行和持久化批次等新优化，同等 GPU 下吞吐提升 10-30%，TTFT 降 30% 以上。</p>
+<ol>
+<li>架构上</li>
+</ol>
 <ul>
 <li>V0架构: - 使用BlockManager和Scheduler作为独立组件 - 调度器直接与BlockManager交互管理KV缓存 - 在LLMEngine中集成了大量功能逻辑；</li>
-<li>V1架构: - 引入了更模块化的设计，将功能分散到专门的组件中 - 使用KVCacheManager替代BlockManager，提供更抽象的接口 - 引入EngineCoreClient和Processor等组件实现更清晰的职责分离 - 采用更统一的调度方式，不再严格区分预填充和解码阶段</li>
+<li>V1架构: - 在 V1 中，只有num_tokens和num_computed_tokens。num_tokens指请求目前的长度，即输入长度加输出长度。num_computed_tokens指经过大模型计算，并已经存储过 KV cache 的token个数。它可以满足目前的所有需要：</li>
 </ul>
+<p>Prefill: num_computed_tokens=0；<br>
+Decode: num_computed_tokens=num_tokens-1，所以只有最后一个token需要被送进大模型作 Decode 生成；<br>
+Prefix caching: 让num_computed_tokens等于命中 KV 缓存的长度。<br>
+Jump decoding: 直接在请求后面增加希望解码的格式，并增加相应的num_tokens长度。<br>
+这样一改，可以直接砍掉swapped队列。在 V1 中，被抢占的请求是直接塞到waiting队列的头部，但它自己记录了自己算过多少token（num_computed_tokens），并知道它们的 KV cache 存在哪。这还保证了被抢占请求是比waiting队列中的请求优先级更高。总之，逻辑简化并且效率更高。</p>
+<ol start="2">
+<li>
+<p>调度器<br>
+第二个大改动是开了两个进程分别处理。一个是 GPU 密集型任务如 Transformer 执行，另一个是 CPU 密集型任务如 tokenization, multimodal input processing 和 de-tokenization。两个进程同时执行，加快速度。</p>
+</li>
+<li>
+<p>优化的执行循环<br>
+第三个，在张量并行中把输入处理也做并行化，实现了一个对称的并行结构。具体是在 EngineCore 进程中，将每一个 worker 用一个线程管理。</p>
+</li>
+<li>
+<p>将 Attention 计算的部分从 CUDA 图中分离出来，使用 PyTorch 后端。这使得针对 Attention 进行优化的一些方法可以被应用进来，如Cascade Attention。</p>
+</li>
+</ol>
 <h3>推理任务的调度与抢占：</h3>
 <p>vllm采用了 FCFS（first-come-first-serve） 的策略；<br>
 vllm中块回收策略：All-or-Nothing</p>
