@@ -121,3 +121,62 @@ brew install visidata
 
 vd + csv文件
 ``` 
+
+### Linux命令
+
+```shell
+# 查看可执行文件的依赖库
+ldd /usr/bin/python3
+ldd /bin/ls
+
+# 查看动态库的依赖
+ldd /usr/lib/x86_64-linux-gnu/libc.so.6
+
+# 批量查看目录下所有程序的依赖
+find /usr/bin -type f -executable -exec ldd {} \; 2>/dev/null
+
+# 按名称查找库文件
+find /usr -name "libc.so.6" -type f 2>/dev/null
+find / -name "*.so" -type f 2>/dev/null
+
+# 在标准库目录中查找
+find /usr/lib /usr/lib64 -name "libpthread*" -type f
+
+#objdump - 目标文件分析 
+# 查看动态库依赖
+objdump -p /usr/bin/python3 | grep NEEDED
+
+# 查看共享库的符号表
+objdump -T /lib/x86_64-linux-gnu/libc.so.6
+
+# 查看动态段信息
+objdump -x /path/to/binary | grep -E "(NEEDED|SONAME)"
+
+# 查看动态库依赖
+readelf -d /usr/bin/bash | grep "Shared library"
+
+# 查看所有动态段信息
+readelf -d /path/to/program
+
+# 查看符号表
+readelf -s /usr/lib/libm.so.6 | grep sqrt
+
+# 查看运行中程序加载的库
+lsof -p <pid> | grep "\.so"
+
+# 查看哪个进程使用了特定库
+lsof /usr/lib/libc.so.6
+``` 
+
+| 场景     | 命令示例                                                      |               |
+| ------ | --------------------------------------------------------- | ------------- |
+| GPU 状态 | nvidia-smi / nvidia-smi dmon -s pucvmet                   |               |
+| 显存占用   | gpustat -cpP1 或 nvtop                                     |               |
+| 看模型大小  | du -h /data/models/Qwen2-7B\*                             |               |
+| 压测接口   | wrk -t4 -c100 -d30s -s post.lua <http://ip:8000/generate> |               |
+| 实时日志   | tail -f /var/log/messages                                 | grep llm\_srv |
+| 端口冲突   | lsof -i:8000                                              |               |
+| 批量杀进程  | pkill -f uvicorn                                          |               |
+| 防火墙    | ufw allow 8000/tcp                                        |               |
+| 永久挂载   | echo "/dev/sdb1 /data ext4 defaults 0 0" >> /etc/fstab    |               |
+

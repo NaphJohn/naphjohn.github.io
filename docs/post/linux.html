@@ -132,7 +132,67 @@ brew install visidata
 
 
 vd + csv文件
-``` 。">
+``` 
+
+### Linux命令
+
+```shell
+# 查看可执行文件的依赖库
+ldd /usr/bin/python3
+ldd /bin/ls
+
+# 查看动态库的依赖
+ldd /usr/lib/x86_64-linux-gnu/libc.so.6
+
+# 批量查看目录下所有程序的依赖
+find /usr/bin -type f -executable -exec ldd {} \; 2>/dev/null
+
+# 按名称查找库文件
+find /usr -name 'libc.so.6' -type f 2>/dev/null
+find / -name '*.so' -type f 2>/dev/null
+
+# 在标准库目录中查找
+find /usr/lib /usr/lib64 -name 'libpthread*' -type f
+
+#objdump - 目标文件分析 
+# 查看动态库依赖
+objdump -p /usr/bin/python3 | grep NEEDED
+
+# 查看共享库的符号表
+objdump -T /lib/x86_64-linux-gnu/libc.so.6
+
+# 查看动态段信息
+objdump -x /path/to/binary | grep -E '(NEEDED|SONAME)'
+
+# 查看动态库依赖
+readelf -d /usr/bin/bash | grep 'Shared library'
+
+# 查看所有动态段信息
+readelf -d /path/to/program
+
+# 查看符号表
+readelf -s /usr/lib/libm.so.6 | grep sqrt
+
+# 查看运行中程序加载的库
+lsof -p <pid> | grep '\.so'
+
+# 查看哪个进程使用了特定库
+lsof /usr/lib/libc.so.6
+``` 
+
+| 场景     | 命令示例                                                      |               |
+| ------ | --------------------------------------------------------- | ------------- |
+| GPU 状态 | nvidia-smi / nvidia-smi dmon -s pucvmet                   |               |
+| 显存占用   | gpustat -cpP1 或 nvtop                                     |               |
+| 看模型大小  | du -h /data/models/Qwen2-7B\*                             |               |
+| 压测接口   | wrk -t4 -c100 -d30s -s post.lua <http://ip:8000/generate> |               |
+| 实时日志   | tail -f /var/log/messages                                 | grep llm\_srv |
+| 端口冲突   | lsof -i:8000                                              |               |
+| 批量杀进程  | pkill -f uvicorn                                          |               |
+| 防火墙    | ufw allow 8000/tcp                                        |               |
+| 永久挂载   | echo '/dev/sdb1 /data ext4 defaults 0 0' >> /etc/fstab    |               |
+
+。">
 <meta property="og:title" content="linux">
 <meta property="og:description" content="### gpu上建立容器
 ```powershell
@@ -256,7 +316,67 @@ brew install visidata
 
 
 vd + csv文件
-``` 。">
+``` 
+
+### Linux命令
+
+```shell
+# 查看可执行文件的依赖库
+ldd /usr/bin/python3
+ldd /bin/ls
+
+# 查看动态库的依赖
+ldd /usr/lib/x86_64-linux-gnu/libc.so.6
+
+# 批量查看目录下所有程序的依赖
+find /usr/bin -type f -executable -exec ldd {} \; 2>/dev/null
+
+# 按名称查找库文件
+find /usr -name 'libc.so.6' -type f 2>/dev/null
+find / -name '*.so' -type f 2>/dev/null
+
+# 在标准库目录中查找
+find /usr/lib /usr/lib64 -name 'libpthread*' -type f
+
+#objdump - 目标文件分析 
+# 查看动态库依赖
+objdump -p /usr/bin/python3 | grep NEEDED
+
+# 查看共享库的符号表
+objdump -T /lib/x86_64-linux-gnu/libc.so.6
+
+# 查看动态段信息
+objdump -x /path/to/binary | grep -E '(NEEDED|SONAME)'
+
+# 查看动态库依赖
+readelf -d /usr/bin/bash | grep 'Shared library'
+
+# 查看所有动态段信息
+readelf -d /path/to/program
+
+# 查看符号表
+readelf -s /usr/lib/libm.so.6 | grep sqrt
+
+# 查看运行中程序加载的库
+lsof -p <pid> | grep '\.so'
+
+# 查看哪个进程使用了特定库
+lsof /usr/lib/libc.so.6
+``` 
+
+| 场景     | 命令示例                                                      |               |
+| ------ | --------------------------------------------------------- | ------------- |
+| GPU 状态 | nvidia-smi / nvidia-smi dmon -s pucvmet                   |               |
+| 显存占用   | gpustat -cpP1 或 nvtop                                     |               |
+| 看模型大小  | du -h /data/models/Qwen2-7B\*                             |               |
+| 压测接口   | wrk -t4 -c100 -d30s -s post.lua <http://ip:8000/generate> |               |
+| 实时日志   | tail -f /var/log/messages                                 | grep llm\_srv |
+| 端口冲突   | lsof -i:8000                                              |               |
+| 批量杀进程  | pkill -f uvicorn                                          |               |
+| 防火墙    | ufw allow 8000/tcp                                        |               |
+| 永久挂载   | echo '/dev/sdb1 /data ext4 defaults 0 0' >> /etc/fstab    |               |
+
+。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/linux.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -425,7 +545,105 @@ sudo apt<span class="pl-k">-</span>get install visidata
 brew install visidata
 
 
-vd <span class="pl-k">+</span> csv文件</pre></div></div>
+vd <span class="pl-k">+</span> csv文件</pre></div>
+<h3>Linux命令</h3>
+<div class="highlight highlight-source-shell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span> 查看可执行文件的依赖库</span>
+ldd /usr/bin/python3
+ldd /bin/ls
+
+<span class="pl-c"><span class="pl-c">#</span> 查看动态库的依赖</span>
+ldd /usr/lib/x86_64-linux-gnu/libc.so.6
+
+<span class="pl-c"><span class="pl-c">#</span> 批量查看目录下所有程序的依赖</span>
+find /usr/bin -type f -executable -exec ldd {} <span class="pl-cce">\;</span> <span class="pl-k">2&gt;</span>/dev/null
+
+<span class="pl-c"><span class="pl-c">#</span> 按名称查找库文件</span>
+find /usr -name <span class="pl-s"><span class="pl-pds">"</span>libc.so.6<span class="pl-pds">"</span></span> -type f <span class="pl-k">2&gt;</span>/dev/null
+find / -name <span class="pl-s"><span class="pl-pds">"</span>*.so<span class="pl-pds">"</span></span> -type f <span class="pl-k">2&gt;</span>/dev/null
+
+<span class="pl-c"><span class="pl-c">#</span> 在标准库目录中查找</span>
+find /usr/lib /usr/lib64 -name <span class="pl-s"><span class="pl-pds">"</span>libpthread*<span class="pl-pds">"</span></span> -type f
+
+<span class="pl-c"><span class="pl-c">#</span>objdump - 目标文件分析 </span>
+<span class="pl-c"><span class="pl-c">#</span> 查看动态库依赖</span>
+objdump -p /usr/bin/python3 <span class="pl-k">|</span> grep NEEDED
+
+<span class="pl-c"><span class="pl-c">#</span> 查看共享库的符号表</span>
+objdump -T /lib/x86_64-linux-gnu/libc.so.6
+
+<span class="pl-c"><span class="pl-c">#</span> 查看动态段信息</span>
+objdump -x /path/to/binary <span class="pl-k">|</span> grep -E <span class="pl-s"><span class="pl-pds">"</span>(NEEDED|SONAME)<span class="pl-pds">"</span></span>
+
+<span class="pl-c"><span class="pl-c">#</span> 查看动态库依赖</span>
+readelf -d /usr/bin/bash <span class="pl-k">|</span> grep <span class="pl-s"><span class="pl-pds">"</span>Shared library<span class="pl-pds">"</span></span>
+
+<span class="pl-c"><span class="pl-c">#</span> 查看所有动态段信息</span>
+readelf -d /path/to/program
+
+<span class="pl-c"><span class="pl-c">#</span> 查看符号表</span>
+readelf -s /usr/lib/libm.so.6 <span class="pl-k">|</span> grep sqrt
+
+<span class="pl-c"><span class="pl-c">#</span> 查看运行中程序加载的库</span>
+lsof -p <span class="pl-k">&lt;</span>pid<span class="pl-k">&gt;</span> <span class="pl-k">|</span> grep <span class="pl-s"><span class="pl-pds">"</span>\.so<span class="pl-pds">"</span></span>
+
+<span class="pl-c"><span class="pl-c">#</span> 查看哪个进程使用了特定库</span>
+lsof /usr/lib/libc.so.6</pre></div>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>场景</th>
+<th>命令示例</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPU 状态</td>
+<td>nvidia-smi / nvidia-smi dmon -s pucvmet</td>
+<td></td>
+</tr>
+<tr>
+<td>显存占用</td>
+<td>gpustat -cpP1 或 nvtop</td>
+<td></td>
+</tr>
+<tr>
+<td>看模型大小</td>
+<td>du -h /data/models/Qwen2-7B*</td>
+<td></td>
+</tr>
+<tr>
+<td>压测接口</td>
+<td>wrk -t4 -c100 -d30s -s post.lua <a href="http://ip:8000/generate" rel="nofollow">http://ip:8000/generate</a></td>
+<td></td>
+</tr>
+<tr>
+<td>实时日志</td>
+<td>tail -f /var/log/messages</td>
+<td>grep llm_srv</td>
+</tr>
+<tr>
+<td>端口冲突</td>
+<td>lsof -i:8000</td>
+<td></td>
+</tr>
+<tr>
+<td>批量杀进程</td>
+<td>pkill -f uvicorn</td>
+<td></td>
+</tr>
+<tr>
+<td>防火墙</td>
+<td>ufw allow 8000/tcp</td>
+<td></td>
+</tr>
+<tr>
+<td>永久挂载</td>
+<td>echo "/dev/sdb1 /data ext4 defaults 0 0" &gt;&gt; /etc/fstab</td>
+<td></td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
