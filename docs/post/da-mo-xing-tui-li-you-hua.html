@@ -1402,6 +1402,11 @@ Chunked-Prefill + 流式 SSE
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
+<p>HCCS = Huawei Cache-Coherent System，是昇腾（Ascend）处理器之间专用的片间高速缓存一致性总线，功能定位就是对标 GPU 世界的 NVLink：<br>
+作用<br>
+在 NPU 与 NPU（或多路 CPU-NPU）之间建立高带宽、低延迟、缓存一致的点对点通道<br>
+让多颗 910B/910C 像一块大芯片一样共享统一内存地址空间，All-Reduce、梯度同步等集合通信无需再走 PCIe，带宽高、CPU 不参与</p>
+<p>速率规格（910B 世代）：单通道 56 Gb/s（NRZ）</p>
 <p></p>
 </details> 
 <p>近期看的论文，书籍，公众号分享</p>
