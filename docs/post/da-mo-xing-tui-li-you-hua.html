@@ -110,7 +110,7 @@ x̂ = (Q − zero_point) × scale          // 反量化</p>
 离群值基本是基于channel的。我们发现激活难量化，权重分布更均匀，容易量化。<br>
 比如qwen3-32b，layer50_q_input,以及layer50_q_weight，横轴是hidden_dimension_index,纵轴分别是value（0-10），（0.0-0.3）。layer63_k_input,以及layer63_k_weight。<br>
 大规模离群值:数值非常大,通常单点分布,对模型精度起到重要作用。</p>
-<p>量化的是transformer中哪些层？</p>
+<p><strong>量化的是transformer中哪些层？</strong></p>
 <details><summary>Details</summary>
 <p>
 </p><p>以 Llama/GLM 类解码器为例，一个 Block 里：<br>
