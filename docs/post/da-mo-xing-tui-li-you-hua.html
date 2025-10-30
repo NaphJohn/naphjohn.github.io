@@ -958,6 +958,12 @@ computed_blocks 里就是可以 100 % 复用的 KV-Cache 块列表，顺序与�
 <td>✅ 可切（sequence parallel）</td>
 <td>见第三节</td>
 </tr>
+<tr>
+<td>“列切输出，行切输入；头切注意，seq 可选；Norm 不切，通信一次ALL-reduce。”</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
 </tbody>
 </table></markdown-accessiblity-table>
 <p>EP专家并行：在 MoE 模型中，把“专家”切分到不同设备，token 通过 All-to-All 通信“去找”专家，计算完再 All-to-All 回来。<br>
