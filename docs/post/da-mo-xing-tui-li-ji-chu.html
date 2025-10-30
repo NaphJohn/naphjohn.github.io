@@ -707,6 +707,8 @@ allgather：收集每个npu所有的数据到每个npu上<br>
 alltoallv：所有npu互相scatter和gather数据</p>
 <p>前沿思想：</p>
 <h2>DSA</h2>
+<p>DeepSeek 稀疏注意力（DSA, DeepSeek Sparse Attention）的核心思路是<br>
+“先海选、后精算”：用极轻量的索引器闪电式筛出与当前查询最相关的 Top-k 个历史 token，再在这些“候选”上执行标准注意力，从而把 O(L²) 的平方复杂度降到 O(L·k)（k≪L）。整套机制在 MLA（Multi-Query Attention）框架下实现，兼顾长上下文精度与工程效率。</p>
 <p>MHA：同时用 H 个固定头算注意力，显存 ∝ H；<br>
 DSA：细粒度稀疏注意力<br>
 • 动态分层稀疏：结合粗粒度压缩与细粒度选择，保留全局和局部信息。<br>
@@ -715,17 +717,22 @@ DSA：细粒度稀疏注意力<br>
 靠在线路由把“多头多样性”转成“时序多样性”，KV 缓存与计算量都降 H 倍，长序列成本直降 50 % 以上。</p>
 <details><summary>Details</summary>
 <p>
-</p><p>NSA 算法 = “三路径分层稀疏”<br>
-粗粒度：对 KV 做 per-block 压缩表示（类似 Quest 的 block-summary）<br>
-细粒度：对整段 KV 做 Top-k 重要 token 选择（可学习门控）<br>
-局部：固定 滑动窗口 保证邻近上下文<br>
-三条路径并行算完再合并输出，每 query 只落在绿色区域（≈10 % 位置），复杂度从 O(n²) 降到 O(n) 且 原生可训练。<br>
-架构落地 = Lightning Indexer + NSA Triton Kernel<br>
-Lightning Indexer 负责在 预填充前 用 128-d 低秩向量 + 少头 ReLU 打分，毫秒级给出 Top-k 稀疏块索引，替代传统“全量 Softmax”海选；<br>
-NSA Triton Kernel 基于 FlashAttention-2 改造，以 GQA 组为粒度 把三段 KV 块一次性载入 SRAM，TensorCore 利用率&gt;90 %，解码/前向/反向均提速。<br>
-在 vLLM 代码中对应：<br>
-vllm/attention/backends/flash_attn.py  → 新增 NsaFlashAttention<br>
-vllm/v1/core/lightning_indexer.py      → Lightning Indexer 实现</p>
+一、总体流程（两阶段）
+阶段 1  Lightning Indexer（海选）
+低维投影：把高维 Q、K 先压到 128 维（可学习线性层），再量化为 FP8。
+快速打分：执行一次小矩阵乘 index_score = ReLU(Q_index · K_index^T)；ReLU 只取正相关，避免 Softmax 全局归一化开销。
+跨头聚合：把多个 query head 的分数求和，得到每个查询 token 对所有历史 token 的“相关性向量” Iₜ。
+</p><p>阶段 2  Top-k 选择 + 稀疏 MLA（精算）<br>
+4. 选 Top-k：对 Iₜ 取 Top-2048 索引（训练固定 k=2048）。<br>
+5. 构造稀疏 KV：只把这些位置的主 KV 从缓存里 gather 出来（连续块访问，GPU 友好）。<br>
+6. 执行注意力：在筛后的 2048 个 KV 上算标准 MQA，输出上下文向量。</p>
+<p>二、与 MLA 的耦合<br>
+采用 MQA 模式：所有 query head 共享同一组 KV，因此只需一次 Top-k 筛选即可服务全部头，避免重复存储与计算。<br>
+位置编码：仅对索引向量及主 KV 施加 RoPE，兼顾位置感知与效率。<br>
+持续训练：在 DeepSeek-V3.1-Terminus  Checkpoint 上做两阶段继续训练——密集热身 → 稀疏微调，保证模型适应稀疏分布。</p>
+<p>DSA = “FP8 低维 ReLU 海选” + “Top-k 稀疏 MLA”；<br>
+在 MLA 的 MQA 模式下，用一次轻量索引完成所有 query head 的候选筛选，<br>
+把平方复杂度压到线性，长文本 128 K 场景几乎无损精度，推理成本砍半</p>
 <p>相关文章：<a href="https://mp.weixin.qq.com/s/-dBxaYyisXwIvPNRFZCrCQ" rel="nofollow">https://mp.weixin.qq.com/s/-dBxaYyisXwIvPNRFZCrCQ</a></p>
 <p></p>
 </details> 
