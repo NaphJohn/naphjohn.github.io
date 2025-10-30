@@ -918,6 +918,48 @@ computed_blocks 里就是可以 100 % 复用的 KV-Cache 块列表，顺序与�
 <p>Tensor张量并行：<br>
 用于非MoE的共享层（如嵌入层、门控网络、输出层），或者用于单个非常大的专家。如果一个专家本身的参数量巨大，超过了单个设备的内存，那么可以在这个专家内部使用张量并行。优势是用于处理模型内部那些巨大且密集的部分。<br>
 它是把 单层内部的算子 拆开，比如一个大的全连接矩阵乘法，我们把<strong>权重矩阵</strong>切成几块分到不同 GPU 上，每个 GPU 负责算一部分，再做 AllReduce 合并结果。好处是能并行利用多卡算力，加速单层的计算。缺点是通信量比较大，尤其是每层都需要跨卡通信，如果跨机通信的话开销就更明显。MLP先列后行，self-attention按照头来切。</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>层级</th>
+<th>切权重？</th>
+<th>切激活？</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Column-Parallel Linear（Gate/Up/FC1）</td>
+<td>✅ 按“输出维度”切</td>
+<td>✅ 输出特征图跟着切</td>
+<td>每卡算 1/k 列</td>
+</tr>
+<tr>
+<td>Row-Parallel Linear（Down/FC2）</td>
+<td>✅ 按“输入维度”切</td>
+<td>❌ 输入激活不切</td>
+<td>需要 All-Reduce 汇总</td>
+</tr>
+<tr>
+<td>Attention QKV/O</td>
+<td>✅ 按 Head 数切</td>
+<td>✅ 分头计算</td>
+<td>每卡管 1/k 个头</td>
+</tr>
+<tr>
+<td>LayerNorm/RMSNorm</td>
+<td>❌ 全复制</td>
+<td>❌ 全复制</td>
+<td>参数 &lt;0.1%，不值得切</td>
+</tr>
+<tr>
+<td>Softmax</td>
+<td>❌ 全复制</td>
+<td>✅ 可切（sequence parallel）</td>
+<td>见第三节</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
 <p>EP专家并行：在 MoE 模型中，把“专家”切分到不同设备，token 通过 All-to-All 通信“去找”专家，计算完再 All-to-All 回来。<br>
 总参数量可无限增加，但每 token 计算量不变——用通信换显存、用稀疏换容量。每个设备只存 E/N 个专家，token 被门控动态路由到目标专家所在 GPU/NPU，计算完再返回原设备。两次 All-to-All 是 EP 最昂贵也最关键的操作；vLLM/DeepSpeed 用 异步 + fused kernel 掩盖延迟。</p>
 <p>专家并行具体过程</p>
