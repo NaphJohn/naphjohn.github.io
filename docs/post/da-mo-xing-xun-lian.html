@@ -402,7 +402,21 @@ $L = -\frac{1}{T} \sum_{t=1}^{T} \log P(x_t | x_{&amp;lt;t})$<br>
 $L_t = -\sum_{i=1}^{V} y_i \log(p_i) = -\log(p_{x_t})$<br>
 因为只有 $y_{x_t}=1$，其他 $y_i=0$。<br>
 所以，对于这一个token的损失就是其负对数概率。整个序列的损失是所有token损失的平均。<br>
-举例：如果模型对某个目标词预测的概率是 0.01，那么该token的损失就是 -log(0.01) ≈ 4.605。如果模型非常确信（概率为 0.99），损失就是 -log(0.99) ≈ 0.01。</p></div>
+举例：如果模型对某个目标词预测的概率是 0.01，那么该token的损失就是 -log(0.01) ≈ 4.605。如果模型非常确信（概率为 0.99），损失就是 -log(0.99) ≈ 0.01。</p>
+<h2>长序列切分的一些策略：</h2>
+<p>Ulysess: 切分sequence维度,在计算attention时通过AllToAll转为切分head_num维度,实现序列<br>
+切分的同时不影响attention计算的正确性。<br>
+1.输入序列切分为N个块。的<br>
+2.每个GPU拿到一个块,在计算Attention之前通过AlltoAll通信每个GPU拿到完整的序列。,<br>
+3.计算Attention。<br>
+4.AllToAll把Attention按照sequence维度拆分成N个块分发到各个GPU。</p>
+<p>Ring-Attention:切分sequence维度,各个GPU分别计算切分后的序列的KV值,通过环形通信同<br>
+步全局的KV,最终计算Attention。<br>
+1.输入序列被切分为N个块。<br>
+2.每个 GPU 拿到一个块,并计算本地的Q、K、V。<br>
+3.使用环形拓扑结构,GPU 依次向下一个设备发送自己的 K/V,并接收前一个设备的K/V。,<br>
+4.每次接收到新的 K/V 后,就与本地的 Q做 attention 计算。<br>
+5.经过 N-1 轮通信后,每个 GPU 都"看到"了全部的 KN, 完成了全局 attention。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
