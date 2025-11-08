@@ -201,7 +201,7 @@ ClassWithArgs(带参类)—-支持通过指定初始化参数实现延迟远程�
 缺点：<br>
 使用zero【让每张 GPU 只存一部分模型状态，用通信换显存】并行，当前在大参数和长序列场景性能差。解决长序列问题的两种并行方式，比如ulysess，ring-attention<br>
 数据是边读取边训练，在大数据集上断点续训dataloader会是瓶颈。</p>
-<p>训练方法包含PT、SFT、DPO；deepseed zero并行；flashattention</p>
+<p>训练方法包含PT、SFT、DPO；deepseed zero并行（Zero 的核心就是把模型状态（权重、梯度、优化器状态）按行/列切成分片，让每张 GPU 只存一小部分；前向-反向计算时再通过 All-Reduce / Broadcast / All-Gather 把需要的片段临时凑齐，用通信换显存。）；flashattention</p>
 <h1>大模型中量化方法</h1>
 <markdown-accessiblity-table><table role="table">
 <thead>
