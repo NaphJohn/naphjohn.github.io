@@ -193,6 +193,7 @@ ClassWithArgs(带参类)—-支持通过指定初始化参数实现延迟远程�
 <li>根据 experiences 多轮计算 actor loss 和 critic loss 并更新Actor和Critic</li>
 </ol>
 <h3>llama-factory框架</h3>
+<p>llama-factory没有模型并行能力，激活值是一个瓶颈。激活值的增长与序列长度的平方呈线性关系。</p>
 <p>底层是transformers+deepspeed<br>
 优点：<br>
 使用简单，内置了许多开源模型、训练方式、数据集，包含了训练、评测和推理部署多个流程。<br>
