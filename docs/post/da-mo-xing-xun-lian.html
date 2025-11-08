@@ -11,82 +11,20 @@
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
 <meta name="description" content="# 训练主要流程
-┌──────────────┐
-│  1. 数据工程   │──→ 3T-30T raw tokens → 质量分层（PageRank+fastText+LLM-Score）
-│  清洗+去重+配比 │──→ 对话:代码:多模态=6:3:1，token 级采样
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  2. 预训练     │──→ FP8 混合精度 + 3D-Parallel(TP-PP-DP) + ZeRO-3
-│  通用底座      │──→ 14.8T-30T tokens，2-4 个月，H100×2k-8k
-│  目标：下个 token 预测 │──→ 保存 final ckpt + 中间 5-10 个 milestone
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  3. 长上下文扩展 │──→ 继续预训练 10B-100B tokens，RoPE 基频 500k→2M
-│  256k-2M ctx   │──→ MLA/Ring-Attention + 序列并行，1-2 epoch
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  4. 监督微调   │──→ 100k-2M 高质量指令样本（CoT+对话+工具）
-│  SFT           │──→ 2-5 epoch，LR 1e-5-5e-6，BF16/FP8，3-7 天
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  5. 规则/偏好 RL │──→ GRPO or PPO，无人工答案，仅规则/ORM 奖励
-│  （CoT 自我进化） │──→ 1-3 轮，每轮 10k-100k 在线轨迹，10-30 天
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  6. 拒绝采样蒸馏 │──→ 用 5.b 策略产 1M 正确轨迹 → 短 SFT → 更小模型
-│  RFT + DPO     │──→ 同时做 DPO/RLHF 对齐人类可读 & 安全
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  7. 评估 & 量化上线 │──→ Open-LLM-Leaderboard + 业务私评
-│  量化+推理优化   │──→ GPTQ/AWQ/FP8 W8A8 + TensorRT-LLM/vLLM
-│  灰度→全量      │──→ 监控幻觉、延迟、成本，回滚 gate
-└──────────────┘
-“先 3D-并行 FP8 预训练 20 T token 拿底座，再长上下文扩展 → 百万级 SFT → 规则 RL（GRPO/PPO）让模型自己写 CoT → 拒绝采样蒸馏出小模型 → DPO 对齐人类偏好 → 量化上线，全程 3-4 个月，H100×2k 卡。">
+
+##SFT（Supervised Fine-Tuning，监督微调）
+监督微调是“大模型出厂”后的第一道工序：
+把已经在海量无标注文本里预训练好的基座模型（如 LLaMA、Qwen）拿来；
+用少量人工写好的“指令-答案”对（通常几万～几十万条）继续训练；
+训练目标跟预训练一样仍是“预测下一个 token”，但只让模型在答案部分算 loss，迫使它学会“听指令、按要求回答”，而不是继续无脑续写。">
 <meta property="og:title" content="大模型训练">
 <meta property="og:description" content="# 训练主要流程
-┌──────────────┐
-│  1. 数据工程   │──→ 3T-30T raw tokens → 质量分层（PageRank+fastText+LLM-Score）
-│  清洗+去重+配比 │──→ 对话:代码:多模态=6:3:1，token 级采样
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  2. 预训练     │──→ FP8 混合精度 + 3D-Parallel(TP-PP-DP) + ZeRO-3
-│  通用底座      │──→ 14.8T-30T tokens，2-4 个月，H100×2k-8k
-│  目标：下个 token 预测 │──→ 保存 final ckpt + 中间 5-10 个 milestone
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  3. 长上下文扩展 │──→ 继续预训练 10B-100B tokens，RoPE 基频 500k→2M
-│  256k-2M ctx   │──→ MLA/Ring-Attention + 序列并行，1-2 epoch
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  4. 监督微调   │──→ 100k-2M 高质量指令样本（CoT+对话+工具）
-│  SFT           │──→ 2-5 epoch，LR 1e-5-5e-6，BF16/FP8，3-7 天
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  5. 规则/偏好 RL │──→ GRPO or PPO，无人工答案，仅规则/ORM 奖励
-│  （CoT 自我进化） │──→ 1-3 轮，每轮 10k-100k 在线轨迹，10-30 天
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  6. 拒绝采样蒸馏 │──→ 用 5.b 策略产 1M 正确轨迹 → 短 SFT → 更小模型
-│  RFT + DPO     │──→ 同时做 DPO/RLHF 对齐人类可读 & 安全
-└──────┬─────────┘
-       ↓
-┌──────────────┐
-│  7. 评估 & 量化上线 │──→ Open-LLM-Leaderboard + 业务私评
-│  量化+推理优化   │──→ GPTQ/AWQ/FP8 W8A8 + TensorRT-LLM/vLLM
-│  灰度→全量      │──→ 监控幻觉、延迟、成本，回滚 gate
-└──────────────┘
-“先 3D-并行 FP8 预训练 20 T token 拿底座，再长上下文扩展 → 百万级 SFT → 规则 RL（GRPO/PPO）让模型自己写 CoT → 拒绝采样蒸馏出小模型 → DPO 对齐人类偏好 → 量化上线，全程 3-4 个月，H100×2k 卡。">
+
+##SFT（Supervised Fine-Tuning，监督微调）
+监督微调是“大模型出厂”后的第一道工序：
+把已经在海量无标注文本里预训练好的基座模型（如 LLaMA、Qwen）拿来；
+用少量人工写好的“指令-答案”对（通常几万～几十万条）继续训练；
+训练目标跟预训练一样仍是“预测下一个 token”，但只让模型在答案部分算 loss，迫使它学会“听指令、按要求回答”，而不是继续无脑续写。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/da-mo-xing-xun-lian.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -148,6 +86,11 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h1>训练主要流程</h1>
+<p>##SFT（Supervised Fine-Tuning，监督微调）<br>
+监督微调是“大模型出厂”后的第一道工序：<br>
+把已经在海量无标注文本里预训练好的基座模型（如 LLaMA、Qwen）拿来；<br>
+用少量人工写好的“指令-答案”对（通常几万～几十万条）继续训练；<br>
+训练目标跟预训练一样仍是“预测下一个 token”，但只让模型在答案部分算 loss，迫使它学会“听指令、按要求回答”，而不是继续无脑续写。</p>
 <p>┌──────────────┐<br>
 │  1. 数据工程   │──→ 3T-30T raw tokens → 质量分层（PageRank+fastText+LLM-Score）<br>
 │  清洗+去重+配比 │──→ 对话:代码:多模态=6:3:1，token 级采样<br>
@@ -249,13 +192,13 @@ ClassWithArgs(带参类)—-支持通过指定初始化参数实现延迟远程�
 也就是生成的回应会交由Critic模型（评估状态价值）、奖励模型(RM)（计算即时奖励）和参考模型(Reference Model)（计算与初始模型的KL散度，防止策略偏离太远）进行评估。</li>
 <li>根据 experiences 多轮计算 actor loss 和 critic loss 并更新Actor和Critic</li>
 </ol>
-<h3>llama-factory</h3>
+<h3>llama-factory框架</h3>
 <p>底层是transformers+deepspeed<br>
 优点：<br>
 使用简单，内置了许多开源模型、训练方式、数据集，包含了训练、评测和推理部署多个流程。<br>
 兼容huggingface社区开源模型，可以开箱即用。<br>
 缺点：<br>
-使用zero【让每张 GPU 只存一部分模型状态，用通信换显存】并行，当前在大参数和长序列场景性能差。<br>
+使用zero【让每张 GPU 只存一部分模型状态，用通信换显存】并行，当前在大参数和长序列场景性能差。解决长序列问题的两种并行方式，比如ulysess，ring-attention<br>
 数据是边读取边训练，在大数据集上断点续训dataloader会是瓶颈。</p>
 <p>训练方法包含PT、SFT、DPO；deepseed zero并行；flashattention</p>
 <h1>大模型中量化方法</h1>
