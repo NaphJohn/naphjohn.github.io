@@ -876,6 +876,32 @@ TP+SP 双并行，128 k 序列切成 2 k-4 k 块，TTFT 线性下降 8×。</li>
 支持 NZ（Fractal_NZ）矩阵格式，QKVO-MatMul 直接调用昇腾高密度 Cube 指令；<br>
 结果：同等 SLO 下，吞吐↑1.7×、TTFT↓8×、显存峰值↓40%，且全链路零拷贝、零重训。”</li>
 </ol>
+<p>PD分离中调度优化项目二：<br>
+把原生 AscendScheduler.schedule() 换成 支持 PD 分离（Prefill-Decode 分离）+ 异步 KV 加载的版本，同时注入 NPU 所需的特殊调度逻辑。</p>
+<details><summary>Details</summary>
+<p>
+</p><p>一、主要改动概览（按执行顺序）</p>
+<ol>
+<li>重载 AscendScheduler.<strong>init</strong><br>
+多初始化两个字段<br>
+scheduled_req_ids：已排过队的请求 ID 集合<br>
+running[]：当前正在跑的请求列表<br>
+根据 kv_transfer_config 判断本节点角色<br>
+is_kv_consumer = True → Decode 节点（只负责拉远程 KV 做生成）<br>
+is_kv_consumer = False → Prefill 节点（算完 KV 后推给远端池）</li>
+<li>替换 AscendScheduler.schedule()<br>
+在原调度循环里插入 4 段 PD 逻辑：<br>
+① 请求类型过滤	禁止把“等待远程 KV”的请求混到纯 Decode 批次，防止死锁<br>
+② 远程 KV 状态机	若 request.status == WAITING_FOR_REMOTE_KVS 且 KV 未就绪 → 直接 skip_cur_request()，不占用计算资源<br>
+③ 外部 KV 匹配	通过 connector.get_num_new_matched_tokens() 从 Mooncake/3FS 拿到可复用长度，减少本节点计算量<br>
+④ 异步加载路径	当 load_kv_async=True 时，只分配显存块，把请求重新放回 waiting 并设状态 WAITING_FOR_REMOTE_KVS，等下一轮 KV 拉完再真正计算</li>
+<li>资源水位与块分配<br>
+仍复用 vLLM 原生的 kv_cache_manager.allocate_slots()，但把「外部已缓存 token」计入 num_new_tokens，避免重复计算。</li>
+<li>事件发布<br>
+调度结束后把块分配事件打包成 KVEventBatch，供 profiler 或可视化面板消费。KVEventBatch就是 vLLM 的“KV-Cache 黑匣子”，把每次块操作转成结构化日志发出去，让运维/开发者看得见、算得清、调得快。具体作用是把 KV-Cache 块的生命周期事件（分配/释放/命中/迁移）按时间戳打包成批量日志，广播给外部 profiler 或可视化面板，用来观测显存碎片、命中率、热点块分布，进而调优调度策略。</li>
+</ol>
+<p></p>
+</details> 
 <h3>算子测优化</h3>
 <p>通过mst后者mindstudio 工具识别算子下发瓶颈，因此针对gelu算子、add_layer_norm算子做下发优化，针对add_layer_norm做二维输入的支持；<br>
 针对双向注意力机制：因没有attention mask，可使用torch_npu.npu_fusion_attention算子的varlen功能，使用2维输入即可，相比现有算子的实现，降低实际计算量；</p>
