@@ -99,11 +99,10 @@ x̂ = (Q − zero_point) × scale          // 反量化</p>
 非对称量化：需要引入平移因子，计算量更大。<br>
 量化粒度：</p>
 <ul>
-<li>per-tensor:对整个层或整个张量进行量化,使用一组共同的</li>
-<li>量化参数(如缩放因子和零点)。</li>
-<li>per-channel/per-token:以通道为单位,每个通道单独使用一组量化参数。per-token针对激活×而言,每行对应一个量化</li>
-<li>系数。per-channel针对权重w而言,每列对应一个量化系数。</li>
-<li>per-group:逐组量化以组为单位,每个group使用一组S和Z。</li>
+<li>per-tensor:对整个层或整个张量进行量化,使用一组共同的量化参数(如缩放因子和零点)。</li>
+<li>per-channel/per-token:以通道为单位,每个通道单独使用一组量化参数。per-token针对激活×而言,每行对应一个量化<br>
+系数。per-channel针对权重w而言,每列对应一个量化系数。更精确的说法是：对于一个常见的 2D 权重矩阵（例如 [Out_features, In_features]），per-channel 量化通常是指沿着输出通道的维度（即 Out_features 维度），为每个输出通道（即每一行）分配一套量化参数。</li>
+<li>per-group:逐组量化以组为单位,每个group使用一组S和Z。是 per-tensor 和 per-channel 之间的一个折中方案。</li>
 </ul>
 <p>X*W: 对于激活一般是per-tensor * pertensor     或者  per-token * per-channel （行与列切分）</p>
 <p>离群值:某些元素的数值明显高于其他维度平均值的情况(通常为5倍以上)。离群值会扩大量化步长,从而导致显著的精度损失；<br>
