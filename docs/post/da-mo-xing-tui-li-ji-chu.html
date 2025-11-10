@@ -842,7 +842,7 @@ TPA 用上下文张量分解把 KV 缓存压到 1/10，即时重算全尺寸 key
 <h1>Mooncake</h1>
 <p>MoonCake:使用池化系统缓存50Mtoken, PrefixCache命中率可达50%左右；<br>
 Mooncake 则是“为 LLM 定制的分布式零拷贝缓存池”，后者在长文本、高带宽、高并发场景下把 TTFT 压得更低，吞吐更高。<br>
-幻方部署3FS存储系统,进行KVCache池化,E2E成本降低35%。</p>
+幻方部署3FS存储系统,进行KVCache池化,E2E成本降低35%。Mooncake 的“零拷贝”指的是 GPU↔DRAM↔SSD 之间不走 CPU 内存拷贝。</p>
 <p>客户在各服务化引擎上均有KV池化述求, 以HBM+DRAM+SSD为主<br>
 一句话<br>
 HBM = GPU 显存本体，放最热 KV；池化角色：L1 热池——当前 step/shot 正在用的 KV-Block，命中率要求 90%+<br>
