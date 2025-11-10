@@ -902,7 +902,15 @@ host执行时间长,经常因为是python侧代码执行耗时长;比如:for循�
 <p>通用的一些优化方法:<br>
 1.绑核:PyTorch host侧主要是由单一的主线程下发算子,更依赖单核性能,对PTA主要线程进行CPU绑核,减少切换代价;通过绑核一般有1-2%的提升<br>
 2.下发队列:通过优化TaskQueue,提高线程交互效率;减少下发耗时和下发抖动的</p>
-<h4>前缀kv cache复用</h4>
+<h4>自动前缀缓存（APC）场景下前缀kv cache复用</h4>
+<p>自动前缀缓存（Automatic Prefix Caching），其核心目标是避免重复计算提示词中相同前缀的注意力，从而提升推理效率。它的工作原理主要依赖以下几点：</p>
+<details><summary>Details</summary>
+<p>
+</p><p>KV Cache 与注意力机制：LLM 在生成文本时，Transformer 结构中的自注意力机制会为每个输入序列的 token 生成一个 Key-Value (KV) Cache。在解码阶段，模型需要利用之前所有 token 的 K 和 V 向量来计算当前 token 的注意力，这些向量被缓存下来以加速计算。</p>
+<p>复用共享前缀：自动前缀缓存的核心思想是，当一个新的请求的提示词（例如，包含长文档的系统提示词）与某个已处理请求的提示词共享一个完全相同的前缀时，新请求可以直接复用已有请求前缀部分的 KV Cache。这样就跳过了对共享部分的重复计算，显著降低了推理延迟。</p>
+<p>PagedAttention 支持：vLLM 的 PagedAttention 机制将 KV Cache 在物理内存上划分为一个个固定大小的块（Block），使得非连续的逻辑缓存块映射到连续的物理内存成为可能。这种设计使得缓存块可以在不同序列之间共享，为实现前缀缓存提供了底层支持</p>
+<p></p>
+</details> 
 <p>vllm_npu/common/attention/backends/fx_base_attn.py</p>
 <p>在 vLLM V1 的 APC（Attention Prefix Caching）模块里，我负责提高 KV-Cache 复用率、降低首 token 延迟。<br>
 场景：线上 30B 模型 TTFT 波动大，p99 2.1 s，发现 40 % 请求前缀重复但缓存命中率仅 55 %。<br>
