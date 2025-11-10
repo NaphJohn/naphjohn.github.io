@@ -858,7 +858,7 @@ layer.weight.data = torch_npu.npu_format_cast(weight.data.t().contiguous(), 29) 
 <ol>
 <li>调度<br>
 KV-Consumer 模式 + 预算感知调度，把块分配从“事后回收”变成“事前预算”，利用率↑30%；<br>
-空调度时 _dummy_run(1) 保同步，单机 sleep(0.0001) 放 GIL，防止分布式死锁；<br>
+空调度时 _dummy_run(1) 保同步，单机 sleep(0.0001) 放 GIL，防止分布式死锁；（CPython 解释器全局锁；保证同一时刻只有一个线程在执行 Python 字节码；多线程无法真正并行，只并发；CPU 密集任务仍受限于单核）<br>
 引入 pd_link_down 快速失败，长尾重试→0，显存即时回收。</li>
 <li>内存<br>
 长序列 MOE 用 split 替代 concat，峰值显存减半；<br>
