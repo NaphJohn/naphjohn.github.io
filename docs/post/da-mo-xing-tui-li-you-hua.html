@@ -874,7 +874,6 @@ APC OOM 修复，每层用完立即释放 pa_out，而不是缓存到类成员�
 TP+SP 双并行，128 k 序列切成 2 k-4 k 块，TTFT 线性下降 8×。</li>
 <li>格式与算子<br>
 支持 NZ（Fractal_NZ）矩阵格式，QKVO-MatMul 直接调用昇腾高密度 Cube 指令；<br>
-Token-wise 残差补偿，&lt;0.5% 参数把 5% KV 压缩场景精度拉回 99%。<br>
 结果：同等 SLO 下，吞吐↑1.7×、TTFT↓8×、显存峰值↓40%，且全链路零拷贝、零重训。”</li>
 </ol>
 <h3>算子测优化</h3>
