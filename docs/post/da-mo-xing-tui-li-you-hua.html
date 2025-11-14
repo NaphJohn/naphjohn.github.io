@@ -1453,6 +1453,66 @@ Chunked-Prefill + 流式 SSE
 在 NPU 与 NPU（或多路 CPU-NPU）之间建立高带宽、低延迟、缓存一致的点对点通道<br>
 让多颗 910B/910C 像一块大芯片一样共享统一内存地址空间，All-Reduce、梯度同步等集合通信无需再走 PCIe，带宽高、CPU 不参与</p>
 <p>速率规格（910B 世代）：单通道 56 Gb/s（NRZ）</p>
+<p>NPU片上cache架构：</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>层级</th>
+<th>典型容量</th>
+<th>隶属关系</th>
+<th>管理/可见性</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>L1 Buffer</strong></td>
+<td>2–10 MB / 核</td>
+<td>每核独享</td>
+<td>需手动划分</td>
+<td>存放当前核的输入分块，实现「核内」数据复用</td>
+</tr>
+<tr>
+<td><strong>Unified Buffer</strong></td>
+<td>8 MB (例: Qualcomm SA8295P)</td>
+<td>每核独享</td>
+<td>编译器可见</td>
+<td>向量/标量单元读写区，与 L1 交互，按 32 B 对齐</td>
+</tr>
+<tr>
+<td><strong>L2 Cache</strong></td>
+<td>10–40 MB 全芯片共享</td>
+<td>多核共享</td>
+<td>可手动管理</td>
+<td>缓存大块权重/激活，减少 HBM 访问</td>
+</tr>
+<tr>
+<td><strong>Accumulator</strong></td>
+<td>寄存器级</td>
+<td>每核内部</td>
+<td>硬件自动</td>
+<td>矩阵乘累加，避免反复写回 Unified Buffer</td>
+</tr>
+<tr>
+<td><strong>TCM</strong></td>
+<td>8 MB (例)</td>
+<td>每核/tensor 单元独占</td>
+<td>软件显式分配</td>
+<td>高通/嵌入式 NPU 的「紧耦合内存」，DMA 与 DDR 延迟覆盖</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p>核心思想：手动管理 + 分块缓存</p>
+<ul>
+<li>编译期即可决定数据驻留位置，程序员通过 pragma/tile 指定 L1/L2 块大小。</li>
+<li>矩阵计算先做 Tiling → 片上分块 → 复用 L1 → 累加器累加 → 写回 Unified Buffer → DDR 回写。</li>
+</ul>
+<p>🔍 关键差异 vs GPU</p>
+<ul>
+<li>GPU L1 由 SM 自动调度且容量小（256 KB SharedMem）；NPU L1 可达 10 MB 且 完全由用户控制，可一次塞下更大的输入分块。</li>
+<li>NPU 无透明硬件缓存一致性，不存在缓存失效开销，可预测带宽与延迟。</li>
+<li>L2 通常为多核共享，但同样支持 静态划分，避免核间抖动。</li>
+</ul>
 <p></p>
 </details> 
 <p><strong>极低时延现状</strong><br>
