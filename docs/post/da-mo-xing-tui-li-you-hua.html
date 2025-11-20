@@ -1294,6 +1294,54 @@ p与d按其计算特点使用不用的并行方式</p>
 <li>内存优化：图编译器可以更好地规划内存分配和复用。</li>
 <li>算子融合：将多个小算子融合成一个大算子，减少数据搬运，提升计算效率。</li>
 </ul>
+<p>npu上图模式一：ascend-turbo-graph：记录算子执行的依赖关系构图；消除python host耗时；且支持动态shape。如果未设置则默认配置到acl_graph，如果还存在不支持的情况，最终fallback到eager模式。<br>
+图模式二：<br>
+acl-graph，对标cuda-graph的piece-wise graph，如果设置了eager模式，则eager优先级更高。piece-wise graph =「Attention 留在 Eager，MLP 录成 CUDA Graph，运行时像乐高一样拼」，既吃图模式的零开销红利，又保留动态 shape 的自由度；一旦手动开启 eager，框架优先走即时路径，piece-wise 自动让位。</p>
+<details><summary>Details</summary>
+<p>
+</p><markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>维度</th>
+<th>完整 CUDA Graph</th>
+<th>piece-wise graph</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>录制粒度</td>
+<td>整网 forward</td>
+<td>仅 MLP/LN 子块</td>
+</tr>
+<tr>
+<td>对 Attention 要求</td>
+<td>长度固定、算子兼容</td>
+<td>任意变长，Attention 留在 Eager</td>
+</tr>
+<tr>
+<td>显存占用</td>
+<td>高（一次性录整张）</td>
+<td>低（只录小模块 + 固定缓冲）</td>
+</tr>
+<tr>
+<td>首次捕获耗时</td>
+<td>长</td>
+<td>短（模块小）</td>
+</tr>
+<tr>
+<td>运行时回退</td>
+<td>不支持</td>
+<td>自动回退 Eager</td>
+</tr>
+<tr>
+<td>适用场景</td>
+<td>小模型、固定 shape 推理</td>
+<td>大模型、长文本、连续批处理</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p></p>
+</details> 
 <p><strong>chunked-prefill</strong><br>
 修改位置：<br>
 vllm_npu/common/attention/backends/fx_base_attn.py<br>
