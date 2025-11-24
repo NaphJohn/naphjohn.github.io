@@ -1562,7 +1562,7 @@ delta_text="final" → DeltaMessage(content="final")</p>
 在 NPU 与 NPU（或多路 CPU-NPU）之间建立高带宽、低延迟、缓存一致的点对点通道<br>
 让多颗 910B/910C 像一块大芯片一样共享统一内存地址空间，All-Reduce、梯度同步等集合通信无需再走 PCIe，带宽高、CPU 不参与</p>
 <p>速率规格（910B 世代）：单通道 56 Gb/s（NRZ）</p>
-<p>NPU片上cache架构：</p>
+<p><strong>NPU片上cache架构：</strong></p>
 <markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
@@ -1622,6 +1622,11 @@ delta_text="final" → DeltaMessage(content="final")</p>
 <li>NPU 无透明硬件缓存一致性，不存在缓存失效开销，可预测带宽与延迟。</li>
 <li>L2 通常为多核共享，但同样支持 静态划分，避免核间抖动。</li>
 </ul>
+<p>GPU Hopper架构：4 nm + 132 SM（CUDA Core + Tensor Core + 共享内存/缓存 + Warp Scheduler；132 SM ≈ 132 条流水线同时跑，数量越多，峰值算力越高） + 支持 FP8 混合精度与 Transformer Engine + 900 GB/s NVLink4，打万亿模型；<br>
+Thor X（车规芯片） ：<br>
+原理就是Thor X 把 Grace 级 CPU（做 通用计算+大内存） 和 Blackwell GPU （大算力+AI 专核）用 NVLink-C2C （CPU↔GPU 900 GB/s 片间互联，统一寻址无需 PCIe 拷贝；显存即主存）缝成一片，统一内存零拷贝，‘单芯片'跑全栈自动驾驶。单芯片 &gt; 4 PFLOPS@FP8（数据中心版），车规版 9.2 TFLOPS@FP32 / 1000 TOPS@INT8 。</p>
+<p>FLOPS = 浮点运算/秒（精度越高越慢），TOPS = 整数乘加/秒（AI 常用 INT8）。<br>
+量级：P = 10¹⁵，T = 10¹²， 换算：1 PFLOPS = 1000 TFLOPS = 10³ TOPS（同精度下）。</p>
 <p></p>
 </details> 
 <p><strong>极低时延现状</strong><br>
