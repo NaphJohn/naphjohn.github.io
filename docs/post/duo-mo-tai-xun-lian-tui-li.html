@@ -306,6 +306,118 @@ SD与VAE区别：<br>
 解决方法：<br>
 在入口py文件中加入os.environ['CURL_CA_BUNDLE'] = ''  ，重新执行即可。<br>
 训练入口py文件为 diffusers0.21.0/examples/text_to_image/train_text_to_image_lora_sdxl.py。</p>
+<h1>Opensora模型</h1>
+<p>实际项目：opensora基于modelarts 适配npu<br>
+「先压后去噪」<br>
+VAE 把视频压成隐码 → DiT 在隐码里玩 Diffusion → 推理用最终权重解码回视频<br>
+「OpenSora = 时空 VAE + STDiT + T5；WebVid-2M 学；VAE loss ↘ 0.8e-3，DiT loss ↘ 0.05 停；输出 4-16 s 720p 视频。」<br>
+opensora模型与SD模型架构比较</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>模块</th>
+<th>SD 1.5/2</th>
+<th>SD 3</th>
+<th>OpenSora</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主干去噪</td>
+<td>UNet</td>
+<td>MMDiT（双 Transformer）</td>
+<td>STDiT（时空 DiT）</td>
+</tr>
+<tr>
+<td>文本编码</td>
+<td>CLIP/OpenCLIP</td>
+<td>CLIP-L/G + T5-XXL</td>
+<td>CLIP（PixArt 权重）</td>
+</tr>
+<tr>
+<td>时空建模</td>
+<td>无（单帧）</td>
+<td>无（单帧）</td>
+<td><strong>时间注意力层</strong>插在空间 DiT 块之间</td>
+</tr>
+<tr>
+<td>隐空间压缩</td>
+<td>8×8 VAE（仅空间）</td>
+<td>8×8 VAE（空间）</td>
+<td><strong>8×8×4</strong> 视频 VAE（空间 8×，时间 4×）</td>
+</tr>
+<tr>
+<td>训练策略</td>
+<td>静态图 + 随机噪声</td>
+<td>静态图 + 随机噪声</td>
+<td>视频 + 时间步采样 + Rectified-Flow</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p><strong>全流程</strong>如下表格</p>
+<details><summary>Details</summary>
+<p>
+</p><markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>环节</th>
+<th>输入</th>
+<th>输出</th>
+<th>权重作用</th>
+<th>数据集</th>
+<th>收敛/loss 含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>VAE 训练</strong></td>
+<td>WebVid-2M 原始视频帧</td>
+<td>时空隐码 <code class="notranslate">z</code> (B, C, T, H, W)</td>
+<td>OpenSora-VAE-v1.2 <strong>初始化</strong><br>PixArt-SDXL-VAE 提供空间编码器结构</td>
+<td>WebVid-2M 视频帧<br>→ webvid_meta_data.csv</td>
+<td><strong>MSE + KL</strong> 阶段递减<br>stage3 loss ≈ 0.8×10⁻³ 停止</td>
+</tr>
+<tr>
+<td><strong>DiT 训练</strong></td>
+<td>隐码 <code class="notranslate">z</code> + T5 文本嵌入</td>
+<td>去噪后隐码 <code class="notranslate">ẑ</code></td>
+<td>STDiT-v3 <strong>初始化权重</strong><br>T5-XXL 提供文本编码</td>
+<td>WebVid-2M 隐码 + 文本</td>
+<td><strong>MSE (ε-预测)</strong><br>stage3 loss ≈ 0.05 停止</td>
+</tr>
+<tr>
+<td><strong>推理</strong></td>
+<td>文本 prompt + 噪声</td>
+<td>4-16 s 720p/1080p 视频</td>
+<td><strong>三阶段最终权重</strong><br>VAE-decoder 把隐码变像素</td>
+<td>无（纯生成）</td>
+<td>无 loss，人工/CLIP 打分</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<ol>
+<li>权重清单 &amp; 作用<br>
+| 文件 | 放置位置 | 用途 |<br>
+|---|---|---|<br>
+| OpenSora-VAE-v1.2 | weights/ | 时空压缩/解压初始化 |<br>
+| PixArt-SDXL-VAE | weights/ | 空间编码器结构参考 |<br>
+| STDiT-v3 | weights/ | DiT 主干初始化 |<br>
+| T5-XXL | weights/ | 文本编码器（冻结） |<br>
+| VGG16 | torch cache | perceptual loss 计算（仅 VAE 阶段）|</li>
+<li>数据集 = 学什么<br>
+WebVid-2M（约 2.3 M 段 5-30 s 视频）<br>
+→ 处理后 webvid_meta_data.csv 含 id, text, 帧路径<br>
+→ 实际只取 fmin ≥ 1（≥ 1 帧）且分辨率 ≥ 360 p 的子集</li>
+<li>收敛标准 &amp; Loss<br>
+VAE 三阶段：<br>
+loss = MSE(像素重建) + β·KL(隐码)<br>
+日志 loss.txt 每步打印；stage3 &lt; 0.0008 手动停<br>
+DiT 三阶段：<br>
+loss = MSE(噪声预测 ε)<br>
+stage3 &lt; 0.05 且验证集 CLIP ≥ 0.33 视为收敛</li>
+</ol>
+<p></p>
+</details> 
 <h1>多模态模型</h1>
 <h2>qewn2.5 VS qwen3-vl</h2>
 <p>Qwen2.5-VL 是“强基线”——Dense+128 K+事件级视频；<br>
