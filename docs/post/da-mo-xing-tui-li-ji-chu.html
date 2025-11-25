@@ -675,7 +675,8 @@ FinalOutput = LayerNorm( FFN(EncoderOutput) + EncoderOutput )</li>
 前缀缓存 → SGLang。SGLang = “前端结构化生成语言 + 后端三层推理引擎”，用 RadixAttention 做 KV-Cache 前缀复用，再辅以 PD 分离、Rust 高并发 Router 与 多精度 Cube 内核，把大模型推理的延迟、吞吐、显存一起打下来。<br>
 服务框架（HTTP/gRPC+批处理）→ Triton，优化是动态批+并发执行+多模型编排<br>
 国产化/训练推理一体 → LMDeploy</p>
-<p>sglang与vllm对应区别具体区别如下：</p>
+<p>sglang与vllm对应区别具体区别如下：<br>
+Sglang： @sgl.function → Frontend 编译成前缀图 → Runtime 用 RadixAttention 找 KV 复用点 → 扔给 vLLM 连续批解码 → 流式 yield 回前端，全程零手动 batch，长对话吞吐最高提 5 倍</p>
 <details><summary>Details</summary>
 <p>
 要“低延迟 + 复杂格式 + 长上下文”——上 SGLang；
