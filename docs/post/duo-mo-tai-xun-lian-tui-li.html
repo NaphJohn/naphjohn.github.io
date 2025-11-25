@@ -311,7 +311,7 @@ SD与VAE区别：<br>
 文本 → T5 编码 → STDiT 逐帧去噪 → 时空 VAE 解码 → 视频文件（mp4, 25 fps）<br>
 「先压后去噪」<br>
 VAE 把视频压成隐码 → DiT 在隐码里玩 Diffusion → 推理用最终权重解码回视频<br>
-「OpenSora = 时空 VAE + STDiT + T5；WebVid-2M 学；VAE loss ↘ 0.8e-3，DiT loss ↘ 0.05 停；输出 4-16 s 720p 视频。」<br>
+「OpenSora = 时空 VAE + STDiT（时空扩散变换器，用于在视频生成中同时对空间维度（单帧图像）和时间维度（多帧时序）进行建模与去噪生成。） + T5；WebVid-2M 学；VAE loss ↘ 0.8e-3，DiT loss ↘ 0.05 停；输出 4-16 s 720p 视频。」<br>
 opensora模型与SD模型架构比较</p>
 <markdown-accessiblity-table><table role="table">
 <thead>
@@ -396,6 +396,13 @@ opensora模型与SD模型架构比较</p>
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
+<p><strong>STDIT模型（时空扩散变换器）</strong><br>
+STDiT（Spatial-Temporal Diffusion Transformer）<br>
+结构：在 DiT 基础上 串行叠加<br>
+① Spatial-Attention（帧内 2D）→ ② Temporal-Attention（帧间 1D）→ ③ Cross-Attention（接收 T5 文本嵌入）<br>
+输入：T 帧噪声潜码 + T5 文本嵌入<br>
+输出：T 帧去噪潜码（保持时序连贯）<br>
+优点：相比全注意力，计算量降低且能直接复用预训练图像 DiT 权重做视频迁移</p>
 <ol>
 <li>权重清单 &amp; 作用<br>
 | 文件 | 放置位置 | 用途 |<br>
