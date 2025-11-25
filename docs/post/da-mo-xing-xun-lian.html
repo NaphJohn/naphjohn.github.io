@@ -128,6 +128,33 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 │  灰度→全量      │──→ 监控幻觉、延迟、成本，回滚 gate<br>
 └──────────────┘<br>
 “先 3D-并行 FP8 预训练 20 T token 拿底座，再长上下文扩展 → 百万级 SFT → 规则 RL（GRPO/PPO）让模型自己写 CoT → 拒绝采样蒸馏出小模型 → DPO 对齐人类偏好 → 量化上线，全程 3-4 个月，H100×2k 卡。”</p>
+<h1>k8s</h1>
+<p>k8s =「apiserver + etcd + 控制器 + 调度器」控制面，「kubelet + kube-proxy」数据面，声明式循环保终态一致。</p>
+<p>用户写 YAML → apiserver 入库 → 控制器持续对比「期望 vs 实际」→ 调度器绑定 Node → kubelet 调 CRI 启动容器 → 健康探针/状态回写 → 循环直至终态一致。</p>
+<p>具体原理如下：</p>
+<details><summary>Details</summary>
+<p>
+</p><ol>
+<li>控制面（Master）——「大脑」<br>
+| 组件 | 原理一句话 |<br>
+|---|---|<br>
+| kube-apiserver | RESTful 前端，唯一入口；所有请求/状态先写 etcd |<br>
+| etcd | 分布式 KV 库，单源真相；存集群所有对象期望与实际状态 |<br>
+| kube-controller-manager | 运行 N 个控制器循环，对比期望与实际，不断调谐直至一致 |<br>
+| kube-scheduler | 给 Pod 打分选 Node，绑定后写入 etcd |</li>
+<li>数据面（Node）——「手脚」<br>
+| 组件 | 原理一句话 |<br>
+|---|---|<br>
+| kubelet | 节点级 Agent，监听本机 PodSpec；调 CRI 启停容器，上报状态 |<br>
+| kube-proxy | 维护iptables/IPVS 规则，实现 ClusterIP / NodePort 负载均衡 |</li>
+<li>插件层（非必需但标配）<br>
+CNI 插件：给 Pod 插网线（Calico、Cilium 等）<br>
+CSI 插件：给 Pod 挂磁盘（ceph, EBS 等）<br>
+CoreDNS：集群内 DNS 解析<br>
+Metrics-Server：HPA 用资源指标</li>
+</ol>
+<p></p>
+</details> 
 <h1>训练框架</h1>
 <h3>verl框架</h3>
 <p><strong>verl框架</strong>：verl 是一个专为大语言模型（LLM） 设计的强化学习（RL）训练框架</p>
