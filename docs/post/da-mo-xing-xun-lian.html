@@ -128,6 +128,21 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 │  灰度→全量      │──→ 监控幻觉、延迟、成本，回滚 gate<br>
 └──────────────┘<br>
 “先 3D-并行 FP8 预训练 20 T token 拿底座，再长上下文扩展 → 百万级 SFT → 规则 RL（GRPO/PPO）让模型自己写 CoT → 拒绝采样蒸馏出小模型 → DPO 对齐人类偏好 → 量化上线，全程 3-4 个月，H100×2k 卡。”</p>
+<h2>训练中资源规划</h2>
+<p>算力资源规划针对不同模型，集群规格（Snt9b、Snt9b23）、数据集大小等均会导致训练时间、集群卡数规模不同，如训练过程中对卡数或训练时间有要求，可根据以下公式计算预测：<br>
+训练时间(秒)：Time=Token总/(TPS*N卡数)<em>线性加速比，计算出的训练时间为范围值，仅作参考。<br>
+训练卡数：N卡数=Token总/(Time</em>TPS)*线性加速比，N卡数&gt;8时则需取整为8的倍数且不小于模型最小卡数配置。<br>
+参数解释：<br>
+总Tokens<br>
+指训练数据集的总Token数量（即所有样本经过分词器之后生成的Token数总和）。<br>
+例如：如果数据集有100万个样本，每个样本512个token，则总Tokens = 100万 × 512。<br>
+TPS（Tokens Per Second per NPU）<br>
+单张NPU每秒能处理的token数量，衡量单卡计算效率的核心指标，各个模型的TPS可在benchmark表格中查找，benchmark中的吞吐值均为固定Seq测出基线值，benchmark表格可向华为工程师咨询。<br>
+N卡数<br>
+参与训练的NPU总数量，例如：8卡并行训练时 N=8。<br>
+线性加速比<br>
+反映多卡并行时的效率损失（理想值为1，实际&lt;1），典型值：0.9以上（视集群网络和框架优化程度）。</p>
+<p>一般的话会预留整体5%资源量的Snt9b23资源做热备。</p>
 <h1>k8s</h1>
 <p>k8s =「apiserver + etcd + 控制器 + 调度器」控制面，「kubelet + kube-proxy」数据面，声明式循环保终态一致。</p>
 <p>用户写 YAML → apiserver 入库 → 控制器持续对比「期望 vs 实际」→ 调度器绑定 Node → kubelet 调 CRI 启动容器 → 健康探针/状态回写 → 循环直至终态一致。</p>
@@ -156,6 +171,65 @@ Metrics-Server：HPA 用资源指标</li>
 <p></p>
 </details> 
 <h1>训练框架</h1>
+<p>AscendFactory是对多种训练框架的一个封装，当前支持Llama-Factory、MindSpeed-LLM（原ModelLink）、VeRL、MindSpeed-RL和MindSpeed-MM五种训练框架作为后端，提供一键式训练。训练性能主要通过训练日志中的2个指标查看：吞吐量和收敛情况。</p>
+<p>五部分的性能详情如下所示：</p>
+<details><summary>Details</summary>
+<p>
+</p><markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>产线</th>
+<th>一句话记忆</th>
+<th>吞吐量（完整参数名）</th>
+<th>收敛参数</th>
+<th>平稳阈值（经验）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MM</strong></td>
+<td>图文对齐，看 loss 降</td>
+<td><code class="notranslate">GBS/elapsed*1000</code> (samples/s)</td>
+<td>loss</td>
+<td>&lt; 0.01 波动</td>
+</tr>
+<tr>
+<td><strong>LLM</strong></td>
+<td>大模型预训练，看 lm_loss 降</td>
+<td><code class="notranslate">GBS×SEQ_LEN/(卡数×elapsed)*1000</code> (tokens/s/p)</td>
+<td>lm_loss</td>
+<td>下降→平稳</td>
+</tr>
+<tr>
+<td><strong>RL</strong></td>
+<td>强化微调，看 reward 升</td>
+<td><code class="notranslate">e2e_tps/update_tps/vllm_tps</code> (tps)</td>
+<td>grpo/xxx_acc_rewards/mean</td>
+<td>&gt; 0.8 且平稳</td>
+</tr>
+<tr>
+<td><strong>LLM-F</strong></td>
+<td>轻量 LoRA，看 loss 降</td>
+<td><code class="notranslate">delta_tokens/delta_time/卡数</code> (tokens/s)</td>
+<td>loss</td>
+<td>下降→平稳</td>
+</tr>
+<tr>
+<td><strong>VeRL</strong></td>
+<td>强化对齐，看 critic 升</td>
+<td><code class="notranslate">perf/throughput</code> (tps)</td>
+<td>critic/score/mean</td>
+<td>→1 且平稳</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p>面试速记：<br>
+tps = 每秒迭代/更新/采样次数，perf = 每秒平均样本数，二者都是越大越好</p>
+<p>不同版本对应特性：<br>
+相较于6.5.908版本，6.5.910有以下新增支持特性：VeRL强化学习框架：新增异步rollout、工具调用功能；新增训推分离功能one-step off-policy；新增支持DAPO/GRPO中LoRA微调；精度工具支持内存snapshot和精度数据采集解耦；精度工具支持Mock推理功能中NPU和GPU数据随机保序采样重用。MindSpeed-RL框架：新增支持填充移除（Remove Padding）。MindSpeed-MM框架：新增支持Qwen2.5VL- 7B、InternVL3-8B模型的预训练和微调。MindSpeed-LLM框架：Qwen2.5-7B/32B/72B支持32K长序列。</p>
+<p>相对于6.5.907版本，6.5.908有以下新增支持特性：VeRL强化学习框架：新增Qwen2.5-VL-72B DAPO、Qwen3-30B-A3B GRPO/DAPO、Qwen2.5-72B GRPO/DAPO；新增支持Megatron训练后端；32k长序列：Qwen2.5-72B、Qwen3-8B、Qwen3-32B、Qwen2.5-VL-7B；新增精度数据采集工具。Llama-Factory框架：新增支持长序列并行（Ring Attention、Ulysses）；32k长序列场景：Qwen3-8B、Qwen2.5-VL-7B、Qwen2.5-VL-32B的Full微调；MindSpeed-LLM框架：32k长序列，Qwen2.5-0.5B/1.5B/7B/14B/32B/72B、Qwen3-0.6/1.7B/4B/14B/32B、Qwen3-30B-A3B；MindSpeed-RL框架：新增Qwen2.5-VL-3B、Qwen2.5-VL-7B、Qwen2.5-32B、Qwen3-32B 、Qwen3-30B-A3B模型的GRPO；32k长序列：Qwen2.5-32B。</p>
+<p></p>
+</details> 
 <h3>verl框架</h3>
 <p><strong>verl框架</strong>：verl 是一个专为大语言模型（LLM） 设计的强化学习（RL）训练框架</p>
 <p>核心创新：HybridFlow 与 3D-HybridEngine<br>
@@ -197,16 +271,6 @@ VeRL可以实现任意方式的资源分配,但是默认的ppo代码实现类似
 2.多个模型是怎么进行资源分配的?,</li>
 <li>Actor模型在训练和推理阶段是怎么做的权重更新?</li>
 </ol>
-<p><strong>问题一</strong><br>
-single controller vs multi controller<br>
-single controller: 整个训练或推理流程由一个中央节点(Controller) 统一协调,所有工作节点(Worker) 接收来自该控制器的指令,执行计算,任务并返回结果。例如pytorch训练中的 DataParallel。代码改起来简单方便。</p>
-<p>Single-controller选择Ray作为verl的资源管理后端。然而,Ray默认仅支持"- 个方法调用对应一次RPC”, 而训练LLM通常需要跨多个进程进行协调。为了向用户隐藏这种"单个方法需要调用多个Ray actors"的复杂性,VeRL引入了以下组件:<br>
-WorkerGroup(工作进程组)——管理一组远程工作进程,为多进程分布式计算提供统一接口;<br>
-ResourcePool (资源池) -将计算资源与工作进程绑定;<br>
-ClassWithArgs(带参类)—-支持通过指定初始化参数实现延迟远程实例化。</p>
-<p>multi controller: 多个控制器分布式协作管理任务,每个控制器可能负责一部分工作节点或数据分片,通过通信协议(如ring-allreduce算法)协<br>
-调全局状态。例如pytorch训练中的 DDP。</p>
-<p>当前主流的训练引擎都是 multi controller的,譬如 FSDP、 Megatron 和DeepSpeed, 各个节点之间的状态通过集合通信算法(HCCL/NCCL) 同步当前VLLM 0.7.x版本以上已经支持SPMD,也是multi controller的。</p>
 <p></p>
 </details> 
 <p><strong>工作流程（以PPO为例）：</strong><br>
@@ -219,6 +283,22 @@ ClassWithArgs(带参类)—-支持通过指定初始化参数实现延迟远程�
 也就是生成的回应会交由Critic模型（评估状态价值）、奖励模型(RM)（计算即时奖励）和参考模型(Reference Model)（计算与初始模型的KL散度，防止策略偏离太远）进行评估。</li>
 <li>根据 experiences 多轮计算 actor loss 和 critic loss 并更新Actor和Critic</li>
 </ol>
+<p>DAPO/GRPO + Lora微调<br>
+就是只改 Adapter 不改主干的 RLHF：冻结 W₀， rollout→奖励→PPO 全部在 A·B 子空间完成；输出一个 10 MB 小权重，立刻上线新策略</p>
+<p>流程总览：</p>
+<details><summary>Details</summary>
+<p>
+</p><p>冻结主干 W₀<br>
+↑<br>
+输入样本 s → 线性投影 → LoRA Adapter A·B → 策略 πθ(s)<br>
+↑                                      ↓<br>
+奖励函数 r(s,a) ← 采样动作 a ← rollout（异步/async）<br>
+↑                                      ↓<br>
+PPO/GRPO 损失 L(θ) 只含 A·B 参数 → 梯度更新 A·B<br>
+↑<br>
+输出：新 Adapter 权重 A'·B'（W₀ 仍不变）</p>
+<p></p>
+</details> 
 <h3>llama-factory框架</h3>
 <p>llama-factory没有模型并行能力，激活值是一个瓶颈。激活值的增长与序列长度的平方呈线性关系。</p>
 <p>底层是transformers+deepspeed<br>
