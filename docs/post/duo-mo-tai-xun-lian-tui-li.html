@@ -306,8 +306,9 @@ SD与VAE区别：<br>
 解决方法：<br>
 在入口py文件中加入os.environ['CURL_CA_BUNDLE'] = ''  ，重新执行即可。<br>
 训练入口py文件为 diffusers0.21.0/examples/text_to_image/train_text_to_image_lora_sdxl.py。</p>
-<h1>Opensora模型</h1>
-<p>实际项目：opensora基于modelarts 适配npu<br>
+<h1>Opensora模型（文本到视频生成）</h1>
+<p>实际项目：opensora基于modelarts 适配npu；<br>
+文本 → T5 编码 → STDiT 逐帧去噪 → 时空 VAE 解码 → 视频文件（mp4, 25 fps）<br>
 「先压后去噪」<br>
 VAE 把视频压成隐码 → DiT 在隐码里玩 Diffusion → 推理用最终权重解码回视频<br>
 「OpenSora = 时空 VAE + STDiT + T5；WebVid-2M 学；VAE loss ↘ 0.8e-3，DiT loss ↘ 0.05 停；输出 4-16 s 720p 视频。」<br>
