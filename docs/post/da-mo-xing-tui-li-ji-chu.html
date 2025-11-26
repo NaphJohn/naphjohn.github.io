@@ -311,6 +311,7 @@ GQA（Grouped-Query Attention）<br>
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
+<p>这边「把 KV-Cache 压成低质矩阵」不是离线“降采样”，而是 在线投影：“先降维 → 再缓存 → 计算时升维”，三步全在 NPU 上完成，且 只存压缩后的 latent vectors。</p>
 <p>在deepseek中，MLA 里，“MQA vs MHA”不再是两种静态结构，而是同一组低秩 latent 权重的两种“展开姿势”——<br>
 pre-fill 时拆成独立头（MHA mode），decode 时共享同一份 KV（MQA mode），靠 reshape 即时切换，无需额外参数，也不掉精度。</p>
 <p>分组查询注意力 (Grouped-Query Attention, GQA)/原理：<br>
