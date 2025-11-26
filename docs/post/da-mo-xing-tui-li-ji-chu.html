@@ -780,6 +780,37 @@ DSA：细粒度稀疏注意力<br>
 • 硬件对齐设计：采用分块处理，适配GPU连续内存访问，优化Tensor Core利用</p>
 <p>技术路线角度：每个 token 动态选 1 个“最优单头” 计算，显存 ≈ 1；（模型学会“抓关键”，只计算最相关的词关系子集）<br>
 靠在线路由把“多头多样性”转成“时序多样性”，KV 缓存与计算量都降 H 倍，长序列成本直降 50 % 以上。</p>
+<p>DSA具体解决了NSA什么问题：</p>
+<details><summary>Details</summary>
+<p>
+</p><p>DSA解决了NSA什么问题？   DSA（DeepSeek Sparse Attention）主要解决了 NSA（Native Sparse Attention）在<strong>稀疏索引学习、计算效率与训练稳定性</strong>上的三大痛点，具体改进如下：</p>
+<hr>
+<p>1️⃣ 索引学习更准：引入“注意力分数蒸馏”</p>
+<ul>
+<li>NSA 只靠 LM Loss 端到端优化，<strong>没有直接监督“选哪些 token”</strong>，导致长文检索任务索引学歪。</li>
+<li>DSA 额外加一条 <strong>Attn-Score 蒸馏损失</strong>，让 Indexer 的 Top-K 结果去拟合真实注意力分布，<strong>“选得准”被显式优化</strong>，长距离依赖召回率大幅提升。</li>
+</ul>
+<hr>
+<p>2️⃣ 计算范式更简：三合一分支 → 单分支</p>
+<ul>
+<li>NSA 维护<strong>三套独立 KV-Cache</strong>（压缩、选择、滑动），推理时要走三次 Attention，<strong>内存占用大、kernel 切换开销高</strong>。</li>
+<li>DSA 把“选 token”与“算 attention”解耦：<br>
+① <strong>闪电索引器</strong>一次性产出 Top-K 地址；<br>
+② <strong>主路径</strong>用同一套 KV 做 <strong>MQA</strong> 即可。<br>
+→ <strong>单分支、单缓存、零额外参数</strong>，Prefill/Decode 全链路 kernel 融合更彻底，A100 上 Prefill 提速 <strong>2.1×</strong>、Decode 提速 <strong>2.3×</strong>。</li>
+</ul>
+<hr>
+<p>3️⃣ 稀疏粒度更细：Block-level → Token-level</p>
+<ul>
+<li>NSA 以“块”为最小单位，<strong>块内冗余计算无法避免</strong>。</li>
+<li>DSA 直接在 <strong>token 粒度</strong>挑重点，<strong>Top-K 索引精度更高</strong>，短文本可无缝回退到稠密模式，<strong>零性能回退</strong>；长文本保持相同模型参数即可扩展到 128 K。</li>
+</ul>
+<hr>
+<p>一句话总结：<br>
+DSA 用“<strong>注意力蒸馏 + 单分支 MQA + Token-level 稀疏</strong>”三板斧，<strong>把 NSA 的“多缓存、粗粒度、难训练”问题一次性解决</strong>，在同等模型尺寸下实现<strong>训练更快、推理更省、长文更准</strong>。</p>
+<p></p>
+</details> 
+<p>DSA具体流程如下：</p>
 <details><summary>Details</summary>
 <p>
 一、总体流程（两阶段）
