@@ -64,190 +64,78 @@ gate 只占 MoE 层里“一根红线”大小的 Linear，但它是决定 token
 <details><summary>Details</summary>
 <p>
 
-# Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
-import argparse
-import functools
-import json
-import os
-import sys
+# 常见基础算子
+**add_rms_norm**
+算子功能：RmsNorm算子是大模型常用的归一化操作，相比LayerNorm算子，其去掉了减去均值的部分。
+AddRmsNorm算子将RmsNorm前的Add算子融合起来，减少搬入搬出操作。
+<details><summary>Details</summary>
+<p>
 
-import torch
-import torch_npu
+add_rms_norm(x, residual, weight, epsilon)
+参数说明：
 
-current_directory = os.path.dirname(os.path.abspath(__file__))
-parent_directory = os.path.abspath(os.path.join(current_directory, '..', ".."))
-sys.path.append(parent_directory)
-
-from example.common.security.path import get_valid_read_path, get_write_directory
-from example.common.security.type import check_number
-from example.common.utils import SafeGenerator, cmd_bool
-from example.common.rot_utils.rot_qwen import rot_model
-from msmodelslim.tools.copy_config_files import copy_config_files, modify_config_json
-from msmodelslim.pytorch.llm_ptq.anti_outlier import AntiOutlierConfig, AntiOutlier
-from msmodelslim.pytorch.llm_ptq.llm_ptq_tools import Calibrator, QuantConfig
-from msmodelslim.utils.logging import set_logger_level
-from msmodelslim import logger
-
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--model_path', type=str, help="The path of float model and tokenizer"),
-    parser.add_argument('--save_path', type=str, help="The path to save quant model"),
-    parser.add_argument('--layer_count', type=int, default=0, help="Layer count when loading model")
-    parser.add_argument('--anti_dataset', type=str, default="./anti_prompt_50.json",
-                        help="The calib data for anti outlier")
-    parser.add_argument('--calib_dataset', type=str, default="./calib_prompt_50.json",
-                        help="The calib data for calibration")
-    parser.add_argument('--batch_size', type=int, default=4, help="Batch size for anti and calibration")
-    parser.add_argument('--mindie_format', action="store_true", help="Enable only mindie config save")
-    parser.add_argument('--trust_remote_code', type=cmd_bool, default=False)
-    parser.add_argument('--rot', action='store_true', help="rot model")
-    return parser.parse_args()
-
-
-def custom_hook(model_config):
-    model_config["quantize"] = "w8a8_dynamic"
-
-
-def get_calib_dataset_batch(model_tokenizer, calib_list, batch_size, device="npu"):
-    calib_dataset = []
-    calib_list = [calib_list[i:i + batch_size] for i in range(0, len(calib_list), batch_size)]
-    for calib_data in calib_list:
-        inputs = model_tokenizer(calib_data, return_tensors='pt', padding=True).to(device)
-        calib_dataset.append(
-            [value.to(device) for key, value in inputs.data.items() if isinstance(value, torch.Tensor)])
-    return calib_dataset
-
-
-def main():
-    args = parse_args()
-    set_logger_level("info")
-
-    model_path = args.model_path
-    batch_size = args.batch_size
-
-    save_path = get_write_directory(args.save_path, write_mode=0o750)
-    check_number(batch_size, int, 1, 16, "batch_size")
-
-    safe_generator = SafeGenerator()
-
-    config = safe_generator.get_config_from_pretrained(model_path=model_path,
-                                                       trust_remote_code=args.trust_remote_code)
-    num_layer = config.num_hidden_layers
-    if args.layer_count < 0 or args.layer_count > num_layer:
-        raise ValueError(
-            f"Invalid value for parameter layer_count: {args.layer_count}."
-            f"Must be between 0 and {num_layer}."
-        )
-    # Set layer count to 0 means use all layers, otherwise it will only use the first layer_count layers
-    config.num_hidden_layers = args.layer_count if args.layer_count != 0 else config.num_hidden_layers
-    # Disable use cache because we don't need to use cache, otherwise it will use too much device memory then cause OOM
-    config.use_cache = False
-
-    tokenizer = safe_generator.get_tokenizer_from_pretrained(model_path=model_path,
-                                                             config=config,
-                                                             trust_remote_code=args.trust_remote_code,
-                                                             use_fast=True,
-                                                             add_eos_token=True)
-
-    model = safe_generator.get_model_from_pretrained(model_path=model_path,
-                                                     config=config,
-                                                     trust_remote_code=args.trust_remote_code,
-                                                     device_map={
-                                                         "model.embed_tokens": 0,
-                                                         "model.layers": "cpu",
-                                                         "model.norm": "cpu",
-                                                         "lm_head": 0,
-                                                     },
-                                                     torch_dtype="auto",
-                                                     attn_implementation='eager')
-
-    anti_dataset_path = get_valid_read_path(args.anti_dataset, "json", is_dir=False)
-    calib_dataset_path = get_valid_read_path(args.calib_dataset, "json", is_dir=False)
-    with open(anti_dataset_path, "r") as file:
-        anti_prompt = json.load(file)
-    with open(calib_dataset_path, "r") as file:
-        calib_prompt = json.load(file)
-    anti_dataset = get_calib_dataset_batch(tokenizer, anti_prompt, batch_size, model.device)
-    dataset_calib = get_calib_dataset_batch(tokenizer, calib_prompt, batch_size, model.device)
-
-    with torch.no_grad():
-
-        test_prompt = "what is deep learning?"
-        test_input = tokenizer(test_prompt, return_tensors="pt").to(model.device)
-
-        if args.layer_count > 0:
-            ori_out = model(**test_input)
-
-        if args.rot:
-            rot_model(model)
-
-        if args.layer_count > 0:
-            rot_out = model(**test_input)
-            loss = torch.nn.MSELoss()
-            logger.info(loss(ori_out[0], rot_out[0]))
-
-    with torch.no_grad():
-        anti_config = AntiOutlierConfig(w_bit=8,
-                                        a_bit=8,
-                                        anti_method='m4',
-                                        dev_type='npu',
-                                        dev_id=model.device.index)
-        anti_outlier = AntiOutlier(model, calib_data=anti_dataset, cfg=anti_config)
-        anti_outlier.process()
-
-    disable_names = []
-    for ids in range(config.num_hidden_layers):
-        disable_names.append("model.layers." + str(ids) + ".mlp.gate")
-
-    quant_config = QuantConfig(
-        a_bit=8,
-        w_bit=8,
-        disable_names=disable_names,
-        dev_type='npu',
-        dev_id=model.device.index,
-        act_method=1,
-        pr=1.0,
-        w_sym=True,
-        mm_tensor=False,
-    )
-
-    calibrator = Calibrator(model,
-                            quant_config,
-                            calib_data=dataset_calib,
-                            disable_level="L0",
-                            mix_cfg={
-                                "*.mlp.*": "w8a8_dynamic",
-                                "*": "w8a8"
-                            })
-    calibrator.run()
-
-    if args.mindie_format:
-        quant_model_description_json_name = "quant_model_description_w8a8_dynamic.json"
-    else:
-        quant_model_description_json_name = "quant_model_description.json"
-
-    save_type = "safe_tensor" if args.mindie_format else "ascendV1"
-    calibrator.save(save_path,
-                    json_name=quant_model_description_json_name,
-                    safetensors_name="quant_model_weight_w8a8_dynamic.safetensors",
-                    save_type=[save_type],
-                    part_file_size=4)
-
-    custom_hooks = {
-        'config.json': functools.partial(modify_config_json, custom_hook=custom_hook)
-    }
-    copy_config_files(input_path=model_path, output_path=save_path, quant_config=quant_config,
-                      mindie_format=args.mindie_format, custom_hooks=custom_hooks)
-
-
-if __name__ == "__main__":
-    # torch_npu will fork a new process to init,
-    # it's lazy_init will fail after we load a big model,so we need to init it here
-    torch_npu.npu.init()
-    # Invoke main process
-    main()
-以上代码主要逻辑是啥？
+x(计算输入)： 数据类型支持FLOAT、FLOAT16、BFLOAT16、shape支持1-8维度，数据格式支持ND。
+residual(计算输入)： 数据类型支持FLOAT、FLOAT16、BFLOAT16、shape支持1-8维度，数据格式支持ND。shape需要与x1保持一致。
+weight(计算输入)： 数据类型支持FLOAT、FLOAT16、BFLOAT16、shape支持1-8维度，数据格式支持ND。shape需要与x后几维保持一致。
+epsilon(计算输入)： 公式中的输入eps，用于防止除0错误。
 
 </p>
 </details> 
+
+**Rope算子**
+算子功能：推理网络为了提升性能，将query和key两路算子融合成一路。
+rope(query, key, cos, sin)
+
+
+**quantize算子**
+y = quantize(x, scale, offset)，对应计算公式：ascend_quant(x)=round((x∗scale)+offset)
+对应参数说明：
+<details><summary>Details</summary>
+<p>
+
+x(输入)：需要做量化的输入。数据类型支持：FLOAT,FLOAT16,BFLOAT16(仅昇腾910B AI处理器、昇腾910C AI处理器支持)。支持ND。
+scale(输入)：量化中的scale值。数据类型支持：FLOAT,FLOAT16,BFLOAT16(仅昇腾910B AI处理器、昇腾910C AI处理器支持)。scale为1维张量或多维(多维时，除最后一维，其他维度为1)，最后一维shape的大小等于输入self的最后一个维度的大小。支持ND。
+offset(输入)：反向量化中的offset值。offset为1维张量(多维时，除最后一维，其他维度为1)，最后一维shape的大小等于输入x的最后一个维度的大小。数据类型支持：FLOAT,FLOAT16,BFLOAT16(仅昇腾910B AI处理器、昇腾910C AI处理器支持)，且数据类型与scale的数据类型一致。支持ND。
+y(输出): int8。
+
+</p>
+</details> 
+
+**DynamicQuant算子**
+yOut, scale_out = dynamic_quant(x, smoothScales)
+
+scaleOut=row_max(abs(x))/127  
+yOut=round(x/scalOut)其中row_max代表每行求最大值，参数说明如下：
+<details><summary>Details</summary>
+<p>
+
+x(计算输入): 算子输入的Tensor，shape维度要大于1，数据类型支持FLOAT16、BFLOAT16，支持ND。
+smoothScalesOptional(计算输入): 算子输入的smoothScales，shape维度是x的最后一维，数据类型支持FLOAT16、BFLOAT16，支持ND。
+yOut(计算输出): 量化后的输出Tensor，shape维度和x保持一致，数据类型支持INT8，暂不支持非连续的Tensor，支持ND。
+scaleOut(计算输出): 量化使用的scale，shape维度为x的shape剔除最后一维，数据类型支持FLOAT，暂不支持非连续的Tensor，支持ND。
+
+</p>
+</details> 
+
+**IFA算子**
+self-attention(自注意力)利用输入样本自身的关系构建了一种注意力模型。其原理是假设有一个长度为n的输入样本序列x，x的每个元素都是一个d维向量,可以将每个d维向量看作一个token embedding,将这样一条序列经过3个权重矩阵变换得到3个维度为n*d的矩阵。
+代码调用如下
+<details><summary>Details</summary>
+<p>
+
+from cann_ops import incre_flash_attetion
+
+incre_flash_attetion(query, key_cache, value_cache,
+                     None, None,
+                     context_lens,
+                     None, None, None, None, None, None, None,
+                     block_tables, None,
+                     num_heads,
+                     scale,
+                     kv_heads)
+
+</p>
+</details> 
+
+linear算子
+out = linear(x1, x2, bias)
