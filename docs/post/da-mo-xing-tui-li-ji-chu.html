@@ -754,6 +754,42 @@ Jump decoding: 直接在请求后面增加希望解码的格式，并增加相�
 <p>将 Attention 计算的部分从 CUDA 图中分离出来，使用 PyTorch 后端。这使得针对 Attention 进行优化的一些方法可以被应用进来，如Cascade Attention。</p>
 </li>
 </ol>
+<p>vllm架构整体细节部分：</p>
+<details><summary>Details</summary>
+<p>
+</p><ol>
+<li>入口层（API &amp; 协议）【6 分】<br>
+“外部请求先进 openai/api_server.py，它把 REST/HTTP 转成内部 SARIF 协议，<br>
+再交给 AsyncLLMEngine 做异步调度，天然支持连续批处理与 streaming 返回。”</li>
+<li>调度器（Scheduler）【8 分】<br>
+“Scheduler 维护三重队列：Waiting / Running / Swapped，<br>
+每轮调度先看 GPU 显存水位，再按 prefix-hash 做 APC 匹配，把可复用 KV 块直接挂到 Running 队列，<br>
+剩余 token 数 &gt; max_num_batched_tokens 的切片会推迟到下一轮，保证计算密度。”</li>
+<li>执行器（Worker / ModelRunner）【10 分】<br>
+“Worker 里真正跑推理的是 ModelRunner，它把<br>
+① 输入 token-id → ② embedding lookup → ③ 逐层 TransformerBlock → ④ logits 输出<br>
+全部 compile 成一张 CUDA graph，一次 launch 完成，内核零 Python 回跳；<br>
+每层 TransformerBlock 内部调用 xFormers / FlashAttention / PagedAttention CUDA kernel，实现 KV-Cache 分页管理。”</li>
+<li>KV-Cache 存储（CacheEngine + BlockTable）【10 分】<br>
+“KV-Cache 以 block_size=16 分页，逻辑块号到物理块号的映射存在 BlockTable；<br>
+CacheEngine 提前 malloc 一整块 GPU memory pool，按 16-token 粒度切页，通过 ref-count 做 LRU 回收；<br>
+APC 模块在 scheduler 阶段把命中页直接挂到 BlockTable，未命中页标记为‘待计算’，推理阶段只做增量填充。”</li>
+<li>量化与 Kernel（Quantization + Custom Ops）【8 分】<br>
+“量化层采用‘插件化’方案：compressed-tensors / AWQ / GPTQ / FP8 各自继承 QuantizationScheme，<br>
+在 ModelRunner 里动态替换 Linear 层为 qlinear，kernel 侧一条融合算子完成 dequant+gemm，回写 FP16；<br>
+KV-Cache 支持 C8 动态对称量化，scale 由 kernel 在线 reduce，zero-point 固定 0，输出直接 BF16，零回写。”</li>
+<li>分布式（PP + TP + DP）【8 分】<br>
+“30B 以上模型用 Ray 起多节点，PP 把层切到不同节点，TP 把单层权重按 hidden 维度切到 8 卡，<br>
+通信后端统一走 PyTorch NCCL，vLLM 自己包了一层 Pynccl 做 all-gather / reduce-scatter，支持 CUDA graph 内嵌通信 kernel，无 Python GIL；<br>
+DP 靠数据并行扩展 QPS，每份副本独立调度，负载均衡由 proxy 层轮询完成。”</li>
+<li>内存与抢占（Swap + Recompute）【6 分】<br>
+“当显存不足时，Scheduler 把 Swapped 队列整块 KV-Cache 通过 cudaMemcpyAsync 换到 CPU DRAM，<br>
+下次调度再提前 async 预取；若仍不够，就砍掉最长序列的尾部 25 % 做 selective recomputation，保证正确性。”<br>
+一句话收尾【4 分】<br>
+“总结：vLLM=‘分页 KV-Cache + 连续批调度 + 融合 CUDA Kernel’ 三件套，把 LLM 推理做成显存可换页、计算可流水、协议可插拔的实时服务。”</li>
+</ol>
+<p></p>
+</details> 
 <h3>推理任务的调度与抢占：</h3>
 <p>vllm采用了 FCFS（first-come-first-serve） 的策略；<br>
 vllm中块回收策略：All-or-Nothing</p>
