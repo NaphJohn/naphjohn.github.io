@@ -1,3 +1,24 @@
+# ACM模式
+
+```python
+#输入第一行整数，第二行列表
+import sys
+
+n = int(sys.stdin.readline())          # 第一行整数
+nums = list(map(int, sys.stdin.readline().split()))  # 第二行列表
+
+
+split() 按空白切分成字符串列表
+strip()去掉字符串头尾空白（空格、Tab、\n）
+read()一次性读完全部内容（直到 EOF）
+.readline() | 只读一行（直到遇到 \n 或 EOF）
+
+#输入第一行整数n，后面是n行列表
+import sys
+n = int(sys.stdin.readline())
+lists = [list(map(int, sys.stdin.readline().split())) for _ in range(n)]
+``` 
+
 ## 数组
 数组是存放在连续内存空间上的相同类型数据的集合。数组的元素是不能删的，只能覆盖。
 需要两点注意的是

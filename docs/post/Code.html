@@ -10,10 +10,52 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="## 数组
+<meta name="description" content="# ACM模式
+
+```python
+#输入第一行整数，第二行列表
+import sys
+
+n = int(sys.stdin.readline())          # 第一行整数
+nums = list(map(int, sys.stdin.readline().split()))  # 第二行列表
+
+
+split() 按空白切分成字符串列表
+strip()去掉字符串头尾空白（空格、Tab、\n）
+read()一次性读完全部内容（直到 EOF）
+.readline() | 只读一行（直到遇到 \n 或 EOF）
+
+#输入第一行整数n，后面是n行列表
+import sys
+n = int(sys.stdin.readline())
+lists = [list(map(int, sys.stdin.readline().split())) for _ in range(n)]
+``` 
+
+## 数组
 数组是存放在连续内存空间上的相同类型数据的集合。">
 <meta property="og:title" content="Code">
-<meta property="og:description" content="## 数组
+<meta property="og:description" content="# ACM模式
+
+```python
+#输入第一行整数，第二行列表
+import sys
+
+n = int(sys.stdin.readline())          # 第一行整数
+nums = list(map(int, sys.stdin.readline().split()))  # 第二行列表
+
+
+split() 按空白切分成字符串列表
+strip()去掉字符串头尾空白（空格、Tab、\n）
+read()一次性读完全部内容（直到 EOF）
+.readline() | 只读一行（直到遇到 \n 或 EOF）
+
+#输入第一行整数n，后面是n行列表
+import sys
+n = int(sys.stdin.readline())
+lists = [list(map(int, sys.stdin.readline().split())) for _ in range(n)]
+``` 
+
+## 数组
 数组是存放在连续内存空间上的相同类型数据的集合。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/Code.html">
@@ -85,7 +127,24 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><h2>数组</h2>
+<div class="markdown-body" id="postBody"><h1>ACM模式</h1>
+<div class="highlight highlight-source-python"><pre class="notranslate"><span class="pl-c">#输入第一行整数，第二行列表</span>
+<span class="pl-k">import</span> <span class="pl-s1">sys</span>
+
+<span class="pl-s1">n</span> <span class="pl-c1">=</span> <span class="pl-en">int</span>(<span class="pl-s1">sys</span>.<span class="pl-c1">stdin</span>.<span class="pl-c1">readline</span>())          <span class="pl-c"># 第一行整数</span>
+<span class="pl-s1">nums</span> <span class="pl-c1">=</span> <span class="pl-en">list</span>(<span class="pl-en">map</span>(<span class="pl-s1">int</span>, <span class="pl-s1">sys</span>.<span class="pl-c1">stdin</span>.<span class="pl-c1">readline</span>().<span class="pl-c1">split</span>()))  <span class="pl-c"># 第二行列表</span>
+
+
+<span class="pl-en">split</span>() <span class="pl-s1">按空白切分成字符串列表</span>
+<span class="pl-en">strip</span>()<span class="pl-s1">去掉字符串头尾空白</span>（<span class="pl-s1">空格</span>、<span class="pl-v">Tab</span>、<span class="pl-cce">\n</span>）
+<span class="pl-en">read</span>()<span class="pl-s1">一次性读完全部内容</span>（<span class="pl-s1">直到</span> <span class="pl-c1">EOF</span>）
+.<span class="pl-en">readline</span>() <span class="pl-c1">|</span> <span class="pl-s1">只读一行</span>（<span class="pl-s1">直到遇到</span> <span class="pl-cce">\n</span> <span class="pl-s1">或</span> <span class="pl-c1">EOF</span>）
+
+<span class="pl-c">#输入第一行整数n，后面是n行列表</span>
+<span class="pl-k">import</span> <span class="pl-s1">sys</span>
+<span class="pl-s1">n</span> <span class="pl-c1">=</span> <span class="pl-en">int</span>(<span class="pl-s1">sys</span>.<span class="pl-c1">stdin</span>.<span class="pl-c1">readline</span>())
+<span class="pl-s1">lists</span> <span class="pl-c1">=</span> [<span class="pl-en">list</span>(<span class="pl-en">map</span>(<span class="pl-s1">int</span>, <span class="pl-s1">sys</span>.<span class="pl-c1">stdin</span>.<span class="pl-c1">readline</span>().<span class="pl-c1">split</span>())) <span class="pl-k">for</span> <span class="pl-s1">_</span> <span class="pl-c1">in</span> <span class="pl-en">range</span>(<span class="pl-s1">n</span>)]</pre></div>
+<h2>数组</h2>
 <p>数组是存放在连续内存空间上的相同类型数据的集合。数组的元素是不能删的，只能覆盖。<br>
 需要两点注意的是</p>
 <ul>

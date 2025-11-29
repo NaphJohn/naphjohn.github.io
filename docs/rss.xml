@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Mon, 24 Nov 2025 16:11:29 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>论文精读</title><link>https://naphjohn.github.io/post/lun-wen-jing-du.html</link><description>1. SepLLM通过标点符号优化kv cache
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Sat, 29 Nov 2025 01:41:01 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>论文精读</title><link>https://naphjohn.github.io/post/lun-wen-jing-du.html</link><description>1. SepLLM通过标点符号优化kv cache
 2. 。</description><guid isPermaLink="true">https://naphjohn.github.io/post/lun-wen-jing-du.html</guid><pubDate>Thu, 02 Oct 2025 01:53:00 +0000</pubDate></item><item><title>推理部分</title><link>https://naphjohn.github.io/post/tui-li-bu-fen.html</link><description>sample异步优化、add_model_outputs、prepare &amp; scheduler
 scheduler、prepare、sample、add_model_outputs 4个模块耗时占比&gt;30%;
 sample已优化一版，其他模块需要再分解
@@ -271,7 +271,28 @@ lsof /usr/lib/libc.so.6
 
 。</description><guid isPermaLink="true">https://naphjohn.github.io/post/linux.html</guid><pubDate>Mon, 08 Sep 2025 07:22:10 +0000</pubDate></item><item><title>RAG和Agent</title><link>https://naphjohn.github.io/post/RAG-he-Agent.html</link><description># RAG 检索增强生成（Retrieval-Augmented Generation，RAG）
 RAG的基本结构有哪些呢？
-- 向量化模块：用来将文档片段向量化。</description><guid isPermaLink="true">https://naphjohn.github.io/post/RAG-he-Agent.html</guid><pubDate>Mon, 08 Sep 2025 02:54:13 +0000</pubDate></item><item><title>Code</title><link>https://naphjohn.github.io/post/Code.html</link><description>## 数组
+- 向量化模块：用来将文档片段向量化。</description><guid isPermaLink="true">https://naphjohn.github.io/post/RAG-he-Agent.html</guid><pubDate>Mon, 08 Sep 2025 02:54:13 +0000</pubDate></item><item><title>Code</title><link>https://naphjohn.github.io/post/Code.html</link><description># ACM模式
+
+```python
+#输入第一行整数，第二行列表
+import sys
+
+n = int(sys.stdin.readline())          # 第一行整数
+nums = list(map(int, sys.stdin.readline().split()))  # 第二行列表
+
+
+split() 按空白切分成字符串列表
+strip()去掉字符串头尾空白（空格、Tab、\n）
+read()一次性读完全部内容（直到 EOF）
+.readline() | 只读一行（直到遇到 \n 或 EOF）
+
+#输入第一行整数n，后面是n行列表
+import sys
+n = int(sys.stdin.readline())
+lists = [list(map(int, sys.stdin.readline().split())) for _ in range(n)]
+``` 
+
+## 数组
 数组是存放在连续内存空间上的相同类型数据的集合。</description><guid isPermaLink="true">https://naphjohn.github.io/post/Code.html</guid><pubDate>Sat, 06 Sep 2025 13:59:33 +0000</pubDate></item><item><title>大模型推理基础</title><link>https://naphjohn.github.io/post/da-mo-xing-tui-li-ji-chu.html</link><description># LLM的推理/transformer架构/vllm
 
 ## LLM 推理的推理过程
