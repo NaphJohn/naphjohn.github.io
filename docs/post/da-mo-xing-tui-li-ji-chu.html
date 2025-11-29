@@ -396,6 +396,21 @@ qwen3
 多步推理  BigBench-Hard, DROP<br>
 代码推理  HumanEval, MBPP，livecodebench，livecodebench2025</p>
 <h2>LLM 推理的性能卡点</h2>
+<h3>小模型常用的优化手段</h3>
+<details><summary>Details</summary>
+<p>
+</p><p>训练前：剪枝 → 裁词表 → 层数减半<br>
+↓<br>
+训练：蒸馏 + ZeRO + 检查点<br>
+↓<br>
+推理：量化 → GQA → FlashAttn → Continuous Batch</p>
+<p></p>
+</details> 
+<p><strong>剪枝</strong><br>
+宽度剪枝（Sparse/Width Pruning）：砍掉不重要的 Attention head、FFN 中间维度，效果是参数 ↓30-50%，精度掉 &lt;1%<br>
+深度剪枝：直接删掉冗余 Transformer 层，效果是6L 小模型可比 12L 大模型快 2×<br>
+主要思路是Attention head / FFN 宽度 → 用 梯度/激活/权重幅值 + 一次性重要性估计 给每个 head/neuron 打分，低于阈值直接置零，再微调恢复精度。<br>
+整层冗余 → 用 Block Influence / LayerDrop + 早期彩票 ticket 先“试删”再评估下游掉点，掉点&lt;ε 的层即可永久剔除。</p>
 <p><strong>短输入长输出情况下如何提升decode性能，TPOT效果？</strong><br>
 在“短输入 + 长输出”场景里，Decode 阶段占 90 % 以上时间，TPOT（每输出 token 延迟）是主要矛盾。核心思路是 “让每步 Decode 算得少、访存量低、批得大”。具体可做 6 件事：</p>
 <details><summary>Details</summary>
