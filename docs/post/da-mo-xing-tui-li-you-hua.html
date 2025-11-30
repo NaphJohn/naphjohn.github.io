@@ -670,9 +670,9 @@ FP16 GEMM 每做一次乘加算 2 FLOPs，INT8 GEMM 每做一次乘加算 1 ILOP
 <p>绑核、NUMA优化和CPU-Offload<br>
 绑核优化关注的是CPU核心之间的缓存有效性，而NUMA优化关注的是CPU与内存之间的物理距离和访问速度。</p>
 <p>numa对应原理以及优化步骤：<br>
-精准探测硬件拓扑。<br>
+精准探测硬件拓扑，来查找NPU卡与NUMA节点的亲和性：<br>
 强制绑定进程到正确的NUMA节点。<br>
-实现 locality，让计算（CPU）、数据（内存）和设备（NPU）三者尽可能靠近。</p>
+验证优化效果，降低内存分配在了非本地节点比例</p>
 <details><summary>Details</summary>
 <p>
 UMA：在传统单CPU主板的系统中，所有CPU核心通过一条总线共享同一块物理内存，访问延迟和带宽对所有核心都是均匀的。这就是“统一内存访问”。
@@ -691,43 +691,38 @@ numactl --hardware</li>
 </ol>
 <p>首先，使用 npu-smi info 获取卡的Bus-ID。<br>
 然后，使用 lspci 查询该Bus-ID设备所在的NUMA节点。</p>
-<div class="highlight highlight-source-shell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span> 1. 获取NPU Bus-ID (例如：0001:74:00.0)</span>
+<div class="highlight highlight-source-shell"><pre class="notranslate">获取NPU Bus-ID (例如：0001:74:00.0)
 npu-smi info
-
-<span class="pl-c"><span class="pl-c">#</span> 2. 查询该设备的NUMA节点</span>
+查询该设备的NUMA节点
 lspci -vs 0001:74:00.0 <span class="pl-k">|</span> grep NUMA
-<span class="pl-c"><span class="pl-c">#</span> 或者使用更通用的方法：</span>
-cat /sys/class/ascend_npu/devices/0001<span class="pl-cce">\:</span>74<span class="pl-cce">\:</span>00.0/device/numa_node
+
 <span class="pl-c"><span class="pl-c">#</span> 输出：0  (表示该卡亲和于NUMA Node 0)</span></pre></div>
 <p>原理：PCIe设备（包括NPU/GPU）会通过PCIe root complex连接到某个特定的CPU上。这个CPU所属的NUMA节点就是该设备的“本地节点”。从该节点访问设备，PCIe延迟最低。</p>
 <p>步骤二：执行绑核与内存绑定<br>
 根据第一步探测到的信息，为每个进程（例如分布式训练的每个rank）制定绑定策略。</p>
 <p>假设我们有2张卡，那么启动两个进程：<br>
-bash</p>
-<h1>启动 Rank 0， 绑定到 NUMA Node 0， 使用 NPU 0</h1>
-<p>numactl --cpunodebind=0 --membind=0 <br>
-python my_training_script.py --rank 0 --device 0</p>
-<h1>启动 Rank 1， 绑定到 NUMA Node 1， 使用 NPU 1</h1>
-<p>numactl --cpunodebind=1 --membind=1 <br>
-python my_training_script.py --rank 1 --device 1<br>
+linux命令如下：<br>
+启动 Rank 0， 绑定到 NUMA Node 0， 使用 NPU 0<br>
+numactl --cpunodebind=0 --membind=0 <br>
+python my_training_script.py --rank 0 --device 0<br>
 命令解释：<br>
 --cpunodebind=0：该进程的线程只能在NUMA Node 0的CPU核心（0-23）上运行。<br>
 --membind=0：该进程只能从NUMA Node 0分配内存。</p>
 <p>步骤三：验证优化效果<br>
 检查进程绑定：</p>
-<p>bash</p>
-<h1>找到进程PID</h1>
-<p>ps aux | grep "my_training_script.py"</p>
-<h1>查看该进程的CPU亲和性</h1>
-<p>taskset -cp </p>
-<h1>输出：pid 's current affinity list: 0-23 (应该只在绑定的节点核心上)</h1>
-<p>监控NUMA内存访问：</p>
-<p>使用 numastat 命令查看系统级或进程级的NUMA内存分配情况。</p>
-<p>对应linux命令</p>
-<h1>查看系统整体情况</h1>
-<p>numastat</p>
-<h1>查看特定进程的情况</h1>
-<p>numastat -p <br>
+<p>bash<br>
+找到进程PID<br>
+ps aux | grep "my_training_script.py"<br>
+查看该进程的CPU亲和性<br>
+taskset -cp <br>
+输出：pid 's current affinity list: 0-23 (应该只在绑定的节点核心上)<br>
+监控NUMA内存访问：<br>
+使用 numastat 命令查看系统级或进程级的NUMA内存分配情况。</p>
+<p>对应linux命令<br>
+查看系统整体情况<br>
+numastat</p>
+<p>查看特定进程的情况<br>
+numastat -p <br>
 优化前，你可能会看到 numa_miss（内存分配在了非本地节点）很高。优化后，numa_hit 会占绝大多数，numa_miss 会非常低，这正是您提到的“跨节点内存访问减少60%”的体现。</p>
 <p></p>
 </details> 
