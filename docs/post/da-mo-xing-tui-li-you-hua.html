@@ -292,6 +292,38 @@ spinquant旋转量化具体过程：用可学习的正交旋转矩阵把权重 &
 </table></markdown-accessiblity-table>
 <p></p>
 </details> 
+<p><strong>w8a8以及w4a16量化的是vllm中哪一部分，以及在vllm中对应修改位置</strong><br>
+量化压缩了哪一部分：<br>
+W4A16 / W8A16：仅对 权重（Weight） 做 INT4/INT8 量化，激活和 GEMM 计算仍保持 FP16/BF16，推理时先 dequantize→FP16 GEMM 。<br>
+W8A8：把 权重 + 激活（Activation） 全部压成 INT8，GEMM 直接走 INT8 TensorCore，结果再一次性反量化回 FP16 。<br>
+在 vLLM 的实现里，改的是 权重张量（layer.weight）和激活张量（layer.input_scale）的量化参数，最终落到 GEMM kernel 的 A、B 两个输入端，而非 Action 概念。</p>
+<p>INT8 KV-Cache 之后 仍有 GEMM，但 反量化与 GEMM 融合在一条 kernel 内完成，输出直接是 FP16/BF16，无中间 BF16 回写，带宽再省 50 %</p>
+<p>展开说明<strong>w8a8量化有收益的底层原理</strong></p>
+<details><summary>Details</summary>
+<p>
+</p><p>在 W8A8（INT8 权重 + INT8 激活）方案里，Attention 量化只改「两个 MatMul 的输入/权重」，不碰 Softmax/LayerNorm；权重形状保持 [hidden, hidden] 不变，但物理布局会做一次 NK→KN 转置 + 连续 + 分形 NZ 打包，以便昇腾 INT8 TensorCore 直接吃。</p>
+<p>收益就来自这两个 MatMul（QKᵀ 和 AV） ——它们占 Attention 总计算量 ≥ 80 %、访存量 ≥ 70 %：</p>
+<ol>
+<li>算力翻倍<br>
+昇腾 INT8 TensorCore 峰值是 FP16 的 2×；两个 GEMM 改 INT8 后直接把这部分 FLOPS 吃满，理论提速 2×。</li>
+<li>带宽减半<br>
+权重从 2 Byte → 1 Byte，K/V 若也 INT8 则 cache 读写再减半；长序列下 HBM 带宽瓶颈缓解，实测 TTFT 再降 10-20 %。</li>
+<li>显存省一半<br>
+KV-int8 让 cache 容量 ×2，128 k seq 原本 OOM 的 batch 现在能跑起来，等效吞吐 ↑30-50 %。</li>
+<li>精度无损<br>
+Softmax、LayerNorm 仍 FP16，只把乘加密集部分量化，模型质量下降 &lt;0.3 %（LLaMA-65B 千条任务平均）。<br>
+一句话：<br>
+“ Attention 里两个 GEMM 是唯一的平方项和算力大户，把它们压成 INT8 就能用翻倍算力、减半带宽、省一半显存，而精度几乎不掉——这就是全部收益。”</li>
+</ol>
+<p>GEMM 公式 C = α·A·B + β·C 里：<br>
+M = 一次要算多少行（batch×seq 展平后的 token 数）<br>
+K = 共享求和维，即 hidden_size（也是上一层 hidden_size）<br>
+N = 输出维，即 下一层 hidden_size（或 ffn 的 inter_dim）<br>
+所以<br>
+A[M, K] × B[K, N] → C[M, N]<br>
+就是 每个 token (M) 把 K 维向量用 N 个线性权重做一次仿射变换，得到 N 维输出。</p>
+<p></p>
+</details> 
 <h1>优化项目</h1>
 <p>优化内容主要是量化，kv cache上与优化，硬件优化。</p>
 <p>优化项目一：低精度解决幻觉问题--量化（敏感层动态回退）<br>
@@ -520,39 +552,7 @@ FMA = Fused Multiply-Add：<br>
 <p>结果：存储层省 50 % 流量，计算层仍拿 FP16 结果 → 既提速又不掉精度。<br>
 一句话：<br>
 「存 INT8 是为了省 IO，反量化 FP16 是为了能正确计算，而融合指令让这两步在同一周期完成，所以省带宽的同时不增加延迟。」</p>
-<p><strong>量化的是vllm中哪一部分，以及在vllm中对应修改位置</strong><br>
-量化压缩了哪一部分：<br>
-W4A16 / W8A16：仅对 权重（Weight） 做 INT4/INT8 量化，激活和 GEMM 计算仍保持 FP16/BF16，推理时先 dequantize→FP16 GEMM 。<br>
-W8A8：把 权重 + 激活（Activation） 全部压成 INT8，GEMM 直接走 INT8 TensorCore，结果再一次性反量化回 FP16 。<br>
-在 vLLM 的实现里，改的是 权重张量（layer.weight）和激活张量（layer.input_scale）的量化参数，最终落到 GEMM kernel 的 A、B 两个输入端，而非 Action 概念。</p>
-<p>INT8 KV-Cache 之后 仍有 GEMM，但 反量化与 GEMM 融合在一条 kernel 内完成，输出直接是 FP16/BF16，无中间 BF16 回写，带宽再省 50 %</p>
-<p>展开说明w8a8量化中修改地方</p>
-<details><summary>Details</summary>
-<p>
-</p><p>在 W8A8（INT8 权重 + INT8 激活）方案里，Attention 量化只改「两个 MatMul 的输入/权重」，不碰 Softmax/LayerNorm；权重形状保持 [hidden, hidden] 不变，但物理布局会做一次 NK→KN 转置 + 连续 + 分形 NZ 打包，以便昇腾 INT8 TensorCore 直接吃。</p>
-<p>收益就来自这两个 MatMul（QKᵀ 和 AV） ——它们占 Attention 总计算量 ≥ 80 %、访存量 ≥ 70 %：</p>
-<ol>
-<li>算力翻倍<br>
-昇腾 INT8 TensorCore 峰值是 FP16 的 2×；两个 GEMM 改 INT8 后直接把这部分 FLOPS 吃满，理论提速 2×。</li>
-<li>带宽减半<br>
-权重从 2 Byte → 1 Byte，K/V 若也 INT8 则 cache 读写再减半；长序列下 HBM 带宽瓶颈缓解，实测 TTFT 再降 10-20 %。</li>
-<li>显存省一半<br>
-KV-int8 让 cache 容量 ×2，128 k seq 原本 OOM 的 batch 现在能跑起来，等效吞吐 ↑30-50 %。</li>
-<li>精度无损<br>
-Softmax、LayerNorm 仍 FP16，只把乘加密集部分量化，模型质量下降 &lt;0.3 %（LLaMA-65B 千条任务平均）。<br>
-一句话：<br>
-“ Attention 里两个 GEMM 是唯一的平方项和算力大户，把它们压成 INT8 就能用翻倍算力、减半带宽、省一半显存，而精度几乎不掉——这就是全部收益。”</li>
-</ol>
-<p>GEMM 公式 C = α·A·B + β·C 里：<br>
-M = 一次要算多少行（batch×seq 展平后的 token 数）<br>
-K = 共享求和维，即 hidden_size（也是上一层 hidden_size）<br>
-N = 输出维，即 下一层 hidden_size（或 ffn 的 inter_dim）<br>
-所以<br>
-A[M, K] × B[K, N] → C[M, N]<br>
-就是 每个 token (M) 把 K 维向量用 N 个线性权重做一次仿射变换，得到 N 维输出。</p>
-<p></p>
-</details> 
-<p><strong>展开说下kvcache int8的量化</strong>（C8量化）</p>
+<p><strong>展开说下kvcache int8的量化以及4-bit残差补偿</strong>（C8量化）</p>
 <details><summary>Details</summary>
 <p>
 W8 – weight 8-bit 整型量化（静态，校准集一次性算完）
@@ -574,27 +574,7 @@ attention_kernels.cu → 加 load_int8_add_fp4 融合 kernel；<br>
 cache_engine.py → 加 residual_cache tensor（uint8 pack）</p>
 <p></p>
 </details> 
-<p><strong>4-bit-token-wise残差补偿具体过程</strong>：</p>
-<details><summary>Details</summary>
-<p>
-我的改进点：
-• 在 C8-S 基础上加 “**token-wise 残差补偿**”：对 &gt;3 σ 的离群 token 保留 4 位残差，显存只多 0.3 %，Rouge-L 从 42.1 → 43.8；
-• 把 C8-D 的 reduce 操作融合到 NPU 的 cube 指令里，额外延迟 &lt; 5 µs，完全隐藏；
-• 最终线上 70B 模型显存再省 12 %，P99 延迟持平。
-</p><p><strong>token-wise 残差补偿</strong><br>
-token-wise 残差补偿 = 对每个 token 的 KV-Cache 8-bit 量化误差做“小补丁”，只存离群 token 的 4-bit 残差，显存几乎不涨，却能把长序列 Rouge-L 拉回 1.5-2 pt。下面给出可直接落地的 3 步实现细节。</p>
-<p>────────────────</p>
-<p>离线找离群 token<br>
-• 用 512 条真实 prompt（平均 2 k token）跑 FP16 基线，记录每个 token 的 K/V 向量。<br>
-• 对同一 token 的 128-dim K/V 做 abs-max 量化到 INT8，计算相对误差 ε = ‖FP16 – Deq(INT8)‖₂ / ‖FP16‖₂。<br>
-• 设定阈值 τ = 3 × 平均 ε（经验值 0.035），把 ε &gt; τ 的 token 标记为离群，占比 ≈ 4 %。</p>
-<p>4-bit 残差编码<br>
-• 对每个离群 token 的 128-dim K/V 向量，用 block-fp4（1×1.3.0 格式：1 sign + 3 exponent + 0 mantissa）存残差。<br>
-• 128 个数 → 64 B；再加 1 B 的 token-id 索引，平均每条序列额外 4 %×2 k×65 B ≈ 5 KB，显存膨胀 &lt; 0.3 %。<br>
-• 把 load_fp4 和 deq4 写成一条 Ascend vector 指令，用的是 VEC_FMA_I4_F16（INT4→FP16 FMA），延迟 0.8 µs，完全落在计算 bubble 里。</p>
-<p></p>
-</details> 
-<h3>阶段感知量化</h3>
+<h3>优化项目四--阶段感知量化</h3>
 <p>同一份 Q/K/V/O 投影权重，在 prefill 阶段用 INT8 量化矩阵乘，在 decode 阶段用反量化后的 FP16/BF16 矩阵乘，从而 既省算力又保精度，而且 零额外拷贝、零 runtime 分支开销。</p>
 <details><summary>Details</summary>
 <p>
@@ -655,16 +635,13 @@ layer.weight.data = torch_npu.npu_format_cast(weight.data.t().contiguous(), 29) 
 <p>对应问题，为什么算子能够节省40%，以及为什么TTFT只下降12%：</p>
 <details><summary>Details</summary>
 <p>
-</p><ol>
-<li>
-<p>为什么 INT8 能让“算力”省 40 %<br>
-在 NPU/GPU 里，矩阵乘的“算力”通常用 FLOPs（Floating-Point Operations） 当度量；<br>
-FP16 GEMM 每做一次乘加算 2 FLOPs，INT8 GEMM 每做一次乘加算 1 ILOP（Integer Operation），而 ASCEND NPU 的 ILOP 吞吐正好是 FP 的 2×，且功耗更低；<br>
-30B 模型 prefill 阶段 90 % 时间花在 batch×seq×hidden² 的大形状 GEMM；换成 INT8 后，理论 FLOPs 减半，再刨掉 dequant/scale 的少量额外指令，实测 整体 math pipeline 节省约 40 % 的运算量；<br>
-因此“算力节省 40 %”是口语化表达，严谨说法应是 计算量 ↓40 % 或 math 利用率 ↓40 %。</p>
-</li>
-<li>
-<p>为什么TTFT只下降12%<br>
+1. 为什么 INT8 能让“算力”省 40 %
+在 NPU/GPU 里，矩阵乘的“算力”通常用 FLOPs（Floating-Point Operations） 当度量；
+FP16 GEMM 每做一次乘加算 2 FLOPs，INT8 GEMM 每做一次乘加算 1 ILOP（Integer Operation），而 ASCEND NPU 的 ILOP 吞吐正好是 FP 的 2×，且功耗更低；
+30B 模型 prefill 阶段 90 % 时间花在 batch×seq×hidden² 的大形状 GEMM；换成 INT8 后，理论 FLOPs 减半，再刨掉 dequant/scale 的少量额外指令，实测 整体 math pipeline 节省约 40 % 的运算量；
+因此“算力节省 40 %”是口语化表达，严谨说法应是 计算量 ↓40 % 或 math 利用率 ↓40 %。
+</p><ol start="2">
+<li>为什么TTFT只下降12%<br>
 | 阶段                              | 占比   | 量化收益               |<br>
 | ------------------------------- | ---- | ------------------ |<br>
 | 1. 调度器排队 + 采样层 prepare          | 8 %  | 0                  |<br>
@@ -672,15 +649,14 @@ FP16 GEMM 每做一次乘加算 2 FLOPs，INT8 GEMM 每做一次乘加算 1 ILOP
 | 3. Q/K/V/O 投影 GEMM（INT8）        | 45 % | ↓40 % → 省 18 % 总时间 |<br>
 | 4. Attention（FlashAttention）    | 25 % | 0（KV 仍是 FP16）      |<br>
 | 5. FC1/FC2 MLP                  | 10 % | 0（未量化）             |<br>
-| 6. 通信 All-Gather + Reduce       | 5 %  | 0                  |</p>
-</li>
+| 6. 通信 All-Gather + Reduce       | 5 %  | 0                  |</li>
 </ol>
 <p>只有 3. 受益，别的阶段纹丝不动；<br>
 45 % × 40 % = 18 %，再被其他 55 % 摊平，端到端 TTFT 实测 11 %~12 %；<br>
 若把 Attention、MLP、通信全部 INT8，理论可再降 20 %，但会引入肉眼可见的 ppl 上涨，目前方案只动 Q/K/V/O 投影，是性价比最优甜点区。</p>
 <p></p>
 </details>  
-<h3>硬件优化</h3>
+<h3>优化项目五--硬件优化</h3>
 <p>绑核、NUMA优化和CPU-Offload<br>
 绑核优化关注的是CPU核心之间的缓存有效性，而NUMA优化关注的是CPU与内存之间的物理距离和访问速度。</p>
 <details><summary>Details</summary>
@@ -697,15 +673,40 @@ FP16 GEMM 每做一次乘加算 2 FLOPs，INT8 GEMM 每做一次乘加算 1 ILOP
 </ol>
 <p></p>
 </details> 
-<h2>PD分离中优化项目一</h2>
+<h2>PD分离中优化项目六--kvcache</h2>
 <h3>PD分离的负载均衡</h3>
 <h3>KV cache相关优化</h3>
-<p>“vLLM 的 KV-Cache 生命周期分四段：<br>
-① 初始化——determine_available_memory 先算显存，get_num_blocks 换算块数，allocate_kv_cache_tensors 一次性 torch.zeros 创建连续 tensor；<br>
-② 运行期——block_pool.py 里的 allocate/free_blocks 做 bitmap 级分配回收，scheduler.py 的 schedule 维护块表并支持前缀缓存；<br>
-③ 计算更新——各 attention backend 的 forward 按 block_table 就地写回，不再额外拷贝；<br>
-④ 传输——kv_connector_base.py 的 get_num_new_matched_tokens 与 build_connector_meta 把远端命中和搬运指令打包，底层零拷贝 send/recv。<br>
-四段函数串起来就是 KV-Cache 从创建到销毁的完整链路。”</p>
+<p>“vLLM 的 <strong>KVCache的生命周期</strong>分四段：</p>
+<details><summary>Details</summary>
+<p>
+</p><p>“在 vLLM 中，KVCache 的生命周期是围绕 ‘逻辑块’ 这个概念来管理的。一个请求的 KV Cache 由一系列逻辑块组成，它的生命周期可以分为以下几个核心阶段：</p>
+<ol>
+<li>
+<p>池化初始化<br>
+在引擎启动时，vLLM 会根据模型参数和可用 GPU 显存，预先计算并分配一个连续的、固定大小的物理块内存池。<br>
+一个中心化的 BlockPool 被创建，用于管理这些空闲物理块的分配与回收。这步操作就像操作系统在启动时申请了一大片内存。</p>
+</li>
+<li>
+<p>分配与映射<br>
+当一个新请求被调度器选中执行时，系统会为其创建一个 BlockTable 数据结构。<br>
+根据当前序列的长度，调度器会向全局的 BlockPool 申请所需数量的空闲物理块，并将这些块的物理地址记录在该请求的 BlockTable 中。此时，逻辑块序列与物理块建立了映射关系。</p>
+</li>
+<li>
+<p>计算与填充<br>
+在执行模型的前向传播时，Attention 算子（如 PagedAttention）会读取该请求的 BlockTable，找到对应的物理块地址。<br>
+然后，Kernel 会直接将当前步骤计算出的新 KV 对写入到这些物理块的空闲位置中。这是一个就地更新的过程，没有额外的数据拷贝。</p>
+</li>
+<li>
+<p>回收与销毁<br>
+当一个请求完成（无论是正常结束还是被中断），调度器会将其 BlockTable 中记录的所有物理块标记为“已释放”。<br>
+这些被释放的物理块会被返还给全局的 BlockPool，等待被分配给新的请求。这就是 LRU 等淘汰策略发生作用的地方，BlockPool 通过引用计数来管理这些块的生命周期。</p>
+</li>
+</ol>
+<p>贯穿始终的优化：复制与共享<br>
+在整个生命周期中，APC 是一个重要的优化。如果调度器发现新请求的提示前缀与某个已完成请求的序列高度重合，它不会为新请求分配新块并重新计算，而是会直接让新请求的 BlockTable 指向已存在请求的物理块，并通过增加引用计数来实现共享。这避免了重复计算和存储，极大提升了性能。</p>
+<p>**总结一下，KV Cache 的生命周期本质上是物理块在全局 BlockPool 和各个请求的 BlockTable 之间流转的过程，核心是 BlockPool 和 BlockTable 的协同工作，而 APC 是在此基础上的高效优化。”</p>
+<p></p>
+</details> 
 <p>KV cache优化主要分为四步：调度、内存、通信、格式。</p>
 <ol>
 <li>调度<br>
