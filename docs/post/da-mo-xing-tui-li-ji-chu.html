@@ -1058,7 +1058,71 @@ Mooncake 则是“为 LLM 定制的分布式零拷贝缓存池”，后者在长
 HBM = GPU 显存本体，放最热 KV；池化角色：L1 热池——当前 step/shot 正在用的 KV-Block，命中率要求 90%+<br>
 DRAM = 内存，放温数据，秒级换入；池化角色：L2 温池——最近 1–10 min 内复用、但 GPU 显存已换出的块；通过 RDMA 可跨节点秒级拉回<br>
 SSD = 盘，放冷数据，容量最大。池化角色：L3 冷池——小时-天级复用（历史长文、用户长期记忆）；掉电不丢，可整池重启快速预热<br>
-三层组合成“HBM+DRAM+SSD”KV-Cache 池，兼顾显存节省、命中率、成本/GB。</p></div>
+三层组合成“HBM+DRAM+SSD”KV-Cache 池，兼顾显存节省、命中率、成本/GB。</p>
+<h1>L1/L2/L3/L4/L5</h1>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>层级</th>
+<th>典型位置</th>
+<th>容量*</th>
+<th>延迟**</th>
+<th>共享范围</th>
+<th>备注 / 其他叫法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>L0</strong></td>
+<td>寄存器文件</td>
+<td>几十 B-几 KB</td>
+<td>sub-ns</td>
+<td>单线程独占</td>
+<td>有时把寄存器叫 "L0"</td>
+</tr>
+<tr>
+<td><strong>L1</strong></td>
+<td>片上，同核心</td>
+<td>16-128 KB</td>
+<td>~1 ns</td>
+<td>单核心</td>
+<td>分 I-cache / D-cache；NPU 里叫 <strong>Unified Buffer</strong></td>
+</tr>
+<tr>
+<td><strong>L2</strong></td>
+<td>片上，邻近核心</td>
+<td>256 KB-几 MB</td>
+<td>3-10 ns</td>
+<td>多核共享</td>
+<td>GPU 叫 <strong>Shared Memory</strong>；NPU 叫 <strong>L2 Cache</strong> 或 <strong>TCM</strong></td>
+</tr>
+<tr>
+<td><strong>L3</strong></td>
+<td>片上/片外</td>
+<td>4-64 MB</td>
+<td>10-40 ns</td>
+<td>整芯片</td>
+<td>CPU 常叫 <strong>LLC</strong>；GPU 无 L3，用 <strong>L2</strong> 顶到头</td>
+</tr>
+<tr>
+<td><strong>L4</strong></td>
+<td>片外 DRAM</td>
+<td>8-512 GB</td>
+<td>100-300 ns</td>
+<td>全系统</td>
+<td>就是 <strong>主存 / HBM</strong>；有人戏称 "L4"</td>
+</tr>
+<tr>
+<td><strong>L5</strong></td>
+<td>磁盘/网络</td>
+<td>TB-PB</td>
+<td>ms-s</td>
+<td>跨节点</td>
+<td><strong>Swap / NVMe / Ceph</strong>，戏称 "L5"</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p>L1 最小最快最私有，L2 共享片上大容量，L3 整芯片末级缓存；再往下就是主存（L4）和磁盘（L5）。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
