@@ -211,6 +211,11 @@ Input → Encoder ×N → Decoder ×N → Output<br>
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
+<p>对应代码参考如下：<br>
+多线程（20 并发，阻塞 I/O）<br>
+with ThreadPoolExecutor(20) as ex: ex.map(requests.get, urls)<br>
+协程（20 k 并发，异步 I/O）<br>
+await asyncio.gather(*[aiohttp.get(u) for u in urls])</p>
 <p>Decoder与Encoder对应差异：</p>
 <markdown-accessiblity-table><table role="table">
 <thead>
