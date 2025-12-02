@@ -1081,13 +1081,14 @@ All-To-All 只在同层内，P2P 只在同专家组内；<br>
 Colossal-AI 的序列并行（CP），CP则是对所有线性层（如QKV投影、FFN）的输入和输出激活值都在序列维度进行切分，CP 在超长序列场景下内存优势巨大，但通信开销和实现复杂度更高。</p>
 <p></p>
 </details> 
-<h3>flash attention</h3>
+<h3>flashattention</h3>
 <p>FlashAttention 用 SRAM 分块 tiling + 分段 softmax + 单 kernel 融合 把内存-bound 改成计算-bound，避免从全局内存中读取和写入注意力矩阵。训练/长序列推理 2–4× 加速、显存 10× 省；<br>
 FlashInfer 在此基础上针对 GQA/MQA decode 加 预取页表 + 分组 warp-GEMM + 量化融合，decode 延迟再降 30%。</p>
 <p>V3 再叠加 TMA 异步、Warp 专用化、块量化，把 Hopper 张量核吃满，成为 长上下文大模型训练/推理的默认内核。</p>
+<p>flashattention1-4对应区别：<br>
+同一层级falshattention 实现的方式有哪些？比如flashinfer</p>
 <details><summary>Details</summary>
 <p>
-同一层级falshattention 实现的方式有哪些？比如flashinfer
 </p><markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
@@ -1146,6 +1147,47 @@ FlashInfer 在此基础上针对 GQA/MQA decode 加 预取页表 + 分组 warp-G
 <p><em>重计算（Recomputation）：</em><br>
 Softmax 操作本身是全局的，因为它需要知道所有元素的值来计算归一化分母。在反向传播时，Flash Attention 不需要存储巨大的中间矩阵 S 和 P。它只存储了最终的输出 O 和统计量 l, m。当需要计算梯度时，它会利用存储的 Q, K, V, O, l, m 以及反向传播算法，重新计算出注意力矩阵 S 和 P 的块。这是一种用计算换空间的典型策略。</p>
 <p>优势：显存占用从O(N²)降至O(N)，允许处理极长序列。</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>版本</th>
+<th>年份</th>
+<th>核心改进</th>
+<th>作用/收益</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FlashAttention-1</td>
+<td>2022</td>
+<td>首次提出 <strong>分块 tiling + 在线 softmax</strong>，把完整注意力矩阵拆成 SRAM 内的小块计算，内存复杂度 O(N²)→O(N)</td>
+<td>长序列训练速度 ↑2–4×，显存省 50 %，在 A100/V100 上即可跑 16 k+ token</td>
+<td>奠定“IO-aware 精确注意力”范式</td>
+</tr>
+<tr>
+<td>FlashAttention-2</td>
+<td>2023</td>
+<td>线程级并行 + Warp 级工作划分；把 Q/K/V 按行/列切块，减少非矩阵运算；合并缩放因子</td>
+<td>相同算力下吞吐再 ↑1.7–2×，FLOPs 利用率从 30 %→73 %；支持 MQA/GQA；Ampere/H100 通用</td>
+<td>训练/推理皆可用，成为 HuggingFace 默认内核</td>
+</tr>
+<tr>
+<td>FlashAttention-3</td>
+<td>2024</td>
+<td>面向 Hopper 架构：FP8 低精度、块稀疏注意力、异步拷贝 WGMMA；流水线重叠</td>
+<td>比 FA-2 再 ↑3×，首次把内存压到 90 %↓；单卡 H100 跑 1 M token 级模型稳定训练</td>
+<td>支持 RoPE、ALiBi、长上下文持续微调</td>
+</tr>
+<tr>
+<td>FlashAttention-4</td>
+<td>2025</td>
+<td>为 Blackwell GPU 原生设计：新在线 softmax（跳过 90 % rescale）、指数指令 MUFU.EX2、CUTLASS CuTe DSL 双缓冲 epilogue</td>
+<td>GPT-4 规模训练 ↑11×，比 cuBLAS 13 再快 22 %；能耗同步 ↓30 %，成为 HotChips25 焦点</td>
+<td>与 NV 联合调优，后续将进 cuDNN 标准库</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
 <p></p>
 </details>
 <p><strong>flashattenton2:</strong><br>
@@ -1163,6 +1205,7 @@ Warpanize 设计：每个Warp独立负责计算一个子块的注意力输出，
 ① 小模型自回归生成 k 个候选；② 大模型一次 forward 并行打分；③ 按 accept 概率保留或重采样；④ 循环直至结束<br>
 MTP实现的算法有哪些？<br>
 本质是大模型一次稍贵但便宜得多的并行计算，再加上K次小模型的廉价计算</p>
+<p>投机推理加快的一些角度以及enager1-3对应作用：</p>
 <details><summary>Details</summary>
 <p>
 小模型选择：
@@ -1227,6 +1270,10 @@ MTP实现的算法有哪些？<br>
 <li>联合预测：计算代价最高但建模能力最强</li>
 <li>MoE混合：最前沿的探索方向，灵活性最高</li>
 </ul>
+<p>“投机推理”系列里的 EAGLE-1/2/3 对应作用一句话总结：<br>
+EAGLE-1：把“草稿”从 Token 级换成倒数第二层特征级，特征+已采样 Token 联合自回归，解决特征不确定性，首次把草稿任务变简单 。<br>
+EAGLE-2：给静态草稿树加“置信度”开关，动态剪枝——只保留草稿模型自己确信的分支，减少无效候选 。<br>
+EAGLE-3：①退回到 Token 级草稿，解除特征对齐约束；②训练阶段就模拟多步自回归误差（训练时测试），让草稿模型提前适应真实分布；③把目标模型的低-中-高层特征一起喂给草稿模型，数据量越大加速比继续涨，突破 2/3 代的数据缩放天花板</p>
 <p></p>
 </details>
 <p><strong>prefix-caching</strong><br>
