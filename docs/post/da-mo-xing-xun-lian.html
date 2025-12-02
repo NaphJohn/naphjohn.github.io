@@ -146,7 +146,7 @@ N卡数<br>
 <h1>k8s</h1>
 <p>k8s =「apiserver + etcd + 控制器 + 调度器」控制面，「kubelet + kube-proxy」数据面，声明式循环保终态一致。</p>
 <p>用户写 YAML → apiserver 入库 → 控制器持续对比「期望 vs 实际」→ 调度器绑定 Node → kubelet 调 CRI 启动容器 → 健康探针/状态回写 → 循环直至终态一致。</p>
-<p>具体原理如下：</p>
+<p>具体原理以及Pod/InfiniBand/RDMA原理如下：</p>
 <details><summary>Details</summary>
 <p>
 </p><ol>
@@ -168,6 +168,12 @@ CSI 插件：给 Pod 挂磁盘（ceph, EBS 等）<br>
 CoreDNS：集群内 DNS 解析<br>
 Metrics-Server：HPA 用资源指标</li>
 </ol>
+<p>Pod<br>
+是 K8s 的最小可调度单元，里面封装一个或多个容器、共享网络/存储，声明即可把应用（训练脚本、推理服务等）跑在任意节点。<br>
+InfiniBand<br>
+一种高速、低延迟（&lt; 1 µs）的“独立网络”，专为 RDMA 设计；在 K8s 中通过 SR-IOV 把物理网卡切成 VF，再用 Device Plugin 把 VF 注册成可调度资源 rdma/hca，Pod 声明后就能直通使用。<br>
+RDMA<br>
+Remote Direct Memory Access——网卡直接读写远端内存，零拷贝、内核旁路；配合 GPUDirect RDMA 可实现 GPU 显存跨机 DMA，极大提升分布式训练/推理带宽，延迟远低于 TCP/IP。</p>
 <p></p>
 </details> 
 <h1>训练框架</h1>
