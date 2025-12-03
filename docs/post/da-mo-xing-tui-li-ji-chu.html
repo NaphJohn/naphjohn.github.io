@@ -567,7 +567,9 @@ qwen3
 深度剪枝：直接删掉冗余 Transformer 层，效果是6L 小模型可比 12L 大模型快 2×<br>
 主要思路是Attention head / FFN 宽度 → 用 梯度/激活/权重幅值 + 一次性重要性估计 给每个 head/neuron 打分，低于阈值直接置零，再微调恢复精度。<br>
 整层冗余 → 用 Block Influence / LayerDrop + 早期彩票 ticket 先“试删”再评估下游掉点，掉点&lt;ε 的层即可永久剔除。</p>
-<p><strong>短输入长输出情况下如何提升decode性能，TPOT效果？</strong><br>
+<p>不同场景如何优化，比如短输入长输出，长输入短输出；<br>
+低并发低时延，高并发高时延场景：<br>
+<strong>短输入长输出情况下如何提升decode性能，TPOT效果？</strong><br>
 在“短输入 + 长输出”场景里，Decode 阶段占 90 % 以上时间，TPOT（每输出 token 延迟）是主要矛盾。核心思路是 “让每步 Decode 算得少、访存量低、批得大”。具体可做 6 件事：</p>
 <details><summary>Details</summary>
 <p>
@@ -595,7 +597,7 @@ PD 分离 → 连续批处理调大 → KV-int8 → GQA/MLA → 投机解码 →
 按此阶梯，TPOT 通常可从 100 ms 级压到 30-50 ms，长输出越长收益越大。</p>
 <p></p>
 </details> 
-<p>长输入 + 短输出 → TTFT（首 token 时间）≈ Prefill 耗时。<br>
+<p><strong>长输入短输出</strong> → TTFT（首 token 时间）≈ Prefill 耗时。<br>
 核心矛盾：O(n²) Attention 与 HBM 带宽。优化思路：“算得少、算得快、吃得下、吐得快”。</p>
 <details><summary>Details</summary>
 <p>
@@ -622,6 +624,13 @@ W4A16/W8A8 让线性层计算量减半；cutlass/Marlin INT8 kernel 在 Prefill 
 <li>层次化 Tokenizer（字节对→子词→词）：长提示编码时间从 2 s→0.2 s。</li>
 </ul>
 <p></p>
+</details> 
+<p>算子侧面耗时分析：<br>
+prefill以及decode：</p>
+<details><summary>Details</summary>
+<p>
+<a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/66410dd4-51c6-41af-9770-9ccc8ff6e0dd"><img width="537" height="396" alt="Image" src="https://github.com/user-attachments/assets/66410dd4-51c6-41af-9770-9ccc8ff6e0dd" style="max-width: 100%; height: auto; max-height: 396px;"></a>
+</p>
 </details> 
 <h1>大模型架构Qwen、GPT系列、llama系列，Deepseek系列，Transformer</h1>
 <h2>Qwen模型架构与数据流动</h2>
