@@ -128,20 +128,30 @@ n_kv_heads：GQA 压缩后的 KV 头数（若无压缩 = 原头数） n_kv_heads
 head_dim：每个头的维度<br>
 2：K 与 V 各一份<br>
 sizeof(dtype)：FP16/BF16→2字节；INT8/FP8→1字节；FP32→4字节</p>
-<p>相关问题： kvcache节省了那部分计算？</p>
+<p>相关问题： kvcache节省了那部分计算以及具体计算案例？</p>
 <details><summary>Details</summary>
 <p>
-1. FFN阶段本质上是两个矩阵乘计算，token之前互不影响，因此使用kv cache可以将计算量节省为原来的1/S
-2. RMSNorm本质是对每一个token的隐状态做归一化，token之间是互相独立的，因此计算量为原来的1/S
-3. Attention阶段由于Q和K做gemm，会得到一个shape为[S，S]的向量，在seqlen比较大的情况下，计算复杂度为O(S^2)，使用kv cache之后，Attention计算复杂度变为O(S)，计算Q、K、V的GEMM运算降为GEMV运算，整体计算量为原来的1/S;
-4. 其他的Embedding等计算量比较小，大约也为原来计算量的1/S；
-</p><h3>MFU</h3>
-<a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/e021e126-6c30-41bb-838b-5dc74c45ed9e"><img width="1860" height="81" alt="Image" src="https://github.com/user-attachments/assets/e021e126-6c30-41bb-838b-5dc74c45ed9e" style="max-width: 100%; height: auto; max-height: 81px;"></a>
-<a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/e756f77e-25d2-47d8-be69-115026beb411"><img width="1683" height="81" alt="Image" src="https://github.com/user-attachments/assets/e756f77e-25d2-47d8-be69-115026beb411" style="max-width: 100%; height: auto; max-height: 81px;"></a>
-<a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/b27a70f7-f7fe-41e8-a543-42e294496b95"><img width="998" height="86" alt="Image" src="https://github.com/user-attachments/assets/b27a70f7-f7fe-41e8-a543-42e294496b95" style="max-width: 100%; height: auto; max-height: 86px;"></a>
+</p><ol>
+<li>FFN阶段本质上是两个矩阵乘计算，token之前互不影响，因此使用kv cache可以将计算量节省为原来的1/S</li>
+<li>RMSNorm本质是对每一个token的隐状态做归一化，token之间是互相独立的，因此计算量为原来的1/S</li>
+<li>Attention阶段由于Q和K做gemm，会得到一个shape为[S，S]的向量，在seqlen比较大的情况下，计算复杂度为O(S^2)，使用kv cache之后，Attention计算复杂度变为O(S)，计算Q、K、V的GEMM运算降为GEMV运算，整体计算量为原来的1/S;</li>
+<li>其他的Embedding等计算量比较小，大约也为原来计算量的1/S；</li>
+</ol>
+<p>以 Qwen2.5-7B 为例（BF16）：<br>
+层数：28<br>
+隐藏维度：3584<br>
+KV头数：4<br>
+精度：BF16（2字节）<br>
+2×2×28×<br>
+28<br>
+3584<br>
+​<br>
+×4=0.5 MB per token</p>
+<p></p>
+</details> 
 <h3>Transformer 架构</h3>
 <p>Transformer 的 Encoder = “Self-Attention + FFN + 残差” 重复堆叠</p>
-<p>《Attention Is All You Need》中transformer架构，整体结构，线程 / 多线程 / 协程区别，以及</p>
+<p>《Attention Is All You Need》中transformer架构，整体结构，线程 / 多线程 / 协程区别，以及对应细节如下：</p>
 <details><summary>Details</summary>
 <p>
 </p><ol>
@@ -311,7 +321,7 @@ await asyncio.gather(*[aiohttp.get(u) for u in urls])</p>
 </tbody>
 </table></markdown-accessiblity-table>
 <p></p>
-</details> 
+ 
 <p>QKV计算：<br>
 Score = Q * K^T<br>
 缩放：为了防止点积结果过大导致 Softmax 梯度消失，将得分除以 Key 向量维度的平方根。Scaled_Score = Score / √d_k<br>
