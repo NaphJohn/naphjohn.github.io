@@ -150,7 +150,9 @@ KV头数：4<br>
 <p></p>
 </details> 
 <h3>Transformer 架构</h3>
-<p>Transformer 的 Encoder = “Self-Attention + FFN + 残差” 重复堆叠</p>
+<p>Encoder-only  bert模型，能看到全文<br>
+decoder-only gpt，llama，deepseek模型，只看前面的词<br>
+Transformer 的 Encoder = “Self-Attention（让每个词关注下句子里的其它词） + FFN（每个词独立处理） + 残差” 重复堆叠</p>
 <p>《Attention Is All You Need》中transformer架构，整体结构，线程 / 多线程 / 协程区别，以及对应细节如下：</p>
 <details><summary>Details</summary>
 <p>
