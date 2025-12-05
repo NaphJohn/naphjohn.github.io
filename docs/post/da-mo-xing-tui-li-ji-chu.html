@@ -750,7 +750,8 @@ $\text{LayerNorm}(\mathbf{x}) = \frac{\mathbf{x} - \mu}{\sigma} \odot \mathbf{g}
 <p>RMSNorm：<br>
 $\text{RMSNorm}(\mathbf{x}) = \frac{\mathbf{x}}{\text{RMS}(\mathbf{x})} \odot \mathbf{g}$<br>
 其中 $\text{RMS}(\mathbf{x}) = \sqrt{\frac{1}{H}\sum_{i=1}^H x_i^2 + \epsilon}$， 通常省略偏置 $\mathbf{b}$。</p>
-<p>SwiGLU的公式是什么？<br>
+<p><strong>Swiglu原理</strong><br>
+SwiGLU的公式是什么？<br>
 SwiGLU是Swish激活函数和GLU（Gated Linear Unit）结构的结合。</p>
 <p>公式：<br>
 $\text{SwiGLU}(x, W, V, b, c) = \text{Swish}(xW + b) \odot (xV + c)$<br>
@@ -769,9 +770,20 @@ $\text{Swish}(x) = x \cdot \sigma(x)$， $\sigma$ 是sigmoid函数。</li>
 </ul>
 <p>GLU：这种 (A) ⊙ (B) 的结构被称为“门控线性单元”（Gated Linear Unit）。Swish(xW1) 是“门”，它控制 (xV) 哪些部分可以通过。<br>
 在Transformer的FFN层中，通常用SwiGLU取代原来的ReLU激活</p>
+<p>相比relu对应优势：</p>
+<ol>
+<li>梯度更丝滑<br>
+Swish(x)=x·σ(βx) 全程可导、无硬零断点，反向传播不会“神经元猝死”；ReLU 负半轴恒零，易死区。</li>
+<li>表达能力≈2×参数<br>
+把 FFN 切成两条支路（gate 与 up），再做逐元乘：<br>
+y = Swish(W₁x) ⊙ (W₂x)<br>
+相当于给每个神经元配了一个可学习的“开关”，参数量*2，但无任何额外推理成本（合并算子即可）。</li>
+<li>实验收益稳定<br>
+同样 FLOPs 下，SwiGLU 在多项语言建模任务上 ppl 平均再降 2–3%；Llama、Qwen、DeepSeek 等开源模型已把它当成“默认激活”。</li>
+</ol>
 <p></p>
 </details> 
-<p>Q，K，V计算的实际过程：</p>
+<p><strong>Q，K，V计算的实际过程：</strong></p>
 <details><summary>Details</summary>
 <p>
 </p><ul>
