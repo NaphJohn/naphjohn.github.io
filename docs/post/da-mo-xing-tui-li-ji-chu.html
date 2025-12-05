@@ -1073,7 +1073,7 @@ broadcast：1到多<br>
 gather：多到1<br>
 scatter：1个npu数据切分到其它npu<br>
 reduce：多个npu获取数据并做规约运算</p>
-<p>allreduce：从多个npu获取数据到所有npu并做归约运算<br>
+<p>allreduce：从多个npu获取数据到所有npu并做归约运算（求和平均最大最小乘积ANDOR）<br>
 reduce scatter：按维度执行规约并发送到对应npu<br>
 allgather：收集每个npu所有的数据到每个npu上<br>
 alltoallv：所有npu互相scatter和gather数据</p>
