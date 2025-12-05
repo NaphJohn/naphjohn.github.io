@@ -661,18 +661,9 @@ Prefix Cache：命中后首段 KV 免算，重复系统提示场景 TTFT 直接 
 4. 4/8-bit 权重 GEMM
 W4A16/W8A8 让线性层计算量减半；cutlass/Marlin INT8 kernel 在 Prefill 阶段带宽瓶颈下仍可再削 10-15 % 延迟。
 5. 多卡并行策略
-</p><ul>
-<li>TP+SP（Tensor + Sequence Parallel）：把 128 k 序列按 2k-4k token 切片到多卡，每卡 Attention 降到 (seq/TP)²，TTFT 随卡数线性下降（Megatron-LM 实测 8 卡↓8×）。</li>
-<li>PD 分离（Prefill 专用 4-8 卡，Decode 1 卡）：Prefill 阶段独占高算力，无 Decode 抢占，TTFT 方差 &lt;5 %。</li>
-</ul>
-<ol start="6">
-<li>输入前处理加速</li>
-</ol>
-<ul>
-<li>动态 Early-exit（Draft-LLM）：前 50 % 层提前退出，logits 误差 &lt;1 %，TTFT 再降 25 %。</li>
-<li>层次化 Tokenizer（字节对→子词→词）：长提示编码时间从 2 s→0.2 s。</li>
-</ul>
-<p></p>
+- TP+SP（Tensor + Sequence Parallel）：把 128 k 序列按 2k-4k token 切片到多卡，每卡 Attention 降到 (seq/TP)²，TTFT 随卡数线性下降（Megatron-LM 实测 8 卡↓8×）。
+- PD 分离（Prefill 专用 4-8 卡，Decode 1 卡）：Prefill 阶段独占高算力，无 Decode 抢占，TTFT 方差 &lt;5 %。
+</p>
 </details> 
 <p>算子侧面耗时分析：<br>
 prefill以及decode：</p>
@@ -681,7 +672,22 @@ prefill以及decode：</p>
 <a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/66410dd4-51c6-41af-9770-9ccc8ff6e0dd"><img width="537" height="396" alt="Image" src="https://github.com/user-attachments/assets/66410dd4-51c6-41af-9770-9ccc8ff6e0dd" style="max-width: 100%; height: auto; max-height: 396px;"></a>
 </p>
 </details> 
-<h1>大模型架构Qwen、GPT系列、llama系列，Deepseek系列，Transformer</h1>
+<h1>大模型架构Qwen、GPT系列、llama系列，Deepseek系列</h1>
+<p>Transformer架构（Self-Attention（让每个词关注下句子里的其它词） + FFN（每个词独立处理） + 残差）</p>
+<ol>
+<li>GPT 系列<br>
+最纯正 Decoder-only + 原始 MHA，靠堆参数、堆数据、堆算力出奇迹；GPT-4 开始用 8×8 专家混合(MoE) 降成本，但官方细节未公开。</li>
+<li>Llama 系列<br>
+把 MHA 换成 GQA（分组查询，32→8 组），KV-cache 砍 4×；用 RoPE + SwiGLU + RMSNorm，成为后续开源模型的“标准模板”。</li>
+<li>Qwen 系列<br>
+像qwen3-80b-next，在 Llama 模板基础上再切 2/3 层做 Gated DeltaNet（GDN）线性 Attention，缓存 O(1)；长文本 1M token 外推靠 NTK-RoPE 动态基频。</li>
+<li>DeepSeek 系列<br>
+DeepSeek-V2 首推 MLA（Multi-head Latent Attention）：把 KV 先低秩投影到 128 维潜向量，再还原，缓存再降 5-8×，效果反超 MHA。<br>
+DeepSeek-MoE 用 共享+细粒度专家 分割，每 token 只激活 8.3% 参数，训练成本只有同规模 Dense 的 40%。<br>
+DualPipe 调度：Prefill/Decode 两条流水线 chunk 级并行，TTFT 降 30%。</li>
+<li>共同底层<br>
+全是 Pre-Norm、RMSNorm、SwiGLU、RoPE、TP/PP/DP 三维并行，差异只在于“注意力变体 + 专家路由 + 长程外推”这三板斧；面试抓关键词：GQA、GDN、MLA、MoE、NTK-RoPE 即可</li>
+</ol>
 <h2>Qwen模型架构与数据流动</h2>
 <p>核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。</p>
 <ol>
@@ -692,66 +698,6 @@ prefill以及decode：</p>
 <li>更长的上下文长度： Qwen2支持128K token的上下文长度，这得益于RoPE和相关的工程优化。</li>
 <li>Tokenizer改进： 使用了更高效的分词器，词汇表大小扩大到152K，压缩率更高（特别是对中文和代码），减少了序列长度，提升了处理效率。</li>
 </ol>
-<p>qwen3的改动包含attention，调度，模型执行（linear）--class RowParallelLinearWithAlltoAll(LinearBase)<br>
-<strong>Qwen3-dense模型以及qwen3-moe简化图</strong></p>
-<details><summary>Details</summary>
-<p>
-qwen3-dense模型层次图
-</p><p>Qwen3ForCausalLM<br>
-├── model: Qwen3Model<br>
-│   ├── embed_tokens  (VocabParallelEmbedding)<br>
-│   ├── layers[i]: Qwen3DecoderLayer  × num_hidden_layers<br>
-│   │   ├── input_layernorm<br>
-│   │   ├── self_attn: Qwen3Attention<br>
-│   │   │   ├── qkv_proj  (QKVParallelLinear)<br>
-│   │   │   ├── q_norm / k_norm  (RMSNorm)<br>
-│   │   │   ├── rotary_emb  (get_rope)<br>
-│   │   │   └── attn  (vLLM Attention 内核)<br>
-│   │   ├── post_attention_layernorm<br>
-│   │   └── mlp: Qwen3MLP<br>
-│   │       ├── gate_up_proj  (MergedColumnParallelLinear)<br>
-│   │       ├── act_fn: SiluAndMul<br>
-│   │       └── down_proj  (RowParallelLinear)<br>
-│   └── norm (RMSNorm)<br>
-├── lm_head  (ParallelLMHead 或直接复用 embed_tokens)<br>
-├── logits_processor<br>
-└── sampler</p>
-<p>qwen3-dense的forward调用链条：<br>
-input_ids/inputs_embeds<br>
-↓<br>
-embed_tokens  (并行查表)<br>
-↓<br>
-for i in [start_layer, end_layer):   ← PP 只看到自己那一截<br>
-Qwen3DecoderLayer<br>
-├─ input_layernorm  (Pre-Norm)<br>
-├─ self_attn<br>
-│   ├─ qkv_proj  →  splitV  →  q,k,v<br>
-│   ├─ q_norm / k_norm  （Qwen3 新加的 per-head RMSNorm）<br>
-│   ├─ rotary_emb(positions, q, k)  →  注入位置编码<br>
-│   └─ attn(q,k,v, kv_cache, attn_metadata)  ← 核心 CUDA kernel<br>
-├─ post_attention_layernorm<br>
-└─ mlp(SiluAndMul)  →  gate_up_proj → down_proj<br>
-↓<br>
-若 PP 未到最后阶段 → 返回 IntermediateTensors{hidden_states, residual}<br>
-若 PP 最后阶段 → norm → lm_head → logits_processor → sampler → next_tokens</p>
-<p>Qwen3moe模型：<br>
-Qwen3-MoE ≈ Qwen3-Dense + “偶尔插一层可并行 Expert 的稀疏 MLP”；其余 Attention、LN、embedding、head 结构完全复用；forward 数据流仅在进入 MoE 层时多了一次 router打分→ All-To-All dispatch搬运token → expert 局部计算FFN → All-To-All combine搬回数据→TP ALL-Reduce</p>
-<p>对应qwen3-moe数据流参考：<br>
-Dense 层：<br>
-hidden_states ─► RMSNorm ─► QKV/Attn ─► RMSNorm ─► DenseMLP ─► 下一层</p>
-<p>MoE 层：<br>
-hidden_states ─► RMSNorm ─► QKV/Attn ─► RMSNorm ─► ┌---------------------------┐<br>
-│  1. router(gate) 得 logits │<br>
-│  2. select top-k experts   │<br>
-│  3. All-To-All dispatch    │ ← 把 token 发到对应 expert rank<br>
-│  4. 每个 expert 局部 FFN   │<br>
-│  5. All-To-All combine     │ ← 把计算结果拉回原始 rank<br>
-│  6. TP All-Reduce（可选）  │<br>
-└---------------------------┘<br>
-↓<br>
-下一层</p>
-<p></p>
-</details> 
 <h3>RMSNorm以及LayerNorm公式</h3>
 <p>目前主流的都是rmsnorm<br>
 为什么 RMSNorm 更快？<br>
