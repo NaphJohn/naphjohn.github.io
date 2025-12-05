@@ -1027,14 +1027,15 @@ Recomputation（重计算）：直接丢弃已生成的 KV Cache，待请求恢�
 根据论文中的实验结果，Swapping 更适用于 block size 较大的场景，而 Recomputation 则在不同 block size 下的表现更为稳定。在中等 block size（16 到 64）范围内，两种方式的端到端性能基本相当。</p>
 <h1>HCCL</h1>
 <p>华为对应集合通信库，支持allreduce、broadcast、allgather、reduceScatter、AlltoAll等通信原语<br>
-broadcast：1到多<br>
+broadcast：1到多，将数据从一个节点发送到所有节点<br>
 gather：多到1<br>
 scatter：1个npu数据切分到其它npu<br>
 reduce：多个npu获取数据并做规约运算</p>
-<p>allreduce：从多个npu获取数据到所有npu并做归约运算（求和平均最大最小乘积ANDOR）<br>
-reduce scatter：按维度执行规约并发送到对应npu<br>
+<p>allreduce：从多个npu获取数据到所有npu并做归约运算（求和平均最大最小乘积ANDOR），规约+广播：所有节点都有最终结果<br>
+reduce scatter：规约后结果分散到不同节点<br>
 allgather：收集每个npu所有的数据到每个npu上<br>
 alltoallv：所有npu互相scatter和gather数据</p>
+<p>简单总结：规约运算是AllReduce的核心计算步骤，负责将分散的数据合并；AllReduce是完整通信原语，包含规约和广播两个阶段。</p>
 <p>前沿思想：</p>
 <h2>DSA</h2>
 <p>DeepSeek 稀疏注意力（DSA, DeepSeek Sparse Attention）的核心思路是<br>
