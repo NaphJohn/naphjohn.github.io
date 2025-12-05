@@ -460,6 +460,53 @@ K 和 V 的个数减少到 g 个（n_heads &gt;= g）。
 如果 g = 1，GQA 退化为 MQA（所有头共享一套 K, V），也就是多头查询注意力 (Multi-Query Attention, MQA)
 </p>
 </details> 
+<p><strong>GDN/KDA</strong></p>
+<p>MHA/MQA/GQA/MLA 无论怎样压缩，仍然线性随 n 增长——这是两条根本不同的技术路线。<br>
+GDN/KDA直接跳出“缓存 K/V 再复用”的思路，把历史压进常数级递归状态，于是 KV-cache 大小与序列长度 n 无关。使用的好处是打破显存墙，能做“百万 token 实时推理”。</p>
+<p>两种技术路线的区别见下表：</p>
+<details><summary>Details</summary>
+<p>
+</p><markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>维度</th>
+<th>MHA/MQA/GQA/MLA</th>
+<th>GDN / KDA</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>存储对象</td>
+<td>显式 K/V 向量（或低秩投影）</td>
+<td>隐式递归状态 S（d×d 矩阵）</td>
+</tr>
+<tr>
+<td>内存-长度关系</td>
+<td>O(n) n 多长 cache 多大</td>
+<td>O(1) n 再长也只占 d×d</td>
+</tr>
+<tr>
+<td>算子范式</td>
+<td>Attention + 矩阵乘</td>
+<td>线性递归 / 状态空间更新</td>
+</tr>
+<tr>
+<td>门控粒度</td>
+<td>无（除 MLA 的投影）</td>
+<td>头级标量门(GDN) / 通道级向量门(KDA)</td>
+</tr>
+<tr>
+<td>长文本外推</td>
+<td>需 RoPE、NTK 等位置修正</td>
+<td>递归天然带衰减，外推更稳</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p></p>
+</details> 
+<p>原理：<br>
+GDN 和 KDA 都是把传统 softmax attention 改成‘线性递归’风格的模块，目的只有一个：把 KV cache 从 O(n) 砍成 O(1)，同时保住效果。GDN 是“头级粗粒度门控”，KDA 是“通道级细粒度门控”，公式同级，但 KDA 把遗忘门拆成 dk 个独立 α，结果更省显存、更长上下文、还略涨点<br>
+混合比例两家都选 3:1（线性层 : 全局层），全局层负责偶尔全局对账，线性层负责 99 % token 的常数内存推理。”</p>
 <p><strong>MOE原理</strong><br>
 一个共享专家，若干路由专家组成，由门控网络选择top-k个专家。对应结构原理，计算不爆炸原因，好处如下：</p>
 <details><summary>Details</summary>
