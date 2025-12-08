@@ -1223,55 +1223,6 @@ MTP实现的算法有哪些？<br>
 硬件利用效率：GPU是一种大规模并行处理器，它最擅长做的事情就是一次性处理一大块数据。一次处理长为 L+K 的序列，其计算效率远高于串行处理3个长度分别为 L, L+1, L+2 的序列。<br>
 内核启动开销：每次启动GPU内核（Kernel）进行前向传播都有固定的开销。合并成一次内核启动，就消除了两次额外的开销。<br>
 内存读写优化：一次处理长序列的数据可以更好地利用缓存，减少与慢速显存（HBM）的通信次数。</p>
-<p><strong>MTP (Multi-Token Prediction) 多令牌预测</strong>算法：</p>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">方法</th>
-<th align="left">核心思想</th>
-<th align="left">优点</th>
-<th align="left">缺点</th>
-<th align="left">代表</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>独立头并行</strong></td>
-<td align="left">多个独立输出头，各管一个</td>
-<td align="left">实现简单，计算高效</td>
-<td align="left">预测不一致，忽略token间依赖</td>
-<td align="left">DeepSeek, Meta</td>
-</tr>
-<tr>
-<td align="left"><strong>级联预测</strong></td>
-<td align="left">后一个头的输入依赖前一个头的输出</td>
-<td align="left">预测更一致，性能潜力更高</td>
-<td align="left">计算更复杂，部分串行</td>
-<td align="left">一些研究论文</td>
-</tr>
-<tr>
-<td align="left"><strong>联合预测</strong></td>
-<td align="left">用一个小型Decoder自回归生成多token</td>
-<td align="left">能建模复杂依赖关系</td>
-<td align="left">参数量和计算开销大</td>
-<td align="left">-</td>
-</tr>
-<tr>
-<td align="left"><strong>MoE混合</strong></td>
-<td align="left">不同专家负责不同预测策略</td>
-<td align="left">极其灵活，自适应</td>
-<td align="left">结构复杂，训练困难</td>
-<td align="left">Google Aurora</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<p>补充说明：</p>
-<ul>
-<li>独立头并行：最实用方案，如DeepSeek模型采用</li>
-<li>级联预测：理论更优但实现复杂</li>
-<li>联合预测：计算代价最高但建模能力最强</li>
-<li>MoE混合：最前沿的探索方向，灵活性最高</li>
-</ul>
 <p>“投机推理”系列里的 EAGLE-1/2/3 对应作用一句话总结：<br>
 EAGLE-1：把“草稿”从 Token 级换成倒数第二层特征级，特征+已采样 Token 联合自回归，解决特征不确定性，首次把草稿任务变简单 。<br>
 EAGLE-2：给静态草稿树加“置信度”开关，动态剪枝——只保留草稿模型自己确信的分支，减少无效候选 。<br>
