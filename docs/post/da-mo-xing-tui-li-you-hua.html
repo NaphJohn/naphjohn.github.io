@@ -467,7 +467,7 @@ vllm/kernels/custom_quant.py-- Kernel 侧读掩码。</li>
 全程热插拔，无需重启服务。</p>
 <p></p>
 </details> 
-<h3>优化项目二： PageAttention KV-Cache 内存池优化--内存管理器优化</h3>
+<h3>优化项目二： PageAttention KV-Cache 内存池优化--16-token微页--内存管理器优化</h3>
 <p>主要思路：我把 KV-Cache 从 4 k 大页切成 16-token 微页，跑蒙特卡洛找到碎片率谷底 2.8%，再按 [B,S,H,D] 重排让 128 B cache-line 100% 填满，带宽 +30%；最后用片上 SRAM 做无锁位图，分配/释放只需 1 个时钟，碎片率 95%→2.6%，显存省 15%，吞吐 +8%，已落地 7B×64 batch 线上。</p>
 <p>碎片率 = （实验结束时所有空闲页里小于一条序列所需最小页数的字节总和）÷（实验期间峰值已用字节）</p>
 <p>主要过程：</p>
@@ -477,11 +477,21 @@ vllm/kernels/custom_quant.py-- Kernel 侧读掩码。</li>
 <li>位图思想，更细粒度管理kv cache<br>
 profiling 显示 8 % CPU 时间花给 KV-Cache 申请/归还显存，通过位图将这部分移动到SRAM，分配/释放kv cache更快</li>
 </ol>
-<p>具体实现过程如下：</p>
+<p><strong>KV-Cache每个token大小</strong>：以70B Qwen模型为例，<code class="notranslate">num_heads=128</code>，<code class="notranslate">head_dim=128</code>，每个token的KV-Cache大小为：<br>
+<code class="notranslate">128（头数）× 128（头维度）× 2（K+V）× 2字节（FP16）= 65536字节 = 64KB</code>。</p>
+<ul>
+<li><strong>16-token微页大小</strong>：<code class="notranslate">16 × 64KB = 1024KB = 1MB</code>，<strong>正好匹配910B的内存页大小</strong>，避免内存对齐浪费。</li>
+</ul>
+<p><strong>查看NPU硬件信息（含内存页大小）</strong><br>
+npu-smi info -i 0 -m memory<br>
+关键输出字段：</p>
+<p>Memory Page Size：NPU的内存页大小（如昇腾910B为1MB，910C为2MB）。<br>
+Used Memory：当前NPU显存的使用量（含KV-Cache的微页内存）。</p>
+<p><strong>具体实现过程如下：</strong></p>
 <details><summary>Details</summary>
 <p>
 **1. 页大小量化**
-如何找对应的数字：当时做了一个蒙特卡洛 100 k 随机长度仿真 → 16-token（512 KB）碎片率谷底（曲线最低点——再换别的页大小，浪费反而变多） 2.8%，对齐达芬奇 L2 cache-line（512 B）。
+如何找对应的数字：当时做了一个蒙特卡洛 100 k 随机长度仿真 → 16-token碎片率谷底（曲线最低点——再换别的页大小，浪费反而变多） 2.8%，对齐达芬奇 L2 cache-line（512 B）。
 </p><p><strong>蒙特卡洛 100 k 随机长度仿真</strong>：</p>
 <ul>
 <li>用 Python 按金融 FAQ 真实长度分布（平均 200，σ=120，截断 4096）批量生成 10 万条虚拟序列。</li>
@@ -500,28 +510,24 @@ profiling 显示 8 % CPU 时间花给 KV-Cache 申请/归还显存，通过位�
 <li>选页大小依据：16-token 页 浪费最少，显存节省 15% 的源头就在这里。</li>
 </ul>
 <p>把 10 万条随机长度序列依次分配、释放后，仍有 2.8% 的页内字节永远没人用（空洞）。</p>
-<p><strong>2. 页内布局优化</strong><br>
-原来 [B,H,S,D] 像“隔 128 B 跳格子”→ 30 % Warp 空等。<br>
-换成 [B,S,H,D] → seq 维连续，128 B cache-line 100% 填满，<br>
-→ HBM 带宽 65 % → 88 %（实测），这样让相邻 token 在物理地址上连续</p>
-<p>第一步：发现的问题<br>
-把模型跑起来后，用昇腾自带的 profiler 一看：Cube（矩阵乘单元）经常“发呆”，带宽没跑满。往下钻发现是“bank-conflict”——同一条 128 B 数据里，32 个线程抢同一个 bank。</p>
-<p>定位原因：<br>
-整个KV张量的维度顺序[B,H,S,D]：<br>
-把同一 head 的所有 token 拍在一起 → 相邻 token 在内存里步长很大<br>
-结果一个 128 B cache-line 只能扫到零星几个 token，带宽浪费</p>
-<p>[B,H,S,D] 把 head 维提到最前，同一 head 的 token 在内存里被拉开 H×D×sizeof(fp16) 的步长，导致 GPU 的 128 B cache-line 只能用到一小段，其余 Warp 空等。<br>
-换成 [B,S,H,D]（seq 维紧跟 batch）后，相邻 token 连续存储，cache-line 利用率 100%，带宽立刻涨 30%。</p>
 <ol start="3">
 <li>分配器实现--“一页一比特”的无锁位图分配器<br>
-profiling 显示 8 % CPU 时间花给 KV-Cache 申请/归还显存</li>
+profiling 显示 8 % CPU 时间花给 KV-Cache 申请/归还显存<br>
+独立显存区域：在模型初始化阶段，vLLM会预分配一块固定大小的显存区域用于存储位图；<br>
+逻辑关联：位图的每个bit位与KV-Cache的一个16-token微页一一对应，例如：<br>
+位图的第0位对应第0个微页（内存地址0x00000000）；<br>
+位图的第1位对应第1个微页（内存地址0x00100000，即1MB偏移）。</li>
 </ol>
-<p>在NPU 里中将位图放进片上 SRAM（紧挨着计算单元的「超高速小内存」，我们把 512 kB 的位图扔进去，分配/释放一个 KV-Cache 页只需 1 个时钟周期，比去 DRAM 找链表节点快两个数量级。），调用 AICore 的 atomic_or/and 指令，就能实现零 Host、零锁、亚微秒级的 KV-Cache 分配，比CPU 原型更快更省。</p>
-<p>使用位图思想：<br>
-这种方式的巨大优势：<br>
-极低的内存开销：管理6万个页面，只需要 60,000 / 8 = 7.5 KB 的额外内存，小到可以放进L2缓存。<br>
-极快的分配速度：对于CPU/GPU来说，按字（word，如32位或64位）扫描位图，寻找第一个非全1的字，然后使用 ffs（寻找第一个置位）指令快速定位空闲位，速度非常快。<br>
-解决外部碎片：因为所有页面大小相同，所以不存在外部碎片。任何空闲页面都可以分配给任何请求。</p>
+<p>位图的核心作用：</p>
+<ul>
+<li>快速定位空闲微页：通过位图扫描（时间复杂度O(N)，但N通常很小，如1024），快速找到空闲微页，避免内存碎片。</li>
+<li>高效内存回收：通过位图标记微页的使用状态，释放时仅需修改对应的bit位，操作时间复杂度O(1)。</li>
+<li>碎片合并优化：通过扫描位图找到连续的空闲微页，合并为更大的微页，进一步降低碎片率。</li>
+</ul>
+<p>总结<br>
+位图位置：存储在NPU的HBM显存中，与KV-Cache微页内存池物理隔离但逻辑关联。<br>
+实现逻辑：通过预分配位图显存、动态标记微页状态、合并连续空闲微页，实现高效的KV-Cache内存管理。<br>
+核心价值：将碎片率从95%降至2.6%，同时保证管理开销仅增加2%，是昇腾NPU上大模型推理的关键优化。</p>
 <ol start="4">
 <li>端到端验证<br>
 Qwen-7B batch=64、max_seq=4096、金融 FAQ 1000 条：<br>
