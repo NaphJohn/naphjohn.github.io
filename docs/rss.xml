@@ -1,28 +1,11 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Mon, 08 Dec 2025 13:29:03 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>论文精读</title><link>https://naphjohn.github.io/post/lun-wen-jing-du.html</link><description>1. SepLLM通过标点符号优化kv cache
-2. 。</description><guid isPermaLink="true">https://naphjohn.github.io/post/lun-wen-jing-du.html</guid><pubDate>Thu, 02 Oct 2025 01:53:00 +0000</pubDate></item><item><title>推理部分</title><link>https://naphjohn.github.io/post/tui-li-bu-fen.html</link><description>sample异步优化、add_model_outputs、prepare &amp; scheduler
-scheduler、prepare、sample、add_model_outputs 4个模块耗时占比&gt;30%;
-sample已优化一版，其他模块需要再分解
-1.前后处理中添加断点，打印时间。</description><guid isPermaLink="true">https://naphjohn.github.io/post/tui-li-bu-fen.html</guid><pubDate>Tue, 30 Sep 2025 08:38:33 +0000</pubDate></item><item><title>Deepseek创新</title><link>https://naphjohn.github.io/post/Deepseek-chuang-xin.html</link><description>最新deepseek创新：
-DeepSeek 在 V3.2-Exp 里把 DSA（DeepSeek Sparse Attention）做成**“一套可插拔的细粒度动态稀疏框架”**，核心优化可以概括为 4 句话、8 个关键词，对应 4 组实测收益——全部在 128 K 长度下验证，且**零 checkpoint 转换、即插即用**。</description><guid isPermaLink="true">https://naphjohn.github.io/post/Deepseek-chuang-xin.html</guid><pubDate>Tue, 30 Sep 2025 02:05:10 +0000</pubDate></item><item><title>cude &amp; TileLang算子编写</title><link>https://naphjohn.github.io/post/cude%20%26%20TileLang-suan-zi-bian-xie.html</link><description># 算子介绍
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>kaikai的博客</title><link>https://naphjohn.github.io</link><description>记录深度学习，大模型中技术感悟</description><copyright>kaikai的博客</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://avatars.githubusercontent.com/u/46772304?v=4</url><title>avatar</title><link>https://naphjohn.github.io</link></image><lastBuildDate>Thu, 11 Dec 2025 16:15:48 +0000</lastBuildDate><managingEditor>kaikai的博客</managingEditor><ttl>60</ttl><webMaster>kaikai的博客</webMaster><item><title>cude &amp; TileLang算子编写</title><link>https://naphjohn.github.io/post/cude%20%26%20TileLang-suan-zi-bian-xie.html</link><description># 算子介绍
 ### reducescatter算子
 ReduceScatter 是一个在大规模并行计算（尤其是深度学习训练）中非常重要的集合通信（Collective Communication）算子。</description><guid isPermaLink="true">https://naphjohn.github.io/post/cude%20%26%20TileLang-suan-zi-bian-xie.html</guid><pubDate>Mon, 29 Sep 2025 11:22:34 +0000</pubDate></item><item><title>大模型的前世今生</title><link>https://naphjohn.github.io/post/da-mo-xing-de-qian-shi-jin-sheng.html</link><description># Encoder-only模型
 
 bert模型：
 BERT（Bidirectional Encoder Representations from Transformers）= “只有 Transformer 编码器” 的预训练语言模型。</description><guid isPermaLink="true">https://naphjohn.github.io/post/da-mo-xing-de-qian-shi-jin-sheng.html</guid><pubDate>Mon, 22 Sep 2025 07:11:37 +0000</pubDate></item><item><title>C++进阶</title><link>https://naphjohn.github.io/post/C%2B%2B-jin-jie.html</link><description># C++简介
-C++ 是一种静态类型的、编译式的、通用的、大小写敏感的、不规则的编程语言，支持过程化编程、面向对象编程和泛型编程。</description><guid isPermaLink="true">https://naphjohn.github.io/post/C%2B%2B-jin-jie.html</guid><pubDate>Mon, 22 Sep 2025 03:38:55 +0000</pubDate></item><item><title>简历对应问题</title><link>https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html</link><description>## 昇腾 NPU 深度优化
-
-
-## 大模型推理通用方法论
-#### • 客户要求 99.9% 的请求 P99 延迟 &lt; 200 ms，但模型参数量翻倍，你会先做哪三项优化？
-客户要求 99.9% 的请求 P99 延迟 &lt; 200 ms，但模型参数量翻倍，你会先做哪三项优化？
-A：
-
-4-bit weight-only 量化：把 20 GB 权重压到 5 GB，加载时间 -70%，kernel 延迟 +3%，可接受；
-Chunked Prefill + Continuous Batching：prefill 阶段按 512-token chunk 切分，batch 内已解码 token 继续走 decode 路径，P99 延迟从 260 ms 降到 185 ms；
-投机解码（2-step）：用 1/10 参数的小模型生成候选 token，主模型一次验证 4 个 token，实测在百科问答场景 acceptance rate 0.72，整体延迟再降 22%。</description><guid isPermaLink="true">https://naphjohn.github.io/post/jian-li-dui-ying-wen-ti.html</guid><pubDate>Mon, 15 Sep 2025 15:49:42 +0000</pubDate></item><item><title>SGlang推理引擎</title><link>https://naphjohn.github.io/post/SGlang-tui-li-yin-qing.html</link><description>## SGlang框架
-1. **前端语言**：
-   - 提供原生成API接口，可以直接与本地模型交互和调用。</description><guid isPermaLink="true">https://naphjohn.github.io/post/SGlang-tui-li-yin-qing.html</guid><pubDate>Tue, 09 Sep 2025 12:10:55 +0000</pubDate></item><item><title>深度学习基础</title><link>https://naphjohn.github.io/post/shen-du-xue-xi-ji-chu.html</link><description># CNN
+C++ 是一种静态类型的、编译式的、通用的、大小写敏感的、不规则的编程语言，支持过程化编程、面向对象编程和泛型编程。</description><guid isPermaLink="true">https://naphjohn.github.io/post/C%2B%2B-jin-jie.html</guid><pubDate>Mon, 22 Sep 2025 03:38:55 +0000</pubDate></item><item><title>深度学习基础</title><link>https://naphjohn.github.io/post/shen-du-xue-xi-ji-chu.html</link><description># CNN
 
 **关键组件：**
   - 卷积层： 提取局部特征，使用滤波器（Filter）滑动计算。</description><guid isPermaLink="true">https://naphjohn.github.io/post/shen-du-xue-xi-ji-chu.html</guid><pubDate>Tue, 09 Sep 2025 03:24:30 +0000</pubDate></item><item><title>多模态训练推理</title><link>https://naphjohn.github.io/post/duo-mo-tai-xun-lian-tui-li.html</link><description>## Diffusion Models 扩散模型
