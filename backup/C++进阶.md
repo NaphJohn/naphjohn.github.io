@@ -52,6 +52,19 @@ C++ 语言定义了一些头文件，这些头文件包含了程序中必需的�
 > 生命周期管理：确保指针有效期间指向的内存也有效
 > 现代实践：优先使用智能指针，避免裸指针的内存管理问题
 
+**智能指针**（smart pointer）是封装了“裸指针”的类模板，利用 RAII 在对象生命周期结束时自动释放资源，从根本上防止内存泄漏和悬空指针。  
+   C++11 之后标准库主要提供三种：  
+   - `std::unique_ptr`——独占所有权，不能拷贝，只能移动；  
+   - `std::shared_ptr`——共享所有权，内部引用计数，最后一个拷贝销毁时才释放；  
+   - `std::weak_ptr`——弱引用，不计数，用来打破 `shared_ptr` 的循环引用。
+
+除了智能指针，C++ 里常见的“指针”类别还有：  
+   - 裸指针 `T*` / `const T*`  
+   - 指向成员的指针 `T C::*` / `const T C::*`  
+   - 函数指针 `R (*)(Args…)`  
+   - 迭代器（本质是“类指针”对象）  
+   - 自定义句柄类（如文件描述符封装 `unique_handle` 等）
+
 ### C++ 引用 vs 指针
 引用变量是一个别名，也就是说，它是某个已存在变量的另一个名字。
 一旦把引用初始化为某个变量，就可以使用该引用名称或变量名称来指向变量。
@@ -73,6 +86,70 @@ C++ 语言定义了一些头文件，这些头文件包含了程序中必需的�
 简单数据封装：适合封装多种类型的简单数据，通常用于数据的存储。
 轻量级：相比 class，结构体语法更简洁，适合小型数据对象。
 面向对象支持：支持构造函数、成员函数和访问权限控制，可以实现面向对象的设计。
+
+### C++构造函数
+
+<details><summary>Details</summary>
+<p>
+
+```c++
+#constexpr构造函数（C++11+）
+
+编译时计算的构造函数
+
+用于创建常量表达式对象
+class MyClass {
+public:
+    // 1. 默认构造函数（无参数）
+    MyClass() {
+        // 初始化代码
+    }
+    
+    // 2. 参数化构造函数
+    MyClass(int x, int y) {
+        this->x = x;
+        this->y = y;
+    }
+    
+    // 3. 拷贝构造函数
+    MyClass(const MyClass& other) {
+        this->x = other.x;
+        this->y = other.y;
+    }
+    
+    // 4. 移动构造函数（C++11）
+    MyClass(MyClass&& other) noexcept {
+        this->x = std::move(other.x);
+        this->y = std::move(other.y);
+    }
+    
+    // 5. 委托构造函数（C++11）
+    MyClass(int x) : MyClass(x, 0) {
+        // 委托给两个参数的构造函数
+    }
+    
+    // 6. 转换构造函数（单参数）
+    MyClass(int x) {
+        this->x = x;
+    }
+    
+    // 7. 继承中的构造函数
+    class Derived : public Base {
+    public:
+        // 使用using声明继承基类构造函数（C++11）
+        using Base::Base;
+        
+        // 或显式调用基类构造函数
+        Derived(int x, int y) : Base(x), y(y) {}
+    };
+
+private:
+    int x, y;
+};
+``` 
+
+</p>
+</details> 
 
 ### C+++基础问题
 一、基础篇（校招/初中级 90% 覆盖率）
