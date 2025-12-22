@@ -10,11 +10,11 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="/## 量化
+<meta name="description" content="
 ### 量化原理以及基本概念
 量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到低比特整数范围。">
 <meta property="og:title" content="大模型推理优化">
-<meta property="og:description" content="/## 量化
+<meta property="og:description" content="
 ### 量化原理以及基本概念
 量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到低比特整数范围。">
 <meta property="og:type" content="article">
@@ -87,8 +87,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><p>/## 量化</p>
-<h3>量化原理以及基本概念</h3>
+<div class="markdown-body" id="postBody"><h3>量化原理以及基本概念</h3>
 <p>量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到低比特整数范围。<br>
 反量化：把量化后的数值恢复为浮点范围。</p>
 <p>Q = round( (x − zero_point) / scale )<br>
