@@ -90,7 +90,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <div class="markdown-body" id="postBody"><h3>量化原理以及基本概念</h3>
 <p>量化过程包含缩放（Scale） 和有时需要的零点（Zero Point），以将浮点数范围映射到低比特整数范围。<br>
 反量化：把量化后的数值恢复为浮点范围。</p>
-<p>Q = round( (x − zero_point) / scale )<br>
+<p>Q = round (x / scale) + zero_point  //量化<br>
 x̂ = (Q − zero_point) × scale          // 反量化</p>
 <p>量化过程:  1.除以缩放因子  2. 取整  3. 反量化乘以缩放因子<br>
 量化误差来源：量化过程中截断和取整操作后的数值无法完全还原至原来的浮点数值。浮点数值分布范围越广,量化分辨率越低,精度也越低<br>
