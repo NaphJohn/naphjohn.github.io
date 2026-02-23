@@ -381,7 +381,7 @@ lsof /usr/lib/libc.so.6
 <meta property="og:url" content="https://naphjohn.github.io/post/linux.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
 <title>linux</title>
-<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
 
 
 </head>
@@ -405,17 +405,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     body {padding: 8px;}
     .postTitle{font-size:24px;}
 }
-.copy-feedback {
-    display: none;
-    position: absolute;
-    top: 10px;
-    right: 50px;
-    color: var(--color-fg-on-emphasis);
-    background-color: var(--color-fg-muted);
-    border-radius: 3px;
-    padding: 5px 8px;
-    font-size: 12px;
-}
+
 </style>
 
 
@@ -448,146 +438,155 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h3>gpu上建立容器</h3>
-<div class="highlight highlight-source-powershell"><pre class="notranslate">nvidia<span class="pl-k">-</span>docker run <span class="pl-k">-</span>it \   （这边也可以使用docker run <span class="pl-k">-</span>it）
-docker run <span class="pl-k">-</span>it <span class="pl-k">-</span>u root \
-<span class="pl-k">--</span>gpus all  \
-<span class="pl-k">-</span>p <span class="pl-c1">1034</span>:<span class="pl-c1">1034</span> <span class="pl-k">-</span>p <span class="pl-c1">2735</span>:<span class="pl-c1">2735</span> \
-<span class="pl-k">-</span>e NVIDIA_VISIBLE_DEVICES<span class="pl-k">=</span><span class="pl-c1">0</span><span class="pl-k">,</span><span class="pl-c1">1</span><span class="pl-k">,</span><span class="pl-c1">2</span><span class="pl-k">,</span><span class="pl-c1">3</span><span class="pl-k">,</span><span class="pl-c1">4</span><span class="pl-k">,</span><span class="pl-c1">5</span><span class="pl-k">,</span><span class="pl-c1">6</span><span class="pl-k">,</span><span class="pl-c1">7</span> \
-<span class="pl-k">--</span>ulimit memlock<span class="pl-k">=</span><span class="pl-c1">-1</span> \
-<span class="pl-k">--</span>name whk_vllm_091_0728 \
-<span class="pl-k">-</span>v <span class="pl-k">/</span><span class="pl-k">data</span><span class="pl-k">/</span>:<span class="pl-k">/</span><span class="pl-k">data</span><span class="pl-k">/</span> \
-<span class="pl-k">-</span>v <span class="pl-k">/</span>home<span class="pl-k">/</span>model<span class="pl-k">/</span>:<span class="pl-k">/</span>home<span class="pl-k">/</span>model<span class="pl-k">/</span> \
+<pre lang="powershell" class="notranslate"><code class="notranslate">nvidia-docker run -it \   （这边也可以使用docker run -it）
+docker run -it -u root \
+--gpus all  \
+-p 1034:1034 -p 2735:2735 \
+-e NVIDIA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+--ulimit memlock=-1 \
+--name whk_vllm_091_0728 \
+-v /data/:/data/ \
+-v /home/model/:/home/model/ \
 ee0767a44255 bash
 
-<span class="pl-c"><span class="pl-c">#</span>挂载命令</span>
-mkdir <span class="pl-k">-</span>p <span class="pl-k">/</span>nfs<span class="pl-k">-</span>data ; mount <span class="pl-k">-</span>t nfs <span class="pl-k">-</span>o vers<span class="pl-k">=</span><span class="pl-c1">3</span><span class="pl-k">,</span>timeo<span class="pl-k">=</span><span class="pl-c1">600</span><span class="pl-k">,</span>nolock <span class="pl-c1">10.170</span>.<span class="pl-c1">23.193</span>:<span class="pl-k">/</span> <span class="pl-k">/</span>nfs<span class="pl-k">-</span>data</pre></div>
+#挂载命令
+mkdir -p /nfs-data ; mount -t nfs -o vers=3,timeo=600,nolock 10.170.23.193:/ /nfs-data
+</code></pre>
 <h3>初始化设置</h3>
-<div class="highlight highlight-source-python"><pre class="notranslate"><span class="pl-s1">vim</span> <span class="pl-c1">~</span><span class="pl-c1">/</span>.<span class="pl-c1">bashrc</span>
+<pre lang="python" class="notranslate"><code class="notranslate">vim ~/.bashrc
 
-<span class="pl-s1">export</span> <span class="pl-c1">HISTSIZE</span><span class="pl-c1">=</span><span class="pl-c1">1000</span>
-<span class="pl-s1">export</span> <span class="pl-c1">ASCEND_RT_VISIBLE_DEVICES</span><span class="pl-c1">=</span><span class="pl-c1">0</span>,<span class="pl-c1">1</span>,<span class="pl-c1">2</span>,<span class="pl-c1">3</span>,<span class="pl-c1">4</span>,<span class="pl-c1">5</span>,<span class="pl-c1">6</span>,<span class="pl-c1">7</span>
-<span class="pl-s1">export</span> <span class="pl-s1">https_proxy</span><span class="pl-c1">=</span><span class="pl-s1">http</span>:<span class="pl-c1">//</span><span class="pl-c1">10.155</span>.<span class="pl-c1">192.138</span>:<span class="pl-c1">8080</span></pre></div>
+export HISTSIZE=1000
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export https_proxy=http://10.155.192.138:8080
+</code></pre>
 <h3>修改pip源</h3>
-<div class="highlight highlight-source-powershell"><pre class="notranslate">vim ~<span class="pl-k">/</span>.pip<span class="pl-k">/</span>pip.conf
-[<span class="pl-k">global</span>]
-index<span class="pl-k">-</span>url <span class="pl-k">=</span> http:<span class="pl-k">//</span><span class="pl-c1">7.223</span>.<span class="pl-c1">199.227</span><span class="pl-k">/</span>pypi<span class="pl-k">/</span>simple
-trusted<span class="pl-k">-</span>host <span class="pl-k">=</span> <span class="pl-c1">7.223</span>.<span class="pl-c1">199.227</span>
-timeout <span class="pl-k">=</span> <span class="pl-c1">120</span>
+<pre lang="powershell" class="notranslate"><code class="notranslate">vim ~/.pip/pip.conf
+[global]
+index-url = http://7.223.199.227/pypi/simple
+trusted-host = 7.223.199.227
+timeout = 120
 
-<span class="pl-c"><span class="pl-c">#</span>pip install torch==2.5.1  --default-timeout=1000 -i http://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com</span></pre></div>
+#pip install torch==2.5.1  --default-timeout=1000 -i http://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com
+</code></pre>
 <h3>多机启动</h3>
-<div class="highlight highlight-source-powershell"><pre class="notranslate">ray：<span class="pl-c"><span class="pl-c">#</span> 指定通信网卡，使用ifconfig查看，找到和主机IP一致的网卡名</span>
-export GLOO_SOCKET_IFNAME<span class="pl-k">=</span>enp67s0f5
-export TP_SOCKET_IFNAME<span class="pl-k">=</span>enp67s0f5
-export RAY_EXPERIMENTAL_NOSET_ASCEND_RT_VISIBLE_DEVICES<span class="pl-k">=</span><span class="pl-c1">1</span>
-export ASCEND_RT_VISIBLE_DEVICES<span class="pl-k">=</span><span class="pl-c1">0</span><span class="pl-k">,</span><span class="pl-c1">1</span><span class="pl-k">,</span><span class="pl-c1">2</span><span class="pl-k">,</span><span class="pl-c1">3</span><span class="pl-k">,</span><span class="pl-c1">4</span><span class="pl-k">,</span><span class="pl-c1">5</span><span class="pl-k">,</span><span class="pl-c1">6</span><span class="pl-k">,</span><span class="pl-c1">7</span>
+<pre lang="powershell" class="notranslate"><code class="notranslate">ray：# 指定通信网卡，使用ifconfig查看，找到和主机IP一致的网卡名
+export GLOO_SOCKET_IFNAME=enp67s0f5
+export TP_SOCKET_IFNAME=enp67s0f5
+export RAY_EXPERIMENTAL_NOSET_ASCEND_RT_VISIBLE_DEVICES=1
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
-export MM_ALL_REDUCE_OP_THRESHOLD<span class="pl-k">=</span><span class="pl-c1">1000000</span>
-export HCCL_OP_EXPANSION_MODE<span class="pl-k">=</span><span class="pl-s"><span class="pl-pds">"</span>AIV<span class="pl-pds">"</span></span>
-export NUMEXPR_MAX_THREADS<span class="pl-k">=</span><span class="pl-c1">192</span>
+export MM_ALL_REDUCE_OP_THRESHOLD=1000000
+export HCCL_OP_EXPANSION_MODE="AIV"
+export NUMEXPR_MAX_THREADS=192
 
-<span class="pl-c"><span class="pl-c">#</span> 将其中一个节点设为头节点</span>
-ray start <span class="pl-k">--</span>head <span class="pl-k">--</span>num<span class="pl-k">-</span>gpus<span class="pl-k">=</span><span class="pl-c1">8</span>
-<span class="pl-c"><span class="pl-c">#</span> 在其他节点执行</span>
-ray start <span class="pl-k">--</span>address<span class="pl-k">=</span><span class="pl-s"><span class="pl-pds">'</span>7.216.55.58:6379<span class="pl-pds">'</span></span> <span class="pl-k">--</span>num<span class="pl-k">-</span>gpus<span class="pl-k">=</span><span class="pl-c1">8</span></pre></div>
+# 将其中一个节点设为头节点
+ray start --head --num-gpus=8
+# 在其他节点执行
+ray start --address='7.216.55.58:6379' --num-gpus=8
+</code></pre>
 <h3>远程链接容器</h3>
-<div class="highlight highlight-source-powershell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span>配置ssh</span>
-<span class="pl-c"><span class="pl-c">#</span>第一步config文件</span>
-vi <span class="pl-k">/</span>etc<span class="pl-k">/</span>ssh<span class="pl-k">/</span>sshd_config
+<pre lang="powershell" class="notranslate"><code class="notranslate">#配置ssh
+#第一步config文件
+vi /etc/ssh/sshd_config
 PermitRootLogin yes
 PasswordAuthentication yes
-<span class="pl-c"><span class="pl-c">#</span>第二步建立/run/sshd</span>
-mkdir <span class="pl-k">/</span>run<span class="pl-k">/</span>sshd
+#第二步建立/run/sshd
+mkdir /run/sshd
 
-<span class="pl-c"><span class="pl-c">#</span>第三步确认没有sshd时候设置passwd</span>
-passwd <span class="pl-c"><span class="pl-c">#</span>这个时候别有sshd</span>
-<span class="pl-c"><span class="pl-c">#</span>第四步开启sshd</span>
-<span class="pl-k">/</span>usr<span class="pl-k">/</span>sbin<span class="pl-k">/</span>sshd
-ssh <span class="pl-c1">7.242</span>.<span class="pl-c1">105.173</span> <span class="pl-k">-</span>p <span class="pl-c1">8035</span> <span class="pl-c"><span class="pl-c">#</span>来确认是否链接成功</span>
+#第三步确认没有sshd时候设置passwd
+passwd #这个时候别有sshd
+#第四步开启sshd
+/usr/sbin/sshd
+ssh 7.242.105.173 -p 8035 #来确认是否链接成功
 
-<span class="pl-c"><span class="pl-c">#</span>解决上面报错，生成对应ssh</span>
-ssh<span class="pl-k">-</span>keygen <span class="pl-k">-</span>t rsa <span class="pl-k">-f</span> <span class="pl-k">/</span>etc<span class="pl-k">/</span>ssh<span class="pl-k">/</span>ssh_host_rsa_key <span class="pl-k">-</span>P <span class="pl-s"><span class="pl-pds">'</span><span class="pl-pds">'</span></span> <span class="pl-k">-</span>q
-ssh<span class="pl-k">-</span>keygen <span class="pl-k">-</span>t ecdsa <span class="pl-k">-f</span> <span class="pl-k">/</span>etc<span class="pl-k">/</span>ssh<span class="pl-k">/</span>ssh_host_ecdsa_key <span class="pl-k">-</span>P <span class="pl-s"><span class="pl-pds">'</span><span class="pl-pds">'</span></span> <span class="pl-k">-</span>q
-ssh<span class="pl-k">-</span>keygen <span class="pl-k">-</span>t ed25519 <span class="pl-k">-f</span> <span class="pl-k">/</span>etc<span class="pl-k">/</span>ssh<span class="pl-k">/</span>ssh_host_ed25519_key <span class="pl-k">-</span>P <span class="pl-s"><span class="pl-pds">'</span><span class="pl-pds">'</span></span> <span class="pl-k">-</span>q
+#解决上面报错，生成对应ssh
+ssh-keygen -t rsa -f /etc/ssh/ssh_host_rsa_key -P '' -q
+ssh-keygen -t ecdsa -f /etc/ssh/ssh_host_ecdsa_key -P '' -q
+ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -P '' -q
 
-<span class="pl-c"><span class="pl-c">#</span>不需要ssh命令</span>
-git config <span class="pl-k">--</span>global http.sslVerify false
+#不需要ssh命令
+git config --global http.sslVerify false
 
-<span class="pl-c"><span class="pl-c">#</span>支持自动迁移代码</span>
- <span class="pl-k">from</span> torch_npu.contrib import transfer_to_npu</pre></div>
+#支持自动迁移代码
+ from torch_npu.contrib import transfer_to_npu
+</code></pre>
 <h3>打patch包</h3>
-<div class="highlight highlight-source-powershell"><pre class="notranslate">cp <span class="pl-k">-</span>r vllm patch<span class="pl-k">/</span>vllm
+<pre lang="powershell" class="notranslate"><code class="notranslate">cp -r vllm patch/vllm
 cd patch
 git init
 git add .
-git commit  <span class="pl-k">-</span>m <span class="pl-s"><span class="pl-pds">"</span>init<span class="pl-pds">"</span></span>
+git commit  -m "init"
 修改代码
 git add .
-git commit <span class="pl-k">-</span>m <span class="pl-s"><span class="pl-pds">"</span>xxxx<span class="pl-pds">"</span></span>
-git <span class="pl-c1">format-patch</span> <span class="pl-c1">-1</span>
-修改patch名称</pre></div>
+git commit -m "xxxx"
+git format-patch -1
+修改patch名称
+</code></pre>
 <h3>查看cann包</h3>
-<div class="highlight highlight-source-powershell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span>查看cann包版本</span>
-cat <span class="pl-k">/</span>usr<span class="pl-k">/</span>local<span class="pl-k">/</span>Ascend<span class="pl-k">/</span>ascend<span class="pl-k">-</span>toolkit<span class="pl-k">/</span>latest<span class="pl-k">/</span>version.cfg
-<span class="pl-c"><span class="pl-c">#</span>去除所有进程</span>
-ps <span class="pl-k">-</span>ef <span class="pl-k">|</span> grep python<span class="pl-k">|</span> grep <span class="pl-k">-</span>v grep <span class="pl-k">|</span> awk <span class="pl-s"><span class="pl-pds">'</span>{print $2}<span class="pl-pds">'</span></span> <span class="pl-k">|</span> xargs kill <span class="pl-c1">-9</span>
-<span class="pl-c"><span class="pl-c">#</span>pytorch中查看日志的两行命令</span>
-export ASCEND_GLOBAL_LOG_LEVEL<span class="pl-k">=</span><span class="pl-c1">1</span>
-export ASCEND_SLOG_PRINT_TO_STDOUT<span class="pl-k">=</span><span class="pl-c1">1</span></pre></div>
+<pre lang="powershell" class="notranslate"><code class="notranslate">#查看cann包版本
+cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg
+#去除所有进程
+ps -ef | grep python| grep -v grep | awk '{print $2}' | xargs kill -9
+#pytorch中查看日志的两行命令
+export ASCEND_GLOBAL_LOG_LEVEL=1
+export ASCEND_SLOG_PRINT_TO_STDOUT=1
+</code></pre>
 <h3>可视化数据</h3>
-<div class="highlight highlight-source-powershell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span> 使用 pip3 (推荐)</span>
+<pre lang="powershell" class="notranslate"><code class="notranslate"># 使用 pip3 (推荐)
 pip3 install visidata
 
-<span class="pl-c"><span class="pl-c">#</span> Ubuntu/Debian</span>
-sudo apt<span class="pl-k">-</span>get install visidata
+# Ubuntu/Debian
+sudo apt-get install visidata
 
-<span class="pl-c"><span class="pl-c">#</span> macOS (使用Homebrew)</span>
+# macOS (使用Homebrew)
 brew install visidata
 
 
-vd <span class="pl-k">+</span> csv文件</pre></div>
+vd + csv文件
+</code></pre>
 <h3>Linux命令</h3>
-<div class="highlight highlight-source-shell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span> 查看可执行文件的依赖库</span>
+<pre lang="shell" class="notranslate"><code class="notranslate"># 查看可执行文件的依赖库
 ldd /usr/bin/python3
 ldd /bin/ls
 
-<span class="pl-c"><span class="pl-c">#</span> 查看动态库的依赖</span>
+# 查看动态库的依赖
 ldd /usr/lib/x86_64-linux-gnu/libc.so.6
 
-<span class="pl-c"><span class="pl-c">#</span> 批量查看目录下所有程序的依赖</span>
-find /usr/bin -type f -executable -exec ldd {} <span class="pl-cce">\;</span> <span class="pl-k">2&gt;</span>/dev/null
+# 批量查看目录下所有程序的依赖
+find /usr/bin -type f -executable -exec ldd {} \; 2&gt;/dev/null
 
-<span class="pl-c"><span class="pl-c">#</span> 按名称查找库文件</span>
-find /usr -name <span class="pl-s"><span class="pl-pds">"</span>libc.so.6<span class="pl-pds">"</span></span> -type f <span class="pl-k">2&gt;</span>/dev/null
-find / -name <span class="pl-s"><span class="pl-pds">"</span>*.so<span class="pl-pds">"</span></span> -type f <span class="pl-k">2&gt;</span>/dev/null
+# 按名称查找库文件
+find /usr -name "libc.so.6" -type f 2&gt;/dev/null
+find / -name "*.so" -type f 2&gt;/dev/null
 
-<span class="pl-c"><span class="pl-c">#</span> 在标准库目录中查找</span>
-find /usr/lib /usr/lib64 -name <span class="pl-s"><span class="pl-pds">"</span>libpthread*<span class="pl-pds">"</span></span> -type f
+# 在标准库目录中查找
+find /usr/lib /usr/lib64 -name "libpthread*" -type f
 
-<span class="pl-c"><span class="pl-c">#</span>objdump - 目标文件分析 </span>
-<span class="pl-c"><span class="pl-c">#</span> 查看动态库依赖</span>
-objdump -p /usr/bin/python3 <span class="pl-k">|</span> grep NEEDED
+#objdump - 目标文件分析 
+# 查看动态库依赖
+objdump -p /usr/bin/python3 | grep NEEDED
 
-<span class="pl-c"><span class="pl-c">#</span> 查看共享库的符号表</span>
+# 查看共享库的符号表
 objdump -T /lib/x86_64-linux-gnu/libc.so.6
 
-<span class="pl-c"><span class="pl-c">#</span> 查看动态段信息</span>
-objdump -x /path/to/binary <span class="pl-k">|</span> grep -E <span class="pl-s"><span class="pl-pds">"</span>(NEEDED|SONAME)<span class="pl-pds">"</span></span>
+# 查看动态段信息
+objdump -x /path/to/binary | grep -E "(NEEDED|SONAME)"
 
-<span class="pl-c"><span class="pl-c">#</span> 查看动态库依赖</span>
-readelf -d /usr/bin/bash <span class="pl-k">|</span> grep <span class="pl-s"><span class="pl-pds">"</span>Shared library<span class="pl-pds">"</span></span>
+# 查看动态库依赖
+readelf -d /usr/bin/bash | grep "Shared library"
 
-<span class="pl-c"><span class="pl-c">#</span> 查看所有动态段信息</span>
+# 查看所有动态段信息
 readelf -d /path/to/program
 
-<span class="pl-c"><span class="pl-c">#</span> 查看符号表</span>
-readelf -s /usr/lib/libm.so.6 <span class="pl-k">|</span> grep sqrt
+# 查看符号表
+readelf -s /usr/lib/libm.so.6 | grep sqrt
 
-<span class="pl-c"><span class="pl-c">#</span> 查看运行中程序加载的库</span>
-lsof -p <span class="pl-k">&lt;</span>pid<span class="pl-k">&gt;</span> <span class="pl-k">|</span> grep <span class="pl-s"><span class="pl-pds">"</span>\.so<span class="pl-pds">"</span></span>
+# 查看运行中程序加载的库
+lsof -p &lt;pid&gt; | grep "\.so"
 
-<span class="pl-c"><span class="pl-c">#</span> 查看哪个进程使用了特定库</span>
-lsof /usr/lib/libc.so.6</pre></div>
+# 查看哪个进程使用了特定库
+lsof /usr/lib/libc.so.6
+</code></pre>
 <markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
@@ -668,7 +667,7 @@ if(""!=""){
 </script></div>
 </body>
 <script>
-var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z', 'copy': 'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z', 'check': 'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'};
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z'};
 var utterancesLoad=0;
 
 let themeSettings={
@@ -742,70 +741,7 @@ function iFrameLoading(){
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    const createClipboardHTML = (codeContent, additionalClasses = '') => `
-        <pre class="notranslate"><code class="notranslate">${codeContent}</code></pre>
-        <div class="clipboard-container position-absolute right-0 top-0 ${additionalClasses}">
-            <clipboard-copy class="ClipboardButton btn m-2 p-0" role="button" style="display: inherit;">
-                <svg height="16" width="16" class="octicon octicon-copy m-2"><path d="${IconList["copy"]}"></path></svg>
-                <svg height="16" width="16" class="octicon octicon-check color-fg-success m-2 d-none"><path d="${IconList["check"]}"></path></svg>
-            </clipboard-copy>
-            <div class="copy-feedback">Copied!</div>
-        </div>
-    `;
 
-    const handleCodeElements = (selector = '') => {
-        document.querySelectorAll(selector).forEach(codeElement => {
-            const codeContent = codeElement.innerHTML;
-            const newStructure = document.createElement('div');
-            newStructure.className = 'snippet-clipboard-content position-relative overflow-auto';
-            newStructure.innerHTML = createClipboardHTML(codeContent);
-
-            const parentElement = codeElement.parentElement;
-            if (selector.includes('highlight')) {
-                parentElement.insertBefore(newStructure, codeElement.nextSibling);
-                parentElement.removeChild(codeElement);
-            } else {
-                parentElement.parentElement.replaceChild(newStructure, parentElement);
-            }
-        });
-    };
-
-    handleCodeElements('pre.notranslate > code.notranslate');
-    handleCodeElements('div.highlight > pre.notranslate');
-
-    let currentFeedback = null;
-    document.querySelectorAll('clipboard-copy').forEach(copyButton => {
-        copyButton.addEventListener('click', () => {
-            const codeContent = copyButton.closest('.snippet-clipboard-content').innerText;
-            const tempTextArea = document.createElement('textarea');
-            tempTextArea.value = codeContent;
-            document.body.appendChild(tempTextArea);
-            tempTextArea.select();
-            document.execCommand('copy');
-            document.body.removeChild(tempTextArea);
-
-            const copyIcon = copyButton.querySelector('.octicon-copy');
-            const checkIcon = copyButton.querySelector('.octicon-check');
-            const copyFeedback = copyButton.nextElementSibling;
-
-            if (currentFeedback && currentFeedback !== copyFeedback) {currentFeedback.style.display = 'none';}
-            currentFeedback = copyFeedback;
-
-            copyIcon.classList.add('d-none');
-            checkIcon.classList.remove('d-none');
-            copyFeedback.style.display = 'block';
-            copyButton.style.borderColor = 'var(--color-success-fg)';
-
-            setTimeout(() => {
-                copyIcon.classList.remove('d-none');
-                checkIcon.classList.add('d-none');
-                copyFeedback.style.display = 'none';
-                copyButton.style.borderColor = '';
-            }, 2000);
-        });
-    });
-});
 
 </script>
 
