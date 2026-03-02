@@ -1475,45 +1475,6 @@ xyz...           # 真正的回复正文</p>
 <li>统一可扩展<br>
 同一套汇编可在手机、边缘盒、云端集群无缝迁移，开发一次，全场景部署</li>
 </ol>
-<p>与gpu对比：</p>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th>架构</th>
-<th>设计取向</th>
-<th>矩阵单元</th>
-<th>单周期 MAC</th>
-<th>能效比</th>
-<th>场景覆盖</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>达芬奇</strong></td>
-<td>专做 AI</td>
-<td>3D Cube 16×16×16</td>
-<td>4096</td>
-<td>高</td>
-<td>端-边-云统一</td>
-</tr>
-<tr>
-<td>CUDA GPU</td>
-<td>通用并行</td>
-<td>Tensor Core 4×4×4</td>
-<td>256</td>
-<td>中</td>
-<td>云端为主</td>
-</tr>
-<tr>
-<td>Google TPU</td>
-<td>云端推理</td>
-<td>2D MXU 256×256</td>
-<td>65536</td>
-<td>高</td>
-<td>仅云端</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
 <p>HCCS = Huawei Cache-Coherent System，是昇腾（Ascend）处理器之间专用的片间高速缓存一致性总线，功能定位就是对标 GPU 世界的 NVLink：<br>
 作用<br>
 在 NPU 与 NPU（或多路 CPU-NPU）之间建立高带宽、低延迟、缓存一致的点对点通道<br>
@@ -1568,20 +1529,39 @@ xyz...           # 真正的回复正文</p>
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
-<p>核心思想：手动管理 + 分块缓存</p>
-<ul>
-<li>编译期即可决定数据驻留位置，程序员通过 pragma/tile 指定 L1/L2 块大小。</li>
-<li>矩阵计算先做 Tiling → 片上分块 → 复用 L1 → 累加器累加 → 写回 Unified Buffer → DDR 回写。</li>
-</ul>
-<p>🔍 关键差异 vs GPU</p>
-<ul>
-<li>GPU L1 由 SM 自动调度且容量小（256 KB SharedMem）；NPU L1 可达 10 MB 且 完全由用户控制，可一次塞下更大的输入分块。</li>
-<li>NPU 无透明硬件缓存一致性，不存在缓存失效开销，可预测带宽与延迟。</li>
-<li>L2 通常为多核共享，但同样支持 静态划分，避免核间抖动。</li>
-</ul>
-<p>GPU <strong>Hopper架构</strong>：4 nm + 132 SM（CUDA Core + Tensor Core + 共享内存/缓存 + Warp Scheduler；132 SM ≈ 132 条流水线同时跑，数量越多，峰值算力越高） + 支持 FP8 混合精度与 Transformer Engine + 900 GB/s NVLink4，打万亿模型；<br>
-Thor X（车规芯片） ：<br>
-原理就是<strong>Thor X</strong> 把 Grace 级 CPU（做 通用计算+大内存） 和 Blackwell GPU （大算力+AI 专核）用 NVLink-C2C （CPU↔GPU 900 GB/s 片间互联，统一寻址无需 PCIe 拷贝；显存即主存）缝成一片，统一内存零拷贝，‘单芯片'跑全栈自动驾驶。单芯片 &gt; 4 PFLOPS@FP8（数据中心版），车规版 9.2 TFLOPS@FP32 / 1000 TOPS@INT8 。</p>
+<p>GPU芯片架构：<br>
+GPU 采用SIMT 架构，拥有数千个计算核心，适合大规模并行计算。核心组件包括SM 流式多处理器、CUDA Core和Tensor Core。内存层次从寄存器到显存，速度递减容量递增。相比 CPU，GPU 在矩阵运算和 AI 训练上有 10-100 倍性能优势，主要得益于高并行度和专用计算单元。NVIDIA 最新架构如 Hopper 还引入了Transformer Engine专门优化大模型训练。</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>Volta</th>
+<th>2017</th>
+<th>首次 Tensor Core</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Turing</td>
+<td>2018</td>
+<td>RT Core + Tensor Core</td>
+</tr>
+<tr>
+<td>Ampere</td>
+<td>2020</td>
+<td>第三代 Tensor Core</td>
+</tr>
+<tr>
+<td>Hopper</td>
+<td>2022</td>
+<td>Transformer Engine</td>
+</tr>
+<tr>
+<td>Blackwell</td>
+<td>2024</td>
+<td>第二代 Transformer Engine</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
 <p>FLOPS = 浮点运算/秒（精度越高越慢），TOPS = 整数乘加/秒（AI 常用 INT8）。<br>
 量级：P = 10¹⁵，T = 10¹²， 换算：1 PFLOPS = 1000 TFLOPS = 10³ TOPS（同精度下）。</p>
 <p></p>
