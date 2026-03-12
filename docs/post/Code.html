@@ -61,7 +61,7 @@ lists = [list(map(int, sys.stdin.readline().split())) for _ in range(n)]
 <meta property="og:url" content="https://naphjohn.github.io/post/Code.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
 <title>Code</title>
-
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
 
 
 </head>
@@ -128,23 +128,22 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h1>ACM模式</h1>
-<pre lang="python" class="notranslate"><code class="notranslate">#输入第一行整数，第二行列表
-import sys
+<div class="highlight highlight-source-python"><pre class="notranslate"><span class="pl-c">#输入第一行整数，第二行列表</span>
+<span class="pl-k">import</span> <span class="pl-s1">sys</span>
 
-n = int(sys.stdin.readline())          # 第一行整数
-nums = list(map(int, sys.stdin.readline().split()))  # 第二行列表
+<span class="pl-s1">n</span> <span class="pl-c1">=</span> <span class="pl-en">int</span>(<span class="pl-s1">sys</span>.<span class="pl-c1">stdin</span>.<span class="pl-c1">readline</span>())          <span class="pl-c"># 第一行整数</span>
+<span class="pl-s1">nums</span> <span class="pl-c1">=</span> <span class="pl-en">list</span>(<span class="pl-en">map</span>(<span class="pl-s1">int</span>, <span class="pl-s1">sys</span>.<span class="pl-c1">stdin</span>.<span class="pl-c1">readline</span>().<span class="pl-c1">split</span>()))  <span class="pl-c"># 第二行列表</span>
 
 
-split() 按空白切分成字符串列表
-strip()去掉字符串头尾空白（空格、Tab、\n）
-read()一次性读完全部内容（直到 EOF）
-.readline() | 只读一行（直到遇到 \n 或 EOF）
+<span class="pl-en">split</span>() <span class="pl-s1">按空白切分成字符串列表</span>
+<span class="pl-en">strip</span>()<span class="pl-s1">去掉字符串头尾空白</span>（<span class="pl-s1">空格</span>、<span class="pl-v">Tab</span>、<span class="pl-cce">\n</span>）
+<span class="pl-en">read</span>()<span class="pl-s1">一次性读完全部内容</span>（<span class="pl-s1">直到</span> <span class="pl-c1">EOF</span>）
+.<span class="pl-en">readline</span>() <span class="pl-c1">|</span> <span class="pl-s1">只读一行</span>（<span class="pl-s1">直到遇到</span> <span class="pl-cce">\n</span> <span class="pl-s1">或</span> <span class="pl-c1">EOF</span>）
 
-#输入第一行整数n，后面是n行列表
-import sys
-n = int(sys.stdin.readline())
-lists = [list(map(int, sys.stdin.readline().split())) for _ in range(n)]
-</code></pre>
+<span class="pl-c">#输入第一行整数n，后面是n行列表</span>
+<span class="pl-k">import</span> <span class="pl-s1">sys</span>
+<span class="pl-s1">n</span> <span class="pl-c1">=</span> <span class="pl-en">int</span>(<span class="pl-s1">sys</span>.<span class="pl-c1">stdin</span>.<span class="pl-c1">readline</span>())
+<span class="pl-s1">lists</span> <span class="pl-c1">=</span> [<span class="pl-en">list</span>(<span class="pl-en">map</span>(<span class="pl-s1">int</span>, <span class="pl-s1">sys</span>.<span class="pl-c1">stdin</span>.<span class="pl-c1">readline</span>().<span class="pl-c1">split</span>())) <span class="pl-k">for</span> <span class="pl-s1">_</span> <span class="pl-c1">in</span> <span class="pl-en">range</span>(<span class="pl-s1">n</span>)]</pre></div>
 <h2>数组</h2>
 <p>数组是存放在连续内存空间上的相同类型数据的集合。数组的元素是不能删的，只能覆盖。<br>
 需要两点注意的是</p>
@@ -168,31 +167,27 @@ lists = [list(map(int, sys.stdin.readline().split())) for _ in range(n)]
 主要思想：**递归**；
 </p><p><strong>迭代</strong>（从前一个节点执行删除操作）<br>
 <strong>迭代</strong></p>
-<pre lang="python" class="notranslate"><code class="notranslate">初始化一个哨兵节点
-cur = dummy = ListNode(-1, head)
+<div class="highlight highlight-source-python"><pre class="notranslate"><span class="pl-s1">初始化一个哨兵节点</span>
+<span class="pl-s1">cur</span> <span class="pl-c1">=</span> <span class="pl-s1">dummy</span> <span class="pl-c1">=</span> <span class="pl-en">ListNode</span>(<span class="pl-c1">-</span><span class="pl-c1">1</span>, <span class="pl-s1">head</span>)
 
-或者写成
-while head and head.val == val:
-       head = head.next
-
-</code></pre>
+<span class="pl-s1">或者写成</span>
+<span class="pl-k">while</span> <span class="pl-s1">head</span> <span class="pl-c1">and</span> <span class="pl-s1">head</span>.<span class="pl-c1">val</span> <span class="pl-c1">==</span> <span class="pl-s1">val</span>:
+       <span class="pl-s1">head</span> <span class="pl-c1">=</span> <span class="pl-s1">head</span>.<span class="pl-c1">next</span></pre></div>
 <p></p>
 </details>
 <p>反转链表，206</p>
 <details><summary>Details</summary>
 <p>
 </p><p>使用双指针</p>
-<pre lang="python" class="notranslate"><code class="notranslate">class Solution:
-    def reverseList(self, head: ListNode) -&gt; ListNode:
-        cur, pre = head, None
-        while cur:
-            tmp = cur.next # 暂存后继节点 cur.next
-            cur.next = pre # 修改 next 引用指向
-            pre = cur      # pre 暂存 cur
-            cur = tmp      # cur 访问下一节点
-        return pre
-
-</code></pre>
+<div class="highlight highlight-source-python"><pre class="notranslate"><span class="pl-k">class</span> <span class="pl-v">Solution</span>:
+    <span class="pl-k">def</span> <span class="pl-en">reverseList</span>(<span class="pl-s1">self</span>, <span class="pl-s1">head</span>: <span class="pl-smi">ListNode</span>) <span class="pl-c1">-&gt;</span> <span class="pl-smi">ListNode</span>:
+        <span class="pl-s1">cur</span>, <span class="pl-s1">pre</span> <span class="pl-c1">=</span> <span class="pl-s1">head</span>, <span class="pl-c1">None</span>
+        <span class="pl-k">while</span> <span class="pl-s1">cur</span>:
+            <span class="pl-s1">tmp</span> <span class="pl-c1">=</span> <span class="pl-s1">cur</span>.<span class="pl-c1">next</span> <span class="pl-c"># 暂存后继节点 cur.next</span>
+            <span class="pl-s1">cur</span>.<span class="pl-c1">next</span> <span class="pl-c1">=</span> <span class="pl-s1">pre</span> <span class="pl-c"># 修改 next 引用指向</span>
+            <span class="pl-s1">pre</span> <span class="pl-c1">=</span> <span class="pl-s1">cur</span>      <span class="pl-c"># pre 暂存 cur</span>
+            <span class="pl-s1">cur</span> <span class="pl-c1">=</span> <span class="pl-s1">tmp</span>      <span class="pl-c"># cur 访问下一节点</span>
+        <span class="pl-k">return</span> <span class="pl-s1">pre</span></pre></div>
 <p>还有递归思想</p>
 <p></p>
 </details>
