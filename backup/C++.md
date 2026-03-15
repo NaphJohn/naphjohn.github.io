@@ -224,5 +224,14 @@ private:
 答纲：每个线程本地双端队列，pop 从队尾 steal 从队头，减少竞争；用 std::atomic 索引。
 14. placement new 与显式析构顺序
 答纲：先构造数组再逐个析构，需手动调用析构函数，再 operator delete(p, buf)。
-15. C++23 新特性 pick one
-答纲：std::expected 替代错误码，std::mdspan 非拥有多维视图，if consteval 简化编译期分支。
+
+
+# C++中内存泄漏问题
+| 问题类型 | 典型症状 | 解决方案 |
+|---------|---------|---------|
+| **堆内存泄漏** | RSS 持续增长，OOM | 1. 使用 ASan/Valgrind 找到未 delete 处<br>2. 改用智能指针 (`std::unique_ptr`, `std::shared_ptr`)<br>3. 检查循环引用 (`weak_ptr`) |
+| **资源句柄泄漏** | FD 耗尽，Socket 连不上 | 1. 检查 open/socket 后未 close<br>2. 使用 RAII 封装文件描述符 |
+| **内存碎片化** | 内存总和使用不高，但 malloc 失败 | 1. 更换分配器 (Jemalloc/TCMalloc)<br>2. 避免频繁分配大小不一的小对象 (使用内存池) |
+| **Cache Miss 高** | CPU 利用率低，Stall 高 | 1. 优化数据结构布局 (连续内存替代链表)<br>2. 循环分块 (Loop Tiling)<br>3. 数据预取 |
+| **NUMA 失衡** | 多核扩展性差，延迟抖动 | 1. 绑定线程与内存 (`numactl`)<br>2. 使用 `mbind` 本地分配 |
+| **伪共享** | 多线程计数器等原子操作极慢 | 1. 关键变量添加 `alignas(64)` 填充 |

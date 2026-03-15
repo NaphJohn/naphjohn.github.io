@@ -290,9 +290,49 @@ C++11 之后标准库主要提供三种：</p>
 答纲：每个线程本地双端队列，pop 从队尾 steal 从队头，减少竞争；用 std::atomic 索引。</li>
 <li>placement new 与显式析构顺序<br>
 答纲：先构造数组再逐个析构，需手动调用析构函数，再 operator delete(p, buf)。</li>
-<li>C++23 新特性 pick one<br>
-答纲：std::expected 替代错误码，std::mdspan 非拥有多维视图，if consteval 简化编译期分支。</li>
-</ol></div>
+</ol>
+<h1>C++中内存泄漏问题</h1>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>问题类型</th>
+<th>典型症状</th>
+<th>解决方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>堆内存泄漏</strong></td>
+<td>RSS 持续增长，OOM</td>
+<td>1. 使用 ASan/Valgrind 找到未 delete 处<br>2. 改用智能指针 (<code class="notranslate">std::unique_ptr</code>, <code class="notranslate">std::shared_ptr</code>)<br>3. 检查循环引用 (<code class="notranslate">weak_ptr</code>)</td>
+</tr>
+<tr>
+<td><strong>资源句柄泄漏</strong></td>
+<td>FD 耗尽，Socket 连不上</td>
+<td>1. 检查 open/socket 后未 close<br>2. 使用 RAII 封装文件描述符</td>
+</tr>
+<tr>
+<td><strong>内存碎片化</strong></td>
+<td>内存总和使用不高，但 malloc 失败</td>
+<td>1. 更换分配器 (Jemalloc/TCMalloc)<br>2. 避免频繁分配大小不一的小对象 (使用内存池)</td>
+</tr>
+<tr>
+<td><strong>Cache Miss 高</strong></td>
+<td>CPU 利用率低，Stall 高</td>
+<td>1. 优化数据结构布局 (连续内存替代链表)<br>2. 循环分块 (Loop Tiling)<br>3. 数据预取</td>
+</tr>
+<tr>
+<td><strong>NUMA 失衡</strong></td>
+<td>多核扩展性差，延迟抖动</td>
+<td>1. 绑定线程与内存 (<code class="notranslate">numactl</code>)<br>2. 使用 <code class="notranslate">mbind</code> 本地分配</td>
+</tr>
+<tr>
+<td><strong>伪共享</strong></td>
+<td>多线程计数器等原子操作极慢</td>
+<td>1. 关键变量添加 <code class="notranslate">alignas(64)</code> 填充</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
