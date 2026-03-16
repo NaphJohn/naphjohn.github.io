@@ -112,11 +112,9 @@ x̂ = (Q − zero_point) × scale          // 反量化</p>
 </details> 
 <h3>📊 大模型量化技术全景对比表（面试版）</h3>
 <h4>表 1：主流量化方法原理与对比</h4>
-<p>主流的量化方式主要基于三类：</p>
-<ol>
-<li>基于缩放 (Scaling-Based)：迁移量化难度，比如awq，smoothquant<br>
-核心逻辑是：既然激活值（Activation）里有很多极大的“离群值”导致很难量化，而权重（Weight）相对稳定。那就通过数学变换，把激活值的“难量化程度”转移给权重去承担。因为权重是静态的，更容易处</li>
-</ol>
+<p>主流的量化方式主要基于三类：<br>
+<strong>一. 基于缩放 (Scaling-Based)</strong>：迁移量化难度，比如awq，smoothquant<br>
+核心逻辑是：既然激活值（Activation）里有很多极大的“离群值”导致很难量化，而权重（Weight）相对稳定。那就通过数学变换，把激活值的“难量化程度”转移给权重去承担。因为权重是静态的，更容易处</p>
 <p><strong>smoothquant：</strong></p>
 <ol>
 <li>
@@ -150,7 +148,8 @@ $$s = \left(\frac{\max(|X|)}{\text{mean}(\max(|X|)) + \epsilon}\right)^\alpha$$<
 </ol>
 <p></p>
 </details> 
-<p><strong>GPTQ</strong><br>
+<p>二. 基于精度补偿，比如gptq<br>
+<strong>GPTQ</strong><br>
 一种训练后量化策略。它认为权重矩阵中的异常值会显著增加量化误差，于是通过近似二阶信息（Hessian矩阵）来逐层寻找最优的量化权重，同时用少量校准数据最小化重构误差。</p>
 <details><summary>Details</summary>
 <p>
@@ -183,6 +182,84 @@ $$H = L L^T$$<br>
 </ol>
 <p></p>
 </details> 
+<p><strong>三. 基于旋转，比如quarot或者spinquant</strong><br>
+quarot，是一种旋转量化策略。它认为激活和权重中的离群值（outliers）在不同通道上分布不均，于是通过正交旋转变换将这些离群值"分散"到多个通道，使分布更均匀，从而降低量化难度。</p>
+<details><summary>Details</summary>
+<p>
+</p>
+<ol>
+<li>
+<strong>问题识别</strong>：分析激活矩阵 $X$ 和权重矩阵 $W$，发现离群值往往集中在少数特定通道（如LLM中的"离群特征"），导致这些通道难以低比特量化。</li>
+<li>
+<strong>构造旋转矩阵</strong>：基于随机Hadamard矩阵或Householder反射，构造正交矩阵 $R$ 满足 $R^T R = I$。</li>
+<li>
+<strong>离线旋转权重</strong>：在量化前对权重进行旋转变换<br>
+$$\hat{W} = W \cdot R$$<br>
+将离群值从集中通道分散到所有通道。</li>
+<li>
+<strong>在线旋转激活</strong>：推理时对输入激活进行逆旋转（即正交转置）<br>
+$$\hat{X} = X \cdot R^T$$
+</li>
+<li>
+<strong>融合归一化</strong>：将旋转矩阵与LayerNorm/RMSNorm的缩放参数融合，避免在线旋转的额外计算开销<br>
+$$\text{LN}_{\text{fused}}(x) = R^T \cdot \text{diag}(\gamma) \cdot \frac{x - \mu}{\sigma}$$
+</li>
+<li>
+<strong>均匀量化</strong>：旋转后的激活和权重分布近似独立同分布（i.i.d.）高斯，通道间方差均衡，可直接应用逐通道或逐张量均匀量化。</li>
+<li>
+<strong>结果</strong>：无需分组量化或混合精度，实现W8A8甚至W4A4量化，离群值导致的量化误差被旋转分散吸收，精度显著优于直接量化，且推理延迟增加极小（旋转与归一化融合）。</li>
+</ol>
+<p></p>
+</details> 
+<p><strong>量化方式总结表</strong></p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th align="left">方案</th>
+<th align="left">流派</th>
+<th align="left">是什么 (核心思想)</th>
+<th align="left">怎么做的量化 (关键步骤)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>SmoothQuant</strong></td>
+<td align="left">平滑迁移</td>
+<td align="left">移花接木：将激活值的量化难度迁移至权重。</td>
+<td align="left">1. 统计激活/权重最大值；<br>2. 计算平滑因子 $s$；<br>3. 权重乘 $s$，激活除 $s$；<br>4. 分别量化 (通常 W8A8)。</td>
+</tr>
+<tr>
+<td align="left"><strong>AWQ</strong></td>
+<td align="left">平滑迁移</td>
+<td align="left">抓大放小：基于激活重要性，保护关键通道权重。</td>
+<td align="left">1. 统计通道激活均值；<br>2. 找出前 1% 重要通道；<br>3. 放大重要通道权重；<br>4. 分组 INT4 量化 (W4A16)。</td>
+</tr>
+<tr>
+<td align="left"><strong>GPTQ</strong></td>
+<td align="left">误差补偿</td>
+<td align="left">亡羊补牢：贪心量化权重，并补偿误差到未量化权重。</td>
+<td align="left">1. 计算海森矩阵 $H$；<br>2. 逐列贪心量化权重；<br>3. 利用 $H^{-1}$ 更新剩余权重补偿误差；<br>4. 迭代至完成。</td>
+</tr>
+<tr>
+<td align="left"><strong>QuaRot</strong></td>
+<td align="left">分布重塑</td>
+<td align="left">均贫富：利用正交旋转将离群值“打散”到所有维度。</td>
+<td align="left">1. 构造 Hadamard 旋转矩阵 $R$；<br>2. 权重左乘 $R$，激活右乘 $R^T$；<br>3. 旋转后分布更均匀，再量化 (W4A4/W4A8)。</td>
+</tr>
+<tr>
+<td align="left"><strong>SpinQuant</strong></td>
+<td align="left">分布重塑</td>
+<td align="left">精雕细琢：学习最优旋转矩阵，进一步最小化误差。</td>
+<td align="left">1. 初始化旋转矩阵；<br>2. 在校准集上梯度下降优化 $R$；<br>3. 旋转后结合 GPTQ 量化权重；<br>4. 推理时应用旋转。</td>
+</tr>
+<tr>
+<td align="left"><strong>OmniQuant</strong></td>
+<td align="left">平滑迁移</td>
+<td align="left">可学习平滑：通过梯度下降学习最优缩放/平移参数。</td>
+<td align="left">1. 引入可学习 affine 参数 $(\gamma, \beta)$；<br>2. 在校准集上最小化量化误差；<br>3. 优化参数平滑离群值；<br>4. 结合 GPTQ 量化权重。</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
 <hr>
 <h3>🔑 面试高频考点速记</h3>
 <markdown-accessiblity-table><table role="table">
@@ -241,7 +318,7 @@ KV Cache的两大核心优化：<br>
 <p><strong>主要思路</strong>  = 「先全局低精度省内存，再精准把 1 % 容易放大误差的层/Token 无缝切回 FP16」，用最小的高精度代价把量化引入的幻觉压回到比原始 FP32 还低的水平。</p>
 <p>具体过程和方案案例，实现效果如下：</p>
 <ol>
-<li>离线三选一标敏感层「KL + R 」，KL 散度（分布歪没歪）；离散度 R（有没有极端值），R&gt;15 / KL&gt;0.02 / Energy&gt;0.42** 被永久保留 bf16</li>
+<li>第一步先标注敏感层「KL 」，KL 散度（分布歪没歪）；KL&gt;0.02 ** 被永久保留 bf16</li>
 <li>权重打包只留敏感层做 bf16</li>
 <li>算子适配bf16/int8（加一些判断条件）</li>
 <li>修改vllm的代码，包含attention.py，将离线的权重那几层切回到bf16</li>
@@ -255,29 +332,11 @@ KL 误差 = 量化前后该层输出分布之间的 KL 散度（Kullback-Leibler
 计算步骤</li>
 </ol>
 <ul>
-<li>
-<p>用一小批校准数据（通常 512~2048 条）跑 bf16 模型，收集该层输出特征图，得到真实分布 P。</p>
-</li>
-<li>
-<p>用同一批数据跑 伪量化版本（权重按候选方案量化为 int 4/8 后再反量化），得到近似分布 Q。</p>
-</li>
-<li>
-<p>逐通道统计直方图，计算</p>
-</li>
-<li>
-<p>KL(P‖Q) = Σ P(i) log(P(i)/Q(i))</p>
-</li>
-<li>
-<p>值越大 → 量化后分布越偏离原分布，该层对量化越“敏感”。</p>
-</li>
-<li>
-<p>离散度 R（有没有极端值）：【 (最大值-最小值)/(上四分位-下四分位) 】</p>
-</li>
-<li>
-<p>Energy_ratio（主奇异值是否占大头）：对权重矩阵 W 做一次 SVD（奇异值分解），得到的第一个奇异值 σ₁ 就是“最大奇异值”。<br>
-奇异值表示该矩阵在该方向上的“能量大小”；<br>
-最大奇异值占 trace 比例 = 最大方向对整体方差的贡献，占比越高 → 矩阵越“低秩+极端”，量化用一个 scale 时主方向最容易被掰歪。</p>
-</li>
+<li>用一小批校准数据（通常 512~2048 条）跑 bf16 模型，收集该层输出特征图，得到真实分布 P。</li>
+<li>用同一批数据跑 伪量化版本（权重按候选方案量化为 int 4/8 后再反量化），得到近似分布 Q。</li>
+<li>逐通道统计直方图，计算</li>
+<li>KL(P‖Q) = Σ P(i) log(P(i)/Q(i))</li>
+<li>值越大 → 量化后分布越偏离原分布，该层对量化越“敏感”。</li>
 </ul>
 <markdown-accessiblity-table><table role="table">
 <thead>
@@ -357,157 +416,38 @@ vllm/kernels/custom_quant.py-- Kernel 侧读掩码。</li>
 </details> 
 <h2>优化项目二： PageAttention KV-Cache 内存池优化--16-token微页--内存管理器优化</h2>
 <h3>📊 效果验证与实现过程总览</h3>
-<h4>表 1：端到端性能验证结果</h4>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">指标</th>
-<th align="left">优化前</th>
-<th align="left">优化后</th>
-<th align="left">变化幅度</th>
-<th align="left">业务价值</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>峰值显存</strong></td>
-<td align="left">38.4 GB</td>
-<td align="left">32.6 GB</td>
-<td align="left"><strong>↓ 15%</strong></td>
-<td align="left">同卡支持更大 Batch 或更长上下文</td>
-</tr>
-<tr>
-<td align="left"><strong>碎片率</strong></td>
-<td align="left">~95% (逻辑碎片)</td>
-<td align="left">2.6%</td>
-<td align="left"><strong>↓ 92.4%</strong></td>
-<td align="left">显存利用率接近理论上限</td>
-</tr>
-<tr>
-<td align="left"><strong>推理吞吐</strong></td>
-<td align="left">Baseline</td>
-<td align="left">+8%</td>
-<td align="left"><strong>↑ 8%</strong></td>
-<td align="left">单位时间处理更多请求，降低单请求成本</td>
-</tr>
-<tr>
-<td align="left"><strong>P99 延迟</strong></td>
-<td align="left">Baseline</td>
-<td align="left">持平</td>
-<td align="left">无副作用</td>
-<td align="left">性能提升不以牺牲延迟为代价</td>
-</tr>
-<tr>
-<td align="left"><strong>CPU 开销</strong></td>
-<td align="left">8% (内存管理)</td>
-<td align="left">&lt;1%</td>
-<td align="left"><strong>↓ 87.5%</strong></td>
-<td align="left">释放 CPU 资源用于数据预处理/后处理</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<blockquote>
-<p>📌 <strong>测试环境</strong>：Qwen-7B, Batch=64, MaxSeq=4096, 昇腾 910B, 金融 FAQ 真实负载 1000 条</p>
-</blockquote>
-<hr>
-<h4>表 2：核心实现步骤与技术要点</h4>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">步骤</th>
-<th align="left">关键技术</th>
-<th align="left">实现细节</th>
-<th align="left">设计原理</th>
-<th align="left">量化收益</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>① 页大小量化</strong></td>
-<td align="left">蒙特卡洛仿真</td>
-<td align="left">10 万条虚拟序列模拟分配/释放，遍历 8/16/32/64-token 页大小</td>
-<td align="left">找到碎片率曲线谷底，同时对齐硬件物理页</td>
-<td align="left">16-token 时碎片率 <strong>2.8%</strong> (最低点)</td>
-</tr>
-<tr>
-<td align="left"><strong>② 硬件对齐</strong></td>
-<td align="left">物理页/Cache-Line 对齐</td>
-<td align="left">16-token × 64KB = <strong>1MB</strong>，匹配 910B 物理页；数据重排填满 128B Cache-Line</td>
-<td align="left">避免跨页搬运开销，最大化 DMA 带宽效率</td>
-<td align="left">带宽利用率 <strong>+30%</strong>，L2 命中率≈100%</td>
-</tr>
-<tr>
-<td align="left"><strong>③ 无锁位图</strong></td>
-<td align="left">SRAM 元数据 + 位运算</td>
-<td align="left">1 bit ↔ 1 微页，位图驻留片上 SRAM，分配/释放 = 翻转 bit 位</td>
-<td align="left">元数据访问延迟从 100ns(DDR)→1ns(SRAM)，消除锁竞争</td>
-<td align="left">分配/释放 <strong>1 时钟</strong>，CPU 开销 <strong>↓87.5%</strong></td>
-</tr>
-<tr>
-<td align="left"><strong>④ 寻址映射</strong></td>
-<td align="left">Block Table + Coalesced Access</td>
-<td align="left">逻辑页→物理页间接映射，计算时批量加载 256KB 连续块</td>
-<td align="left">逻辑连续/物理离散，支持非连续分配 + 合并访问</td>
-<td align="left">显存节省 <strong>15%</strong>，支持更大 Batch</td>
-</tr>
-<tr>
-<td align="left"><strong>⑤ 扩展性设计</strong></td>
-<td align="left">线性增长页表 + 上限控制</td>
-<td align="left">6 万页仅需 7.5KB Bitmap + 48KB Block Table，上限 2M 页</td>
-<td align="left">管理内存随序列长度线性增长，占比&lt;0.1%</td>
-<td align="left">支持 <strong>128k token</strong> 长上下文，无管理瓶颈</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<h3>🏗️ 核心技术架构对比与改进原理</h3>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">模块</th>
-<th align="left">传统方案 (vLLM 默认)</th>
-<th align="left">优化方案 (本项目)</th>
-<th align="left"><strong>核心改进原理</strong></th>
-<th align="left">优化收益</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>页大小</strong><br>(Page Size)</td>
-<td align="left">固定 4KB 或 16KB</td>
-<td align="left"><strong>16-token 微页</strong><br>(约 1MB，对齐硬件)</td>
-<td align="left"><strong>蒙特卡洛仿真寻优 + 硬件物理页对齐</strong><br>通过仿真找到碎片率谷底，且大小匹配 NPU 物理页 (1MB)，避免跨页搬运。</td>
-<td align="left">匹配 NPU 物理页，<br>避免对齐浪费</td>
-</tr>
-<tr>
-<td align="left"><strong>碎片率</strong><br>(Fragmentation)</td>
-<td align="left">高 (30%~95%)</td>
-<td align="left"><strong>低至 2.6%</strong></td>
-<td align="left"><strong>细粒度分配减少内部碎片</strong><br>更小的分配单元能更紧密地贴合变长序列，减少页内空闲空洞。</td>
-<td align="left">显存利用率最大化，<br>支持更大 Batch</td>
-</tr>
-<tr>
-<td align="left"><strong>内存管理器</strong><br>(Manager)</td>
-<td align="left">CPU 堆管理<br>(Malloc/Free)</td>
-<td align="left"><strong>SRAM 无锁位图</strong><br>(Bitmap)</td>
-<td align="left"><strong>元数据上片 (SRAM) + 位运算加速</strong><br>将管理元数据从 DDR 移至片上 SRAM，用位翻转替代复杂链表操作，消除锁竞争。</td>
-<td align="left">分配/释放仅需 1 时钟，<br>CPU 开销↓</td>
-</tr>
-<tr>
-<td align="left"><strong>数据布局</strong><br>(Layout)</td>
-<td align="left">通用布局</td>
-<td align="left"><strong>Cache-Line 对齐重排</strong></td>
-<td align="left"><strong>内存合并访问 (Coalesced Access)</strong><br>按 <code class="notranslate">[B,S,H,D]</code> 重排数据，确保每次加载填满 128B Cache-Line，最大化带宽效率。</td>
-<td align="left">带宽利用率 +30%，<br>L2 命中率≈100%</td>
-</tr>
-<tr>
-<td align="left"><strong>寻址方式</strong><br>(Addressing)</td>
-<td align="left">虚拟地址映射</td>
-<td align="left"><strong>Block Table + Page ID</strong></td>
-<td align="left"><strong>逻辑物理解耦 (Decoupling)</strong><br>通过页表间接寻址，允许物理显存离散分布，而逻辑序列保持连续，支持非连续分配。</td>
-<td align="left">逻辑连续，物理离散，<br>支持 Coalesced Access</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
+<p>"该项目主要针对昇腾 NPU 重构了 PageAttention 的内存管理：<br>
+第一，用蒙特卡洛仿真算出 16-token 微页，刚好对齐 910B 的 1MB 物理页，碎片率从 95% 降到 2.6%；<br>
+第二，把位图管理元数据从 DDR 搬到片上 SRAM，分配释放只要 1 个时钟周期，CPU 开销降 87%；<br>
+第三，数据按 Cache-Line 对齐重排，带宽利用率提升 30%。<br>
+最终在 Qwen-7B 上实现显存省 15%、吞吐 +8%，且零延迟代价。"</p>
+<p>昇腾 NPU PageAttention 内存池优化</p>
+<ol>
+<li>项目是什么 (What)<br>
+针对 昇腾 910B NPU 架构，重构了 vLLM 的 PageAttention 内存管理模块。<br>
+通过 硬件感知量化 和 元数据上片 技术，实现了 KV-Cache 显存的高效分配与管理，解决了原生方案在 NPU 上碎片率高、管理开销大的问题。</li>
+<li>为什么要做 (Why)<br>
+原生 vLLM 方案在昇腾 NPU 上存在三大痛点：<br>
+碎片率极高：固定 4KB/16KB 页大小不匹配 NPU 物理页，导致逻辑碎片率高达 95%，显存浪费严重。<br>
+CPU 开销大：内存元数据存在 Host DDR，每次分配需 PCIe/HCCS 通信，CPU 管理开销占 8%，成为调度瓶颈。<br>
+带宽利用率低：通用数据布局未对齐 NPU Cache-Line，导致 DMA 搬运效率低，计算单元等待数据。</li>
+<li>怎么做的 (How)<br>
+页大小硬件对齐：<br>
+通过 10 万条蒙特卡洛仿真，找到碎片率最低的 16-token 微页。<br>
+计算得 16-token × 64KB = 1MB，刚好对齐 910B 物理内存页，避免跨页搬运。<br>
+元数据上片 (SRAM)：<br>
+将位图管理元数据从 Host DDR 迁移到 Device 片上 SRAM。<br>
+采用 无锁位运算，分配/释放仅需 1 个时钟周期，消除锁竞争和通信延迟。<br>
+数据布局优化：<br>
+按 [Batch, Seq, Head, Dim] 重排数据，确保填满 128B Cache-Line。<br>
+实现 Coalesced Access（合并访问），L2 命中率接近 100%。</li>
+<li>结果如何 (Result)<br>
+在 Qwen-7B, Batch=64, MaxSeq=4096 场景下实测：<br>
+显存节省：峰值显存 ↓15% (38.4GB → 32.6GB)，支持更大 Batch。<br>
+碎片率降低：从 ~95% 降至 2.6%，利用率接近理论上限。<br>
+吞吐提升：推理吞吐 ↑8%，且 P99 延迟无回退。<br>
+CPU 释放：内存管理 CPU 开销 ↓87.5% (8% → &lt;1%)。</li>
+</ol>
 <hr>
 <h3>💡 改进原理深度解析 (Deep Dive)</h3>
 <h4>1. 为什么是 16-token 微页？(硬件感知量化)</h4>
@@ -527,7 +467,16 @@ vllm/kernels/custom_quant.py-- Kernel 侧读掩码。</li>
 </ul>
 </li>
 </ul>
-<p>碎片率 = （实验结束时所有空闲页里小于一条序列所需最小页数的字节总和）÷（实验期间峰值已用字节）</p>
+<h4>3. 碎片率是如何计算的？CPU 管理开销占 8%是如何计算的</h4>
+<p>碎片率 = 空闲空洞 / 已分配总量<br>
+或者更具体一点来说。 碎片率 = (已分配块总容量 - 实际 Token 占用容量) / 已分配块总容量 × 100%</p>
+<h4>4.  通用数据布局未对齐 NPU Cache-Line如何看出来的。</h4>
+<p>用昇腾 MindStudio工具实测发现的：比如能够查看HBM 带宽利用率仅 45%、L2 Cache Miss 率</p>
+<p>CPU 管理开销占 8% 是如何计算的？</p>
+<h1>伪代码：计算 CPU 时间在内存管理上的占比</h1>
+<h4>5. 算子重排是怎么做的？</h4>
+<p>CPU 喜欢“顺藤摸瓜”（连续访问）。假设算子顺序[B,H,S,D]的循环,是顺着S走，但内存里S 之间隔着巨大的H 维度，那就是在内存里“瞬移”，每次瞬移都要等待内存加载，导致效率极低。<br>
+按 [B,S,H,D] 重排，再通过 6 种布局对比实验验证，实验通过# 基准测试：固定输入，跑 100 次取中位数，最终确定该布局在延迟和带宽上综合最优。</p>
 <p>主要过程：<br>
 <strong>KV-Cache每个token大小</strong>：以70B Qwen模型为例，<code class="notranslate">num_heads=128</code>，<code class="notranslate">head_dim=128</code>，每个token的KV-Cache大小为：<br>
 <code class="notranslate">128（头数）× 128（头维度）× 2（K+V）× 2字节（FP16）= 65536字节 = 64KB</code>。</p>
