@@ -90,7 +90,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <div class="markdown-body" id="postBody"><h1>LLM的推理/transformer架构/vllm</h1>
 <h2>LLM 推理的推理过程</h2>
 <p>目前主流LLM都是基于transformer的Decoder-only架构，因为 Decoder-only 架构在“大规模无监督预训练”这个特定范式下，展现出了更好的可扩展性（Scalability）和任务通用性。</p>
-<p>输入token经过transformer总体过程如下：<br>
+<p><strong>LLM中输入到输出</strong>总体过程如下：<br>
 输入Token -&gt; 嵌入 -&gt; 加上位置编码 -&gt; 通过N个Transformer层 -&gt; 最终层归一化 -&gt; 语言模型头 -&gt; 概率分布 -&gt; 输出Token</p>
 <p>更加细节化看下面：</p>
 <details><summary>Details</summary>
@@ -701,6 +701,16 @@ YaRN (Yet another RoPE for NLP)：<br>
 核心结论：vLLM = PagedAttention(显存分页) + Continuous Batching(连续批处理) + Step-Level Scheduling(细粒度调度)。<br>
 v0 → v1：从"高效批处理系统"进化为"低延迟流式服务系统"。<br>
 选型：在线服务首选 vLLM/SGLang，极致吞吐选 TensorRT-LLM，国产化选 LMDeploy。</p>
+<p><strong>文本输入到vllm主要经过的一些变化：</strong></p>
+<details><summary>Details</summary>
+<p>
+</p><p>在 vLLM 中，文本输入首先经过 Tokenizer 编码，然后由 Scheduler 基于 PagedAttention 机制进行资源调度。调度器不再请求连续显存，而是按需分配离散的 Physical Blocks，并维护一张 Block Table 记录逻辑到物理的映射。<br>
+在执行阶段，vLLM 采用 Continuous Batching，一旦有请求完成立即释放 Block 并插入新请求，极大提升了吞吐量。对于长序列导致的显存不足，vLLM 支持将 KV Cache Swap 到 CPU 内存。<br>
+关于通信处理：<br>
+GPU 内部：通过 CUDA Kernel 内的间接寻址，利用 Block Table 访问非连续显存，并结合 Shared Memory 优化随机读取延迟。<br>
+多卡互联：底层依赖 NCCL 库，通过 NVLink 进行高效的 All-Reduce (TP 场景) 和 P2P (PP 场景) 通信，并利用 Compute-Communication Overlap 技术隐藏延迟。</p>
+<p></p>
+</details> 
 <h2>vllm核心架构与组件</h2>
 <markdown-accessiblity-table><table role="table">
 <thead>
