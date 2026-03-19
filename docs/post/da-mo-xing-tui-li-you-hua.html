@@ -95,15 +95,92 @@ x̂ = (Q − zero_point) × scale          // 反量化</p>
 <p>回顾基础的量化知识：</p>
 <details><summary>Details</summary>
 <p>
-</p><p>所谓对称量化：零点就是0，不需要平移因子，计算量更小;<br>
+</p>
+<p>所谓对称量化：零点就是0，不需要平移因子，计算量更小;<br>
 非对称量化：需要引入平移因子，计算量更大。<br>
-量化粒度：</p>
-<ul>
-<li>per-tensor:对整个层或整个张量进行量化,使用一组共同的量化参数(如缩放因子和零点)。</li>
-<li>per-channel/per-token:以通道为单位,每个通道单独使用一组量化参数。per-token针对激活×而言,每行对应一个量化<br>
-系数。per-channel针对权重w而言,每列对应一个量化系数。更精确的说法是：对于一个常见的 2D 权重矩阵（例如 [Out_features, In_features]），per-channel 量化通常是指沿着输出通道的维度（即 Out_features 维度），为每个输出通道（即每一行）分配一套量化参数。</li>
-<li>per-group:逐组量化以组为单位,每个group使用一组S和Z。是 per-tensor 和 per-channel 之间的一个折中方案。</li>
-</ul>
+<strong>量化粒度</strong>：</p>
+<table role="table">
+<thead>
+<tr>
+<th align="left">粒度类型</th>
+<th align="left">适用对象</th>
+<th align="left">核心思想</th>
+<th align="left">Scale 数量</th>
+<th align="left">关键特性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>Per-Tensor</strong></td>
+<td align="left">权重/激活</td>
+<td align="left">整个矩阵共享一套量化参数</td>
+<td align="left"><strong>1</strong></td>
+<td align="left">最简单，精度最差，易受异常值 (Outliers) 影响</td>
+</tr>
+<tr>
+<td align="left"><strong>Per-Channel</strong></td>
+<td align="left"><strong>权重 (Weights)</strong></td>
+<td align="left">每输出通道独立量化</td>
+<td align="left">
+$O$ (输出通道数)</td>
+<td align="left">静态存储，解决通道间分布差异，<strong>权重量化标配</strong>
+</td>
+</tr>
+<tr>
+<td align="left"><strong>Per-Group</strong></td>
+<td align="left">权重/激活</td>
+<td align="left">每固定大小块独立量化</td>
+<td align="left">$\frac{O \times I}{G}$</td>
+<td align="left">静态存储，捕捉局部异常值，<strong>GPTQ/AWQ 常用</strong>
+</td>
+</tr>
+<tr>
+<td align="left"><strong>Per-Token</strong></td>
+<td align="left"><strong>激活 (Activations)</strong></td>
+<td align="left">每 Token 独立量化</td>
+<td align="left">
+$B \times T$ (动态)</td>
+<td align="left">动态计算，解决序列中分布波动，<strong>激活量化标配</strong>
+</td>
+</tr>
+</tbody>
+</table>
+<table role="table">
+<thead>
+<tr>
+<th align="left">问题</th>
+<th align="left">一句话回答</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>Per-Tensor 为何精度差？</strong></td>
+<td align="left">整个张量共享 1 个 Scale，任一异常值都会压缩其他数值的有效位宽</td>
+</tr>
+<tr>
+<td align="left"><strong>权重为何用 Per-Channel？</strong></td>
+<td align="left">权重静态，不同神经元数值范围差异大，Per-Channel 以最小代价解决通道间不均匀性</td>
+</tr>
+<tr>
+<td align="left"><strong>激活为何用 Per-Token？</strong></td>
+<td align="left">激活动态，不同 Token 能量/分布差异大，避免异常 Token 拉偏整体量化区间</td>
+</tr>
+<tr>
+<td align="left"><strong>GPTQ 为何用 Per-Group？</strong></td>
+<td align="left">捕捉通道<strong>内部</strong>局部异常值 (Outliers)，精度更高，存储开销可接受</td>
+</tr>
+<tr>
+<td align="left"><strong>Per-Token 工程难点？</strong></td>
+<td align="left">
+<strong>动态性</strong>：实时计算 Scale 增加 TTFT；需定制 CUDA Kernel；显存管理复杂</td>
+</tr>
+<tr>
+<td align="left"><strong>SmoothQuant 核心思想？</strong></td>
+<td align="left">将激活的异常值<strong>迁移</strong>到权重，实现 <strong>Weight-Per-Channel + Activation-Per-Tensor</strong>
+</td>
+</tr>
+</tbody>
+</table>
 <p>X*W: 对于激活一般是per-tensor * pertensor     或者  per-token * per-channel （行与列切分）</p>
 <p>离群值:某些元素的数值明显高于其他维度平均值的情况(通常为5倍以上)。离群值会扩大量化步长,从而导致显著的精度损失；<br>
 离群值基本是基于channel的。我们发现激活难量化，权重分布更均匀，容易量化。<br>
