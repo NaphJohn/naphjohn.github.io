@@ -10,13 +10,39 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="
-# Whisper
-Whisper 是一个基于 Transformer Encoder-Decoder 架构的端到端语音模型。">
+<meta name="description" content="# qwen3-omni
+1. 整体架构图解
+graph LR
+    Audio[输入音频] --> Encoder[音频编码器 (Audio Encoder)]
+    Encoder --> Projector[模态投影层 (Projector)]
+    Projector --> LLM[Qwen3 LLM (核心大脑)]
+    TextIn[文本输入] --> Embed[文本嵌入]
+    Embed --> LLM
+    
+    subgraph 输出分支
+    LLM --> TextHead[文本头 (Text Head)] --> TextOut[文本输出]
+    LLM --> AudioHead[音频头 (Audio Head / Flow Matching)] --> AudioOut[音频输出]
+    end
+2. 关键组件详解
+音频编码器 (Audio Encoder)：
+通常基于改进的 Whisper Encoder 或 Conformer 结构。">
 <meta property="og:title" content="语音大模型">
-<meta property="og:description" content="
-# Whisper
-Whisper 是一个基于 Transformer Encoder-Decoder 架构的端到端语音模型。">
+<meta property="og:description" content="# qwen3-omni
+1. 整体架构图解
+graph LR
+    Audio[输入音频] --> Encoder[音频编码器 (Audio Encoder)]
+    Encoder --> Projector[模态投影层 (Projector)]
+    Projector --> LLM[Qwen3 LLM (核心大脑)]
+    TextIn[文本输入] --> Embed[文本嵌入]
+    Embed --> LLM
+    
+    subgraph 输出分支
+    LLM --> TextHead[文本头 (Text Head)] --> TextOut[文本输出]
+    LLM --> AudioHead[音频头 (Audio Head / Flow Matching)] --> AudioOut[音频输出]
+    end
+2. 关键组件详解
+音频编码器 (Audio Encoder)：
+通常基于改进的 Whisper Encoder 或 Conformer 结构。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/yu-yin-da-mo-xing.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -77,7 +103,39 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><h1>Whisper</h1>
+<div class="markdown-body" id="postBody"><h1>qwen3-omni</h1>
+<ol>
+<li>
+<p>整体架构图解<br>
+graph LR<br>
+Audio[输入音频] --&gt; Encoder[音频编码器 (Audio Encoder)]<br>
+Encoder --&gt; Projector[模态投影层 (Projector)]<br>
+Projector --&gt; LLM[Qwen3 LLM (核心大脑)]<br>
+TextIn[文本输入] --&gt; Embed[文本嵌入]<br>
+Embed --&gt; LLM</p>
+<p>subgraph 输出分支<br>
+LLM --&gt; TextHead[文本头 (Text Head)] --&gt; TextOut[文本输出]<br>
+LLM --&gt; AudioHead[音频头 (Audio Head / Flow Matching)] --&gt; AudioOut[音频输出]<br>
+end</p>
+</li>
+<li>
+<p>关键组件详解<br>
+音频编码器 (Audio Encoder)：<br>
+通常基于改进的 Whisper Encoder 或 Conformer 结构。<br>
+作用：将原始波形或 Log-Mel 频谱图转换为离散的音频 Token 或连续的音频 Embedding。<br>
+特点：支持多语言、降噪、情感识别。<br>
+模态投影层 (Modality Projector)：<br>
+一个轻量级的 MLP 或 Q-Former。<br>
+作用：将音频特征映射到 Qwen3 LLM 的文本语义空间，让 LLM 能“听懂”音频。<br>
+核心基座 (Qwen3 LLM)：<br>
+基于 Qwen3 的 Dense 或 MoE 架构。<br>
+作用：进行逻辑推理、指令遵循、上下文理解。它同时处理文本 Token 和音频 Token。<br>
+输出头 (Heads)：<br>
+文本头：标准的 LM Head，输出文本 Token (用于 ASR 任务或对话回复)。<br>
+音频头 (Omni 特性)：如果是真正的 Omni 模型，会包含一个 解码器 (Decoder)，如 Flow Matching (流匹配) 或 VQ-VAE Decoder，直接将 LLM 的输出映射回声波或声学特征 (用于 TTS 任务)。</p>
+</li>
+</ol>
+<h1>Whisper</h1>
 <p>Whisper 是一个基于 Transformer Encoder-Decoder 架构的端到端语音模型。它直接将音频波形映射为文本序列，支持多语言识别、翻译和语音活动检测（VAD）。<br>
 输入：16kHz 单声道音频波形（Waveform）。<br>
 输出：离散的文字 Token 序列（包含时间戳、语言标签、特殊控制符）</p>
