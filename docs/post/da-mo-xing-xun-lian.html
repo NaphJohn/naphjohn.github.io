@@ -401,6 +401,15 @@ $\epsilon$： 超参数（如0.2），限制更新幅度。</li>
 14. 如何去评价你工作的产出和质量（基本上每个面试官都会问）<br>
 15. FLUX的工作原理，LoRA在这个地方起到了什么作用？<br>
 链接：<a href="https://www.nowcoder.com/feed/main/detail/cb3c1bff8b9d40f0a5431b26ebcc6042?sourceSSR=search" rel="nofollow">https://www.nowcoder.com/feed/main/detail/cb3c1bff8b9d40f0a5431b26ebcc6042?sourceSSR=search</a></p>
+<h3>PPO与DPO区别</h3>
+<p>这两者都是用于 LLM 人类对齐（RLHF）的核心算法，但它们的优化范式和工程成本有本质区别。<br>
+第一，架构复杂度不同。<br>
+PPO 是经典的强化学习算法，它需要维护四个模型（Actor, Critic, Reward, Reference），并且在训练过程中需要进行在线采样和复杂的 Importance Sampling 计算。这导致它的显存占用极高，工程实现非常复杂，且超参数极其敏感，训练容易不稳定。<br>
+第二，DPO 做了数学上的简化。<br>
+DPO 的核心贡献在于它推导出最优策略和奖励函数之间存在解析解关系。因此，它不需要显式地训练 Reward Model，也不需要 Critic 网络。它将强化学习目标直接转化为了一个二元分类损失函数，直接在偏好数据对上进行优化。<br>
+第三，资源与稳定性。<br>
+在实际落地中，DPO 只需要两个模型（Policy 和 Reference），显存占用比 PPO 减少了一半以上。更重要的是，DPO 的训练过程像标准的 SFT 一样稳定，避免了 PPO 常见的模式坍塌（Mode Collapse）和调参困难问题。<br>
+总结来说，虽然 PPO 在理论上是 RLHF 的金标准，但在大多数文本生成任务中，DPO 能以极低的成本达到同等甚至更好的效果。因此，除非是涉及复杂环境交互（如游戏、机器人控制）必须用在线 RL 的场景，否则目前工业界首选 DPO 进行模型对齐。</p>
 <h2>不同微调方式</h2>
 <p>LoRA（低秩适应）：核心思想是用低秩分解来模拟权重更新，适用于绝大多数需要高效微调的场景，是效果和效率的最佳平衡点。<br>
 QLoRA（量化LoRA）：核心思想是将模型量化到4位后再进行LoRA微调，适用于显存极其有限（如单张消费级显卡）的场景，极大降低了微调门槛。<br>
