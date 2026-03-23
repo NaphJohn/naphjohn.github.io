@@ -877,7 +877,51 @@ reduce：多个npu获取数据并做规约运算</p>
 reduce scatter：规约后结果分散到不同节点<br>
 allgather：收集每个npu所有的数据到每个npu上<br>
 alltoallv：所有npu互相scatter和gather数据</p>
-<p>简单总结：规约运算是AllReduce的核心计算步骤，负责将分散的数据合并；AllReduce是完整通信原语，包含规约和广播两个阶段。</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>特性</th>
+<th>AllReduce</th>
+<th>AllGather</th>
+<th>AllToAllV</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>通俗比喻</strong></td>
+<td>大家凑份子钱，每人知道总额</td>
+<td>大家交换章节，每人拥有全书</td>
+<td>大家互换扑克牌，按需分配</td>
+</tr>
+<tr>
+<td><strong>数据变化</strong></td>
+<td>值变了 (求和)，形状不变</td>
+<td>形状变大 (拼接)，内容变全</td>
+<td>形状不变 (总量)，内容重排</td>
+</tr>
+<tr>
+<td><strong>主要用途</strong></td>
+<td>数据并行 (梯度同步)</td>
+<td>张量并行 / 序列并行</td>
+<td>MoE / 高级序列并行</td>
+</tr>
+<tr>
+<td><strong>通信量级</strong></td>
+<td>
+$O(M)$ (较小)</td>
+<td>
+$O(N \times M)$ (大)</td>
+<td>
+$O(N \times M)$ (大且乱)</td>
+</tr>
+<tr>
+<td><strong>性能杀手</strong></td>
+<td>⭐⭐</td>
+<td>⭐⭐⭐⭐</td>
+<td>⭐⭐⭐⭐⭐ (最难优化)</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
 <h1>前沿推理技术思想</h1>
 <markdown-accessiblity-table><table role="table">
 <thead>
@@ -1184,6 +1228,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 </script>
-
+<script>MathJax = {tex: {inlineMath: [["$", "$"]]}};</script><script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
 </html>
