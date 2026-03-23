@@ -878,6 +878,53 @@ numastat -p <br>
 <h2>kvcache的优化</h2>
 <p>PD 分离架构下的 KV Cache 全链路优化（昇腾 NPU）</p>
 <p>“通过预算感知调度消除 OOM 颠簸，利用 NZ 格式对齐 Cube 单元，结合故障快速失败机制，在 PD 分离架构下实现了显存利用率与推理吞吐的双重突破。”</p>
+<p>“拼拼图”算法 = 细粒度分块 (Block) + 全局哈希索引 (Hash Index) + 虚拟内存页表映射 (Page Table Mapping)。</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>维度</th>
+<th>vLLM 原生 APC (RadixAttention)</th>
+<th>定制版"拼拼图"算法 (Ascend/PD 分离场景)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>适用架构</strong></td>
+<td>单机多卡 或 简单的多机推理。<br>主要假设 KV Cache 在本机显存中。</td>
+<td>PD 分离 (Disaggregated) 架构。<br>明确区分 Prefill 节点和 Decode 节点，跨机器协同。</td>
+</tr>
+<tr>
+<td><strong>缓存粒度</strong></td>
+<td>Block 级 (通常 16-64 tokens)。<br>基于逻辑 Block 的哈希匹配。</td>
+<td>Block 级 + 物理格式感知。<br>不仅匹配 Hash，还直接绑定 FORMAT_FRACTAL_NZ 物理布局，消除格式转换开销。</td>
+</tr>
+<tr>
+<td><strong>数据复用范围</strong></td>
+<td>本机内复用。<br>主要解决同一实例内不同请求的前缀共享。</td>
+<td>跨节点全局复用。<br>Prefill 算完的块，可直接"推送"给远处的 Decode 节点；Decode 节点可"拉取"其他节点的块。</td>
+</tr>
+<tr>
+<td><strong>通信机制</strong></td>
+<td>弱依赖或无。<br>若涉及多机，通常依赖外部存储或简单的 NCCL 广播，缺乏细粒度调度。</td>
+<td>深度集成 HCCL/RDMA。<br>内置 异步 KV 加载、预算感知块分配、快速失败 (Fast Fail) 机制。</td>
+</tr>
+<tr>
+<td><strong>内存管理</strong></td>
+<td>PagedAttention (页表管理)。<br>解决碎片化，支持动态扩缩容。</td>
+<td>PagedAttention + MOE Split + 零拷贝映射。<br>针对长序列 MOE 模型做了 split 替代 concat 优化，峰值显存减半。</td>
+</tr>
+<tr>
+<td><strong>量化支持</strong></td>
+<td>通用量化 (FP8/INT8)。<br>通常在运行时进行反量化或 dequantize-on-the-fly。</td>
+<td>预反量化 + 指令融合。<br>加载期一次反量化，Kernel 侧直接调用 Cube 指令，零额外反量化指令开销。</td>
+</tr>
+<tr>
+<td><strong>调度策略</strong></td>
+<td>FCFS 或 简单优先级。<br>主要关注显存是否足够。</td>
+<td>预算感知 (Budget-Aware) + 异步流水线。<br>Decode 节点只拉远程 KV，Prefill 算完即推，块利用率提升 30%。</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
 <details><summary>Details</summary>
 <p>
 </p><h2>1. 项目概况 (STAR 法则)</h2>
