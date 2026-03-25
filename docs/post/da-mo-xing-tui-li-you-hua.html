@@ -925,6 +925,10 @@ numastat -p <br>
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
+<p>Concat使用split来代替原因：<br>
+Split | 在 Token 维度 或 Sequence 维度 切分输入，让不同 Expert 处理不同子集<br>
+Concat | Concat 是 Expert 输出维度 拼接，导致所有 Expert 大输出同时存在<br>
+零拷贝映射 | Split 后通过 PagedAttention 的 Block Table 直接映射物理内存，避免数据搬运</p>
 <details><summary>Details</summary>
 <p>
 </p><h2>1. 项目概况 (STAR 法则)</h2>
