@@ -878,370 +878,82 @@ numastat -p <br>
 <h2>kvcache的优化</h2>
 <p>PD 分离架构下的 KV Cache 全链路优化（昇腾 NPU）</p>
 <p>“通过预算感知调度消除 OOM 颠簸，利用 NZ 格式对齐 Cube 单元，结合故障快速失败机制，在 PD 分离架构下实现了显存利用率与推理吞吐的双重突破。”</p>
-<p>“拼拼图”算法 = 细粒度分块 (Block) + 全局哈希索引 (Hash Index) + 虚拟内存页表映射 (Page Table Mapping)。</p>
 <markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th>维度</th>
-<th>vLLM 原生 APC (RadixAttention)</th>
-<th>定制版"拼拼图"算法 (Ascend/PD 分离场景)</th>
+<th>vLLM 原生方案</th>
+<th>你的改进方案 (Ascend/PD 定制)</th>
+<th>改进价值</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>适用架构</strong></td>
-<td>单机多卡 或 简单的多机推理。<br>主要假设 KV Cache 在本机显存中。</td>
-<td>PD 分离 (Disaggregated) 架构。<br>明确区分 Prefill 节点和 Decode 节点，跨机器协同。</td>
+<td><strong>预算视角</strong></td>
+<td>单节点局部视角。<br>只知道自己够不够，不知道别人忙不忙。</td>
+<td><strong>全局分布式视角</strong>。<br>Prefill 和 Decode 共享显存预算池，跨节点协同预留。</td>
+<td>防止"一头饿死，一头撑死"，消除跨节点死锁。</td>
 </tr>
 <tr>
-<td><strong>缓存粒度</strong></td>
-<td>Block 级 (通常 16-64 tokens)。<br>基于逻辑 Block 的哈希匹配。</td>
-<td>Block 级 + 物理格式感知。<br>不仅匹配 Hash，还直接绑定 FORMAT_FRACTAL_NZ 物理布局，消除格式转换开销。</td>
+<td><strong>分配时机</strong></td>
+<td>运行时惰性分配。<br>走到哪分到哪，容易突发 OOM。</td>
+<td><strong>准入前预扣预算</strong>。<br>进队前先模拟分配，不够直接拦在门外。</td>
+<td>彻底消除 OOM 颠簸，保证系统稳定性。</td>
 </tr>
 <tr>
-<td><strong>数据复用范围</strong></td>
-<td>本机内复用。<br>主要解决同一实例内不同请求的前缀共享。</td>
-<td>跨节点全局复用。<br>Prefill 算完的块，可直接"推送"给远处的 Decode 节点；Decode 节点可"拉取"其他节点的块。</td>
+<td><strong>物理感知</strong></td>
+<td>逻辑 Block 映射。<br>不关心底层数据格式，运行时可能需要 Transpose/Format 转换。</td>
+<td><strong>物理格式感知 (NZ Format)</strong>。<br>预算计算时直接包含 Fractal_NZ 对齐开销，预分配即为最终计算格式。</td>
+<td>零拷贝、零格式转换，Kernel 启动即可计算，延迟更低。</td>
 </tr>
 <tr>
-<td><strong>通信机制</strong></td>
-<td>弱依赖或无。<br>若涉及多机，通常依赖外部存储或简单的 NCCL 广播，缺乏细粒度调度。</td>
-<td>深度集成 HCCL/RDMA。<br>内置 异步 KV 加载、预算感知块分配、快速失败 (Fast Fail) 机制。</td>
+<td><strong>容错机制</strong></td>
+<td>阻塞或报错。<br>资源不足时往往阻塞等待或简单报错。</td>
+<td><strong>快速失败 (Fast Fail)</strong>。<br>检测到链路异常或预算超支，毫秒级切断，回收资源，不影响主流程。</td>
+<td>提升长尾延迟表现 (P99)，适应不稳定的集群网络。</td>
 </tr>
 <tr>
-<td><strong>内存管理</strong></td>
-<td>PagedAttention (页表管理)。<br>解决碎片化，支持动态扩缩容。</td>
-<td>PagedAttention + MOE Split + 零拷贝映射。<br>针对长序列 MOE 模型做了 split 替代 concat 优化，峰值显存减半。</td>
-</tr>
-<tr>
-<td><strong>量化支持</strong></td>
-<td>通用量化 (FP8/INT8)。<br>通常在运行时进行反量化或 dequantize-on-the-fly。</td>
-<td>预反量化 + 指令融合。<br>加载期一次反量化，Kernel 侧直接调用 Cube 指令，零额外反量化指令开销。</td>
-</tr>
-<tr>
-<td><strong>调度策略</strong></td>
-<td>FCFS 或 简单优先级。<br>主要关注显存是否足够。</td>
-<td>预算感知 (Budget-Aware) + 异步流水线。<br>Decode 节点只拉远程 KV，Prefill 算完即推，块利用率提升 30%。</td>
+<td><strong>MOE 适配</strong></td>
+<td>Concat 模式。<br>默认拼接所有 Expert 输出，峰值显存高。</td>
+<td><strong>Split 模式</strong>。<br>预算计算时按 Split 策略规划，显存需求减半。</td>
+<td>支持更长序列的 MoE 模型推理，显存利用率翻倍。</td>
 </tr>
 </tbody>
 </table></markdown-accessiblity-table>
+<p>拼拼图算法是我们在昇腾 PD 分离场景下对 vLLM RadixAttention 的重新设计，核心解决跨节点全局复用和物理格式零拷贝两大痛点，实现细粒度 Block 管理 + 全局哈希索引 + 虚拟页表映射的三层架构。</p>
+<p>“拼拼图”算法 = 细粒度分块 (Block) + 全局哈希索引 (Hash Index) + 虚拟内存页表映射 (Page Table Mapping)。</p>
+<p>"拼拼图算法是我们针对昇腾 PD 分离场景设计的三层内存管理架构。<br>
+第一层细粒度分块：Block 大小对齐昇腾 Cube 单元（32 tokens），且出生即绑定 Fractal_NZ 物理格式，终身免转换，这是零拷贝的基础。<br>
+第二层全局哈希索引：扩展 RadixAttention 到跨节点，P-Node 算完的 Block 立即注册全局索引，D-Node 解码前全局查询，实现跨机复用而非仅本地复用。<br>
+第三层虚拟页表映射：逻辑 Block ID 通过页表映射到物理地址，支持异地内存直接引用。配合昇腾 SVM 和 RDMA，实现远程 Block 的零拷贝访问。</p>
 <p>Concat使用split来代替原因：<br>
 Split | 在 Token 维度 或 Sequence 维度 切分输入，让不同 Expert 处理不同子集<br>
 Concat | Concat 是 Expert 输出维度 拼接，导致所有 Expert 大输出同时存在<br>
 零拷贝映射 | Split 后通过 PagedAttention 的 Block Table 直接映射物理内存，避免数据搬运</p>
+<p>异步kv传输：<br>
+本质的话通过将计算与通信解耦，做到边算边传，也就是overlap的效果。</p>
 <details><summary>Details</summary>
 <p>
-</p><h2>1. 项目概况 (STAR 法则)</h2>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">维度</th>
-<th align="left">内容描述</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>背景 (Situation)</strong></td>
-<td align="left">PD 分离架构下，KV Cache 管理面临显存碎片、OOM 颠簸、通信延迟高及 NPU 算子适配不足等问题，导致吞吐受限、长尾延迟高。</td>
-</tr>
-<tr>
-<td align="left"><strong>任务 (Task)</strong></td>
-<td align="left">优化 KV Cache 生命周期管理（调度、内存、通信、格式），实现显存利用率最大化、故障快速恢复及 NPU 硬件特性对齐。</td>
-</tr>
-<tr>
-<td align="left"><strong>行动 (Action)</strong></td>
-<td align="left">1. <strong>调度优化</strong>：引入 KV-Consumer 预算感知调度 + 链路故障快速失败。<br>2. <strong>内存优化</strong>：MOE Split、NZ 格式预转、APC 即时释放。<br>3. <strong>通信优化</strong>：HCCL 原语 + TP+SP 双并行。<br>4. <strong>算子优化</strong>：Fractal_NZ 格式匹配 Cube 单元。</td>
-</tr>
-<tr>
-<td align="left"><strong>结果 (Result)</strong></td>
-<td align="left">吞吐 <strong>↑1.7×</strong>，TTFT <strong>↓8×</strong>，显存峰值 <strong>↓40%</strong>，显存利用率 <strong>↑30%</strong>，全链路零拷贝、零重训。</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<hr>
-<h2>2. 核心优化维度对比表</h2>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">优化维度</th>
-<th align="left">传统方案 (Reactive/Generic)</th>
-<th align="left"><strong>本优化方案 (Proactive/Hardware-Aware)</strong></th>
-<th align="left">核心原理</th>
-<th align="left">收益</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>调度策略</strong></td>
-<td align="left"><strong>事后回收 (Reactive)</strong><br>OOM 后触发 LRU 回收，易颠簸</td>
-<td align="left"><strong>预算感知 (Proactive)</strong><br>KV-Consumer 模式，事前预留预算</td>
-<td align="left">调度前计算最大需求，原子性预留物理块，消除竞争</td>
-<td align="left">显存利用率 <strong>↑30%</strong>，无 OOM 颠簸</td>
-</tr>
-<tr>
-<td align="left"><strong>故障处理</strong></td>
-<td align="left"><strong>指数退避重试</strong><br>链路故障耗时数秒，资源占用</td>
-<td align="left"><strong>快速失败 (Fast Fail)</strong><br>pd_link_down 立即报错，即时回收显存</td>
-<td align="left">硬件层检测物理链路断连，同步释放僵尸请求资源</td>
-<td align="left">长尾延迟 <strong>→0</strong>，避免资源泄漏</td>
-</tr>
-<tr>
-<td align="left"><strong>内存布局</strong></td>
-<td align="left"><strong>通用格式 (NHWC/NCHW)</strong><br>运行时 Transpose/View</td>
-<td align="left"><strong>NZ 格式 (Fractal_NZ)</strong><br>权重预转，KV Cache 块状存储</td>
-<td align="left">匹配昇腾 Cube 单元 3D 计算模式，消除格式转换开销</td>
-<td align="left">带宽效率 <strong>↑</strong>，拷贝开销 <strong>↓</strong></td>
-</tr>
-<tr>
-<td align="left"><strong>通信原语</strong></td>
-<td align="left"><strong>PyTorch 通用路径</strong><br>额外 Buffer 拷贝</td>
-<td align="left"><strong>HCCL All-to-All</strong><br>TP+SP 双并行切分</td>
-<td align="left">直接调用底层通信库，大序列切块并行传输</td>
-<td align="left">TTFT <strong>↓8×</strong>，通信延迟显著降低</td>
-</tr>
-<tr>
-<td align="left"><strong>算子执行</strong></td>
-<td align="left"><strong>标准 MatMul</strong><br>通用指令</td>
-<td align="left"><strong>高密度 Cube 指令</strong><br>MTP 感知平铺 (Tiling)</td>
-<td align="left">动态分析 M/N/K 维度，均匀切分任务填满线程</td>
-<td align="left">算力利用率 <strong>↑</strong>，吞吐 <strong>↑1.7×</strong></td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<hr>
-<h2>3. 技术实现深潜 (Deep Dive)</h2>
-<h3>3.1 调度器优化：从“事后救火”到“事前预算”</h3>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">机制</th>
-<th align="left">传统事后回收 (Reactive)</th>
-<th align="left"><strong>预算感知调度 (Proactive)</strong></th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>流程</strong></td>
-<td align="left">调度 → 分配 → 计算 → <strong>OOM</strong> → 回收 → 重试</td>
-<td align="left"><strong>计算预算</strong> → 检查空闲 → <strong>预留块</strong> → 调度 → 计算</td>
-</tr>
-<tr>
-<td align="left"><strong>痛点</strong></td>
-<td align="left">资源竞争、频繁颠簸、需保留安全缓冲</td>
-<td align="left">无竞争、无颠簸、显存可打满</td>
-</tr>
-<tr>
-<td align="left"><strong>公式</strong></td>
-<td align="left"><code class="notranslate">所需块 = 当前长度 / 块大小</code></td>
-<td align="left"><code class="notranslate">预算块 = (输入 + 最大输出) / 块大小</code></td>
-</tr>
-<tr>
-<td align="left"><strong>效果</strong></td>
-<td align="left">利用率上限低 (约 60-70%)</td>
-<td align="left">利用率显著提升 (<strong>↑30%</strong>)</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<h3>3.2 故障恢复：pd_link_down 快速失败机制</h3>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">阶段</th>
-<th align="left">传统重试机制</th>
-<th align="left"><strong>快速失败 + 即时回收</strong></th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>检测</strong></td>
-<td align="left">超时检测 (秒级)</td>
-<td align="left">物理链路状态检测 (毫秒级)</td>
-</tr>
-<tr>
-<td align="left"><strong>动作</strong></td>
-<td align="left">指数退避重试 (挂起请求)</td>
-<td align="left">立即上报错误，终止请求</td>
-</tr>
-<tr>
-<td align="left"><strong>资源</strong></td>
-<td align="left">延迟回收 (僵尸占用)</td>
-<td align="left"><strong>同步释放</strong> KV Cache 块回 BlockPool</td>
-</tr>
-<tr>
-<td align="left"><strong>影响</strong></td>
-<td align="left">长尾延迟高，拖慢系统吞吐</td>
-<td align="left">无长尾，资源立即复用</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<h3>3.3 内存与格式：NZ 格式与零拷贝</h3>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">优化点</th>
-<th align="left">实现细节</th>
-<th align="left">硬件对齐原理</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>KV Cache 格式</strong></td>
-<td align="left">稀疏块状存储 (Blocks)，对齐数据块</td>
-<td align="left">匹配 NPU 3D Cube 加载模式，无需 Transpose</td>
-</tr>
-<tr>
-<td align="left"><strong>权重预转</strong></td>
-<td align="left">加载期 <code class="notranslate">npu_format_cast</code> 转为 Fractal_NZ</td>
-<td align="left">消除运行时 View-Flatten 拷贝开销</td>
-</tr>
-<tr>
-<td align="left"><strong>MOE 优化</strong></td>
-<td align="left">长序列用 <strong>Split</strong> 替代 <strong>Concat</strong></td>
-<td align="left">减少中间激活值峰值，显存 <strong>↓50%</strong></td>
-</tr>
-<tr>
-<td align="left"><strong>APC 修复</strong></td>
-<td align="left">每层用完立即释放 <code class="notranslate">pa_out</code></td>
-<td align="left">避免缓存到类成员导致显存累积</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<hr>
-<h2>4. 性能验证指标</h2>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">指标</th>
-<th align="left">优化前</th>
-<th align="left">优化后</th>
-<th align="left">变化幅度</th>
-<th align="left">备注</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>系统吞吐</strong></td>
-<td align="left">Baseline</td>
-<td align="left">+70%</td>
-<td align="left"><strong>↑ 1.7×</strong></td>
-<td align="left">同等 SLO 下</td>
-</tr>
-<tr>
-<td align="left"><strong>首 Token 延迟 (TTFT)</strong></td>
-<td align="left">Baseline</td>
-<td align="left">-87.5%</td>
-<td align="left"><strong>↓ 8×</strong></td>
-<td align="left">TP+SP 双并行贡献</td>
-</tr>
-<tr>
-<td align="left"><strong>显存峰值</strong></td>
-<td align="left">Baseline</td>
-<td align="left">-40%</td>
-<td align="left"><strong>↓ 40%</strong></td>
-<td align="left">MOE Split + 预算调度</td>
-</tr>
-<tr>
-<td align="left"><strong>显存利用率</strong></td>
-<td align="left">~60%</td>
-<td align="left">~90%</td>
-<td align="left"><strong>↑ 30%</strong></td>
-<td align="left">消除安全缓冲浪费</td>
-</tr>
-<tr>
-<td align="left"><strong>长尾延迟</strong></td>
-<td align="left">秒级 (重试)</td>
-<td align="left">毫秒级 (快 fail)</td>
-<td align="left"><strong>显著降低</strong></td>
-<td align="left">故障场景</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<hr>
-<h2>5. 面试高频 Q&amp;A</h2>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">问题</th>
-<th align="left">参考回答要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>Q: 预算感知调度如何避免 OOM？</strong></td>
-<td align="left"><strong>A:</strong> 调度前预先计算请求全生命周期的最大 KV 块需求（输入 + 最大输出）。只有当全局空闲块 ≥ 预算时才准入，否则排队。这保证了运行中请求永远有“粮草”，从根源杜绝 OOM。</td>
-</tr>
-<tr>
-<td align="left"><strong>Q: 为什么 NZ 格式能提升性能？</strong></td>
-<td align="left"><strong>A:</strong> 昇腾 Cube 单元要求数据按 3D 立方体排列。通用格式需运行时 Transpose，NZ 格式在加载期预转换，计算时直接加载，消除拷贝且匹配硬件访问模式，带宽利用率更高。</td>
-</tr>
-<tr>
-<td align="left"><strong>Q: pd_link_down 快速失败有什么好处？</strong></td>
-<td align="left"><strong>A:</strong> 传统重试会挂起请求数秒，且占用显存。快速失败立即终止请求并回收显存，避免“僵尸”资源浪费，让调度器能立即处理新请求，维持高吞吐。</td>
-</tr>
-<tr>
-<td align="left"><strong>Q: MOE 场景下 Split 为什么比 Concat 好？</strong></td>
-<td align="left"><strong>A:</strong> Concat 需要分配一块连续大内存存放所有专家结果，峰值高。Split 分块处理，用完即释，峰值显存可减半，特别适合长序列场景。</td>
-</tr>
-<tr>
-<td align="left"><strong>Q: 通信优化中 TP+SP 是什么？</strong></td>
-<td align="left"><strong>A:</strong> Tensor Parallelism + Sequence Parallelism。将 128k 长序列切分为 2k-4k 小块并行传输，避免单一大包阻塞链路，使 TTFT 随序列长度线性下降而非指数上升。</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<hr>
-<p></p>
-</details> 
-<blockquote>
-<p><strong>项目定位</strong>：面向生产环境的大模型推理系统优化，聚焦 <strong>PD 分离调度</strong>、<strong>算子融合</strong>、<strong>Host Bound 消除</strong>、<strong>前缀缓存复用</strong> 四大核心方向，实现吞吐、延迟、显存效率的全面突破。</p>
-</blockquote>
-<hr>
-<h2>PD 分离架构核心优化项目合集（昇腾 NPU）</h2>
-<markdown-accessiblity-table><table role="table">
-<thead>
-<tr>
-<th align="left">优化方向</th>
-<th align="left">核心目标</th>
-<th align="left">关键收益</th>
-<th align="left">昇腾 NPU 特色</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="left"><strong>PD 分离调度</strong></td>
-<td align="left">Prefill/Decode 解耦 + 异步 KV 加载</td>
-<td align="left">TTFT ↓30%，显存利用率 ↑30%</td>
-<td align="left"><code class="notranslate">kv_transfer_config</code> 角色感知 + 异步事件发布</td>
-</tr>
-<tr>
-<td align="left"><strong>算子融合优化</strong></td>
-<td align="left">小算子合并，减少 Kernel 下发</td>
-<td align="left">端到端吞吐 ↑5%，内存带宽 ↓</td>
-<td align="left"><code class="notranslate">Fused_Add_LayerNorm</code> + Fractal_NZ 格式对齐</td>
-</tr>
-<tr>
-<td align="left"><strong>Host Bound 消除</strong></td>
-<td align="left">减少 CPU 下发瓶颈，提升 NPU 利用率</td>
-<td align="left">Device 空闲时间 ↓15%，吞吐 ↑2-3%</td>
-<td align="left">CPU 绑核 + TaskQueue 优化 + 通算并行切分</td>
-</tr>
-<tr>
-<td align="left"><strong>APC 前缀缓存</strong></td>
-<td align="left">复用重复提示词的 KV Cache，避免重复计算</td>
-<td align="left">缓存命中率 55%→80%+，TTFT ↓30%</td>
-<td align="left">PagedAttention 块级复用 + 指纹哈希匹配</td>
-</tr>
-</tbody>
-</table></markdown-accessiblity-table>
-<hr>
-<p>具体细节如下：</p>
-<details><summary>Details</summary>
-<p>
-</p><h2>🔧 核心优化点对比表</h2>
-<h3>1. PD 分离调度优化</h3>
-<p>…<strong>Q: 为什么组合块匹配要限制连续且递减？</strong></p>
-<blockquote>
-<p>A: PagedAttention 的 Block Table 要求逻辑块在物理上可离散，但同一序列的前缀块必须保持顺序。连续+递减校验确保复用的块序列与原始计算顺序完全一致，避免注意力计算错误。</p>
-</blockquote>
+</p><ol>
+<li>当 Prefill 节点开始计算时，它立即通过轻量级控制通道（共享内存）向 Decode 节点发送元数据消息：{RequestID, BlockIDs, TotalSize, ExpectedArrivalTime}。<br>
+Decode 节点动作：收到消息后，不等待数据，立即在本地显存中预留（Reserve） 对应的物理页框（Page Frames），并将这些 Block 的状态标记为 TRANSFERRING。此时，Decode 节点的调度器已经知道“这块地皮有人占了”，可以提前规划后续任务。</li>
+<li>独立通信流 (Dedicated Communication Stream)<br>
+在昇腾 NPU 上，通过HCCL Communication Stream，与主 Compute Stream 分离。<br>
+Prefill 侧：一旦某个 Block 计算完成（触发 aclrtEvent），立即将该 Block 的数据指针提交给 Communication Stream，发起 HCCL_Send。<br>
+Decode 侧：Communication Stream 监听网卡中断或通过轮询检查。数据一旦到达（RDMA 零拷贝写入显存），立即触发一个 aclrtEvent (记为 DataReadyEvent)。</li>
+<li>事件驱动的流水线调度 (Event-Driven Pipelining)<br>
+Decode 节点的主调度循环不再阻塞等待数据。它会检查待执行队列中的 Request。<br>
+关键逻辑：如果一个 Request 的前N 个 Block 状态已变为 READY（即 DataReadyEvent 已触发），调度器立即将这 N个Block提交给计算流进行 Attention 计算。<br>
+与此同时，第 N+1 到M 个 Block 可能还在 Communication Stream 中传输。<br>
+效果：Compute Stream 在处理前缀时，Communication Stream 正在搬运后缀。计算掩盖了传输延迟。</li>
+<li>双缓冲机制 (Double Buffering) 优化<br>
+为了进一步消除抖动，Decode 节点维护两套 Block Table 缓冲区：ActiveBuffer 和 PreFetchBuffer。<br>
+当 ActiveBuffer 正在被计算时，后台线程自动将下一批需要的远程 KV 预取到 PreFetchBuffer。<br>
+计算切换时，只需交换指针（Swap Pointer），无需任何数据拷贝。</li>
+<li>快速失败 (Fast Fail) 注入<br>
+在 Communication Stream 中设置超时定时器。如果某个 Block 在timeout内未到达（网络拥塞或对端故障），立即触发 FastFailEvent。<br>
+调度器捕获该事件，毫秒级切断该 Request，释放预留显存，并记录日志，避免整个 Decode 节点卡死。</li>
+</ol>
 <p></p>
 </details> 
 <p><strong>专家优化的项目：</strong><br>
