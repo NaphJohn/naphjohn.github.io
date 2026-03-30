@@ -11,38 +11,12 @@
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
 <meta name="description" content="# qwen3-omni
-1. 整体架构图解
-graph LR
-    Audio[输入音频] --> Encoder[音频编码器 (Audio Encoder)]
-    Encoder --> Projector[模态投影层 (Projector)]
-    Projector --> LLM[Qwen3 LLM (核心大脑)]
-    TextIn[文本输入] --> Embed[文本嵌入]
-    Embed --> LLM
-    
-    subgraph 输出分支
-    LLM --> TextHead[文本头 (Text Head)] --> TextOut[文本输出]
-    LLM --> AudioHead[音频头 (Audio Head / Flow Matching)] --> AudioOut[音频输出]
-    end
-2. 关键组件详解
-音频编码器 (Audio Encoder)：
-通常基于改进的 Whisper Encoder 或 Conformer 结构。">
+
+Qwen3-Omni 采用 Thinker-Talker MoE 架构 实现端到端原生多模态。">
 <meta property="og:title" content="语音大模型">
 <meta property="og:description" content="# qwen3-omni
-1. 整体架构图解
-graph LR
-    Audio[输入音频] --> Encoder[音频编码器 (Audio Encoder)]
-    Encoder --> Projector[模态投影层 (Projector)]
-    Projector --> LLM[Qwen3 LLM (核心大脑)]
-    TextIn[文本输入] --> Embed[文本嵌入]
-    Embed --> LLM
-    
-    subgraph 输出分支
-    LLM --> TextHead[文本头 (Text Head)] --> TextOut[文本输出]
-    LLM --> AudioHead[音频头 (Audio Head / Flow Matching)] --> AudioOut[音频输出]
-    end
-2. 关键组件详解
-音频编码器 (Audio Encoder)：
-通常基于改进的 Whisper Encoder 或 Conformer 结构。">
+
+Qwen3-Omni 采用 Thinker-Talker MoE 架构 实现端到端原生多模态。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://naphjohn.github.io/post/yu-yin-da-mo-xing.html">
 <meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
@@ -104,6 +78,10 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
     <div id="content">
 <div class="markdown-body" id="postBody"><h1>qwen3-omni</h1>
+<p>Qwen3-Omni 采用 Thinker-Talker MoE 架构 实现端到端原生多模态。输入层通过 AuT音频编码器 (650M，12.5Hz低帧率) 和 SigLIP2视觉编码器 (540M) 统一编码为连续特征，经 TM-RoPE时序对齐 后送入Thinker。<br>
+Thinker是 30B-A3B的MoE模型，48层128专家，每token仅激活3B，负责多模态联合推理，输出文本token和高层多模态特征。关键创新是Talker不再依赖文本表示，而是直接接收Thinker的多模态特征，实现内容生成与语音合成的解耦，支持外部干预和独立风格控制。<br>
+Talker是 3B-A0.3B的MoE模型，自回归生成码本0，经 MTP模块 并行预测残差码本1-14，最后通过 轻量因果ConvNet (Code2Wav，200M) 流式合成波形，端到端延迟仅 234ms。<br>
+相比Qwen2.5-Omni，升级包括：MoE稀疏激活、自研AuT替代Whisper、多码本语音合成、以及四模态全SOTA零退化的性能表现。</p>
 <ol>
 <li>
 <p>整体架构图解<br>
