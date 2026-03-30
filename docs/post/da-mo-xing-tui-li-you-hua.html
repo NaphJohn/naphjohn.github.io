@@ -227,7 +227,7 @@ $$s = \left(\frac{\max(|X|)}{\text{mean}(\max(|X|)) + \epsilon}\right)^\alpha$$<
 </details> 
 <p>二. 基于精度补偿，比如gptq<br>
 <strong>GPTQ</strong><br>
-一种训练后量化策略。它认为权重矩阵中的异常值会显著增加量化误差，于是通过近似二阶信息（Hessian矩阵）来逐层寻找最优的量化权重，同时用少量校准数据最小化重构误差。</p>
+一种训练后量化策略。它认为权重矩阵中的异常值会显著增加量化误差，于是通过近似二阶信息（Hessian矩阵）来逐层寻找最优的量化权重，同时用少量校准数据最小化重构误差。海森矩阵的作用是衡量权重重要性并确定最优补偿方向。</p>
 <details><summary>Details</summary>
 <p>
 </p>
