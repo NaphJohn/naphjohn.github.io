@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    
+    <link rel="icon" href="https://avatars.githubusercontent.com/u/46772304?v=4"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="# LLM的推理/transformer架构/vllm
+## LLM 推理的推理过程
+目前主流LLM都是基于transformer的Decoder-only架构，因为 Decoder-only 架构在“大规模无监督预训练”这个特定范式下，展现出了更好的可扩展性（Scalability）和任务通用性。">
+<meta property="og:title" content="大模型推理基础">
+<meta property="og:description" content="# LLM的推理/transformer架构/vllm
+## LLM 推理的推理过程
+目前主流LLM都是基于transformer的Decoder-only架构，因为 Decoder-only 架构在“大规模无监督预训练”这个特定范式下，展现出了更好的可扩展性（Scalability）和任务通用性。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://naphjohn.github.io/post/da-mo-xing-tui-li-ji-chu.html">
+<meta property="og:image" content="https://avatars.githubusercontent.com/u/46772304?v=4">
+<title>大模型推理基础</title>
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+.copy-feedback {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 50px;
+    color: var(--color-fg-on-emphasis);
+    background-color: var(--color-fg-muted);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+}
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">大模型推理基础</h1>
+<div class="title-right">
+    <a href="https://naphjohn.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/NaphJohn/naphjohn.github.io/issues/3" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><h1>LLM的推理/transformer架构/vllm</h1>
+<h2>LLM 推理的推理过程</h2>
+<p>目前主流LLM都是基于transformer的Decoder-only架构，因为 Decoder-only 架构在“大规模无监督预训练”这个特定范式下，展现出了更好的可扩展性（Scalability）和任务通用性。</p>
+<p><strong>LLM中输入到输出</strong>总体过程如下：<br>
+输入Token -&gt; 嵌入 -&gt; 加上位置编码 -&gt; 通过N个Transformer层 -&gt; 最终层归一化 -&gt; 语言模型头 -&gt; 概率分布 -&gt; 输出Token</p>
+<p>更加细节化看下面：</p>
+<details><summary>Details</summary>
+<p>
+</p><ol>
+<li>输入嵌入层 (Input Embedding)<br>
+核心作用：将离散的 Token ID 转换为连续的稠密语义向量。</li>
+<li>位置编码注入 (Positional Embedding Injection)<br>
+核心作用：通过旋转 Q/K 向量的特定维度，将绝对位置信息编码进相对注意力关系中。</li>
+<li>N 个 Transformer 层循环 (The Core Loop)<br>
+A. 前置归一化 (Pre-Normalization)：在不依赖批次统计量的情况下稳定激活值分布，加速收敛。<br>
+B. 自注意力机制 (Self-Attention)：<br>
+线性投影：将输入投影到查询、键、值空间，并通过 GQA 策略压缩键值对以节省显存。<br>
+RoPE 应用：赋予 Q 和 K感知相对位置的能力，实现长度外推。<br>
+注意力分数计算：计算当前 Token 对所有历史 Token 的关注权重分布。<br>
+加权求和：根据注意力权重从历史上下文聚合信息。<br>
+输出投影：将聚合后的多通道信息融合并还原到模型隐藏层维度。<br>
+C. 残差连接 1 (Add &amp; Norm)：将原始输入与注意力输出相加，保留原始信息流并缓解梯度消失。<br>
+D. 前馈网络 (MLP / FFN)：<br>
+(Dense 模式)：通过非线性变换提取高阶特征。<br>
+(MoE 模式)：动态路由至少量专家网络以实现条件计算和容量扩展。<br>
+E. 残差连接 2 (Add &amp; Norm)：将 MLP 的输出加回主干，完成本层的完整更新。</li>
+<li>最终层归一化 (Final Layer Norm)<br>
+核心作用：在送入预测头之前，对最终隐藏状态进行标准化处理。</li>
+<li>语言模型头 (LM Head)<br>
+核心作用：将隐藏层语义向量解码为词表中每个 Token 的非归一化得分 (Logits)。<br>
+概率分布与采样 (Softmax &amp; Sampling)<br>
+核心作用：将得分转化为概率分布，并根据策略随机或贪婪地选择下一个输出 Token。</li>
+</ol>
+<p></p>
+</details> 
+<h3>transformer对应架构</h3>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>组件</th>
+<th>Encoder (编码器)</th>
+<th>Decoder (解码器)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>层数</td>
+<td>6 层</td>
+<td>6 层</td>
+</tr>
+<tr>
+<td>注意力机制</td>
+<td>Multi-Head Self-Attention</td>
+<td>Masked Multi-Head Attention</td>
+</tr>
+<tr>
+<td>交叉注意力</td>
+<td>❌ 无</td>
+<td>✅ Cross-Attention （让 Decoder 能够"关注"Encoder 的输出）</td>
+</tr>
+<tr>
+<td>归一化</td>
+<td>Add &amp; Norm (每子层后)</td>
+<td>Add &amp; Norm (每子层后)</td>
+</tr>
+<tr>
+<td>前馈网络</td>
+<td>Feed-Forward</td>
+<td>Feed-Forward</td>
+</tr>
+<tr>
+<td>输出</td>
+<td>上下文表示 (Context Vector)</td>
+<td>概率分布 (Vocab Size)</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p>🔹 Attention → QK^T 相似度，softmax 加权 V<br>
+🔹 Multi-Head → 多头并行，捕捉多模式<br>
+🔹 Position → 正弦编码，注入位置信息<br>
+🔹 FFN → 两层全连接，4 倍扩展维度<br>
+🔹 Norm+Res → 层归一化 + 残差，训练更深网络<br>
+🔹 复杂度 → O(n²) 是瓶颈，长序列需优化</p>
+<p>对应公式：Attention(Q, K, V) = softmax(QK^T / √d_k) · V</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>部分</th>
+<th>含义</th>
+<th>维度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>QK^T</td>
+<td>查询 - 键相似度矩阵 而K^T主要是为了矩阵乘法的维度匹配和计算相似度。</td>
+<td>n×n</td>
+</tr>
+<tr>
+<td>√d_k</td>
+<td>缩放因子，防止梯度消失</td>
+<td>标量</td>
+</tr>
+<tr>
+<td>softmax</td>
+<td>归一化为概率分布</td>
+<td>n×n</td>
+</tr>
+<tr>
+<td>·V</td>
+<td>加权求和得到输出</td>
+<td>n×d_v</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p><strong>kvcache</strong><br>
+原理：自回归生成时，把之前所有 token 已经算过的 K/V 矩阵缓存到 HBM，下次只算新 token 的 Q/K/V，然后拼接历史 K/V 做注意力，避免 O(n²) 重复计算。<br>
+数学公式：<br>
+<strong>简化版</strong>：<br>
+KV_Cache_Size = 2 × num_layers × hidden_size × seq_len × batch_size × bytes_per_param</p>
+<h3>线程 / 多线程 / 协程：</h3>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>维度</th>
+<th>进程</th>
+<th>线程</th>
+<th>协程</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>操作系统可见</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>调度方</td>
+<td>OS</td>
+<td>OS</td>
+<td>用户空间（事件循环）</td>
+</tr>
+<tr>
+<td>切换代价</td>
+<td>最高（页表、内核）</td>
+<td>高（内核态）</td>
+<td>最低（用户态，只保存栈）</td>
+</tr>
+<tr>
+<td>并行能力</td>
+<td>✅ 多核</td>
+<td>✅ 多核</td>
+<td>❌ 单线程内并发</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>多核计算、故障隔离</td>
+<td>I/O 密集、CPU 密集</td>
+<td>高并发 I/O（异步）</td>
+</tr>
+<tr>
+<td>一句话记忆</td>
+<td>独立公司</td>
+<td>项目组</td>
+<td>个人</td>
+</tr>
+<tr>
+<td>Python 模块</td>
+<td><code class="notranslate">multiprocessing</code></td>
+<td><code class="notranslate">concurrent.futures.ThreadPoolExecutor</code></td>
+<td><code class="notranslate">asyncio</code></td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<h2>注意力机制</h2>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th align="left">机制</th>
+<th align="left">核心思想</th>
+<th align="left">KV Cache 大小</th>
+<th align="left">显存/带宽</th>
+<th align="left">质量</th>
+<th align="left">典型应用</th>
+<th align="left">🔑 关键细节</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>MHA</strong></td>
+<td align="left">每头独立 Q/K/V 投影</td>
+<td align="left"><code class="notranslate">H·n·d</code></td>
+<td align="left">🔴 最高</td>
+<td align="left">🟢 基准</td>
+<td align="left">早期 Transformer</td>
+<td align="left">精度最高，但长序列显存爆炸</td>
+</tr>
+<tr>
+<td align="left"><strong>MQA</strong></td>
+<td align="left">所有 Query 共享 1 组 K/V</td>
+<td align="left"><code class="notranslate">1·n·d</code></td>
+<td align="left">🟢 最低</td>
+<td align="left">🔴 下降明显</td>
+<td align="left">早期推理优化</td>
+<td align="left">速度最快，但精度损失大，少用</td>
+</tr>
+<tr>
+<td align="left"><strong>GQA</strong></td>
+<td align="left">Query 分 G 组，组内共享 K/V</td>
+<td align="left"><code class="notranslate">G·n·d</code></td>
+<td align="left">🟡 中等</td>
+<td align="left">🟡 ≈MHA</td>
+<td align="left">Llama2/3, GPT-4, Mistral</td>
+<td align="left"><strong>新默认</strong>：G=8 时显存↓8×，精度损失&lt;1%</td>
+</tr>
+<tr>
+<td align="left"><strong>MLA</strong></td>
+<td align="left">低秩投影：K/V→latent c→还原</td>
+<td align="left"><code class="notranslate">R·n·d</code> (R≪H)</td>
+<td align="left">🟢 比 MQA 更低</td>
+<td align="left">🟢 ≥MHA</td>
+<td align="left">DeepSeek-V2/V3</td>
+<td align="left"><strong>在线投影</strong>：写入时 <code class="notranslate">W_down</code> 压缩，读取时 <code class="notranslate">W_up</code> 还原 + 解耦 Query 保表达</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p><strong>MLA</strong> 低秩投影<br>
+写入时:  h → [W_down] → c (latent, dim=R) → 只缓存 c<br>
+读取时:  c → [W_up] → K, V (dim=d) + 解耦 Query → Attention<br>
+优势:    缓存大小从 H·d 降至 R (R≈H·d/8)，显存↓8×，且通过解耦设计精度反超 MHA</p>
+<h3>传统注意力 vs 线性递归 (GDN/KDA) + MoE 核心</h3>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th align="left">维度</th>
+<th align="left">传统注意力 (MHA/GQA/MLA)</th>
+<th align="left">线性递归 (GDN / KDA)</th>
+<th align="left">稀疏 MoE</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>核心范式</strong></td>
+<td align="left"><code class="notranslate">softmax(QKᵀ/√d)·V</code> + 显式 KV 缓存</td>
+<td align="left">线性递归：<code class="notranslate">Sₜ = α·Sₜ₋₁ + kₜ·vₜᵀ</code> + 隐式状态</td>
+<td align="left"><code class="notranslate">Top-K Router</code> + 专家 FFN 并行</td>
+</tr>
+<tr>
+<td align="left"><strong>记忆存储</strong></td>
+<td align="left">显式存每 token 的 K/V 向量</td>
+<td align="left">隐式存递归状态矩阵 <code class="notranslate">S</code> (d×d)</td>
+<td align="left">不存历史，每步只激活部分参数</td>
+</tr>
+<tr>
+<td align="left"><strong>内存-长度</strong></td>
+<td align="left"><strong>O(n)</strong>：n 多长 cache 多大</td>
+<td align="left"><strong>O(1)</strong>：n 再长也只占 d×d 常数</td>
+<td align="left"><strong>O(1)</strong>：激活参数固定，与 n 无关</td>
+</tr>
+<tr>
+<td align="left"><strong>长文本外推</strong></td>
+<td align="left">需 RoPE/NTK/ALiBi 等位置修正</td>
+<td align="left">递归天然带衰减 α&lt;1，外推更稳</td>
+<td align="left">与长度无关，靠专家容量扩展</td>
+</tr>
+<tr>
+<td align="left"><strong>门控机制</strong></td>
+<td align="left">无（除 MLA 投影）</td>
+<td align="left">GDN: 头级标量门 / KDA: 通道级向量门</td>
+<td align="left">Router: Top-K 专家选择 + 负载均衡</td>
+</tr>
+<tr>
+<td align="left"><strong>混合策略</strong></td>
+<td align="left">-</td>
+<td align="left">3:1 混合：75% 线性层 (O(1)) + 25% 全局 Attention (保精度)</td>
+<td align="left">Shared Expert (常驻) + Routed Experts (按需)</td>
+</tr>
+<tr>
+<td align="left"><strong>适用场景</strong></td>
+<td align="left">通用训练/推理，生态成熟</td>
+<td align="left"><strong>百万 token 实时推理</strong>，显存墙场景</td>
+<td align="left"><strong>大容量模型</strong>：参数↑10×，计算量≈Dense</td>
+</tr>
+<tr>
+<td align="left"><strong>代表模型</strong></td>
+<td align="left">Llama, Qwen, GPT-4</td>
+<td align="left">DeltaNet, Mamba-2, GDN</td>
+<td align="left">Mixtral 8x7B, DeepSeek-V2, Qwen3.5-MoE</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p><strong>PageAttention原理：</strong><br>
+“PagedAttention 把操作系统『分页内存』搬进 GPU：</p>
+<ol>
+<li>逻辑页：KV-Cache 按 16-token 固定大小切成连续『页』；</li>
+<li>物理帧：显存里不连续的空闲块，用 block-table 映射；</li>
+<li>共享+写时复制：多序列可共用同一物理页，引用计数为 0 立即回收，显存碎片 &lt;4%，吞吐提升 2× 以上。”</li>
+</ol>
+<p><strong>FlashAttention</strong> 是通过<strong>IO 优化</strong>加速 Attention：</p>
+<ul>
+<li>分块计算，减少 HBM 访问</li>
+<li>重计算换显存，支持更长序列</li>
+<li>训练加速 2-4 倍，精确计算无近似</li>
+</ul>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>版本</th>
+<th>年份</th>
+<th>硬件架构</th>
+<th>核心改进 (Core Improvements)</th>
+<th>性能收益</th>
+<th>面试关键区别</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FA-v1</td>
+<td>2022</td>
+<td>V100/A100</td>
+<td>首次提出 Tiling + 在线 Softmax串行处理序列块，减少 HBM 访问</td>
+<td>训练加速 2-4×显存省 50%</td>
+<td>奠基者：解决 O(N²) 显存问题，序列维度串行。</td>
+</tr>
+<tr>
+<td>FA-v2</td>
+<td>2023</td>
+<td>Ampere/H100</td>
+<td>序列并行化 + Warp 级划分Q 只读 1 遍，减少非矩阵运算，支持 GQA</td>
+<td>吞吐再 ↑1.7-2×FLOPs 利用率 73%</td>
+<td>并行化：序列维度并行，Q 矩阵 HBM 访问次数最小化。</td>
+</tr>
+<tr>
+<td>FA-v3</td>
+<td>2024</td>
+<td>Hopper (H100)</td>
+<td>TMA 异步拷贝 + WGMMA + FP8流水线重叠，块稀疏，Warp 专用化</td>
+<td>比 v2 再 ↑3×支持 1M+ 上下文</td>
+<td>硬件特性：利用 Hopper 新指令 (TMA/WGMMA)，异步传输。</td>
+</tr>
+<tr>
+<td>FA-v4</td>
+<td>2025</td>
+<td>Blackwell</td>
+<td>MUFU.EX2 + CuTe DSL + 双缓冲跳过 90% rescale，原生 FP8/FP4</td>
+<td>训练 ↑11× (GPT-4 规模)能耗 ↓30%</td>
+<td>极致融合：Blackwell 原生优化，指数指令加速，CuTe 编程模型。</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<h2>LLM 推理的核心指标</h2>
+<details><summary>Details</summary>
+<p>
+- Time To First Token (TTFT): 首 Token 延迟，即从输入到输出第一个 token 的延迟。在在线的流式应用中，TTFT 是最重要的指标，因为它决定了用户体验。
+- Time Per Output Token (TPOT)： 每个输出 token 的延迟（不含首个Token）。在离线的批处理应用中，TPOT 是最重要的指标，因为它决定了整个推理过程的时间。
+- Latency：延迟，即从输入到输出最后一个 token 的延迟。 Latency = (TTFT) + (TPOT) * (the number of tokens to be generated). Latency 可以转换为 Tokens Per Second (TPS)：TPS = (the number of tokens to be generated) / Latency。
+- Throughput：吞吐量，即每秒针对所有请求生成的 token 数。以上三个指标都针对单个请求，而吞吐量是针对所有并发请求的。
+</p><p>我们将 LLM 应用分为两种：</p>
+<ul>
+<li>在线流式应用：对 TTFT、TPOT、Latency 敏感，需要尽可能快的生成 token。</li>
+<li>离线批量应用：对 Throughput 敏感，需要在单位时间内尽可能多的生成 token。<br>
+而实际在某种应用（如在线流式应用），我们也应该在Latency 和 Throughput 之间进行权衡，提高 Throughtput 可以提高硬件承担的并发数，从而降低推理成本。</li>
+</ul>
+<p></p>
+</details> 
+<h3>LLM基座的推理能力</h3>
+<p>核心评估维度：<br>
+逻辑推理  比如mmlu（涵盖57个主题的多项选择题）<br>
+数学推理  GSM8K, MATH, AQuA-RAT<br>
+常识推理 HellaSwag, PIQA, ARC<br>
+多步推理  BigBench-Hard, DROP<br>
+代码推理  HumanEval, MBPP，livecodebench，livecodebench2025</p>
+<h2>LLM 推理的性能卡点</h2>
+<h3>小模型常用的优化手段</h3>
+<details><summary>Details</summary>
+<p>
+</p><p>训练前：剪枝 → 裁词表 → 层数减半<br>
+↓<br>
+训练：蒸馏 + ZeRO + 检查点<br>
+↓<br>
+推理：量化 → GQA → FlashAttn → Continuous Batch</p>
+<p></p>
+</details> 
+<p><strong>蒸馏</strong><br>
+蒸馏具体步骤</p>
+<details><summary>Details</summary>
+<p>
+第一步：准备阶段——搭建师生框架
+这个阶段的目标是准备好老师和学生，并确定教学大纲。
+</p><p>训练/选定教师模型：<br>
+我们需要一个强大的、已经训练好的复杂模型（如大型BERT、ResNet-50等）作为教师。这个模型在目标任务上要有很高的准确率。初始化学生模型：设计一个更小、更高效的模型作为学生（如小型BERT、TinyBERT、MobileNet等）。</p>
+<p>核心思想：学生模型的能力天花板通常低于老师，我们的目标是让它无限逼近这个天花板。</p>
+<p>确定蒸馏策略：<br>
+明确要蒸馏的知识形式。最经典和常用的是基于输出的蒸馏，即让学生模仿老师最终的输出预测。</p>
+<p>第二步：训练阶段<br>
+前向传播：<br>
+将同一批训练数据分别输入教师模型和学生模型。对教师和学生的输出logits（分数）同时使用高温Softmax（温度T &gt; 1） 进行软化，得到富含信息的“软标签”。</p>
+<p>损失计算：<br>
+蒸馏损失：计算学生软标签与教师软标签之间的差异。这里通常使用 KL散度，因为它专门用于衡量两个概率分布的相似度。这一步是让学生学习老师的‘暗知识’——即类别间的相似性关系。<br>
+学生损失：计算学生模型的标准输出（T=1）与真实标签（硬标签）之间的交叉熵损失。这一步是保证学生不偏离正确的答案。<br>
+总损失：将两个损失进行加权合并，公式为：总损失 = α * 蒸馏损失 + (1 - α) * 学生损失。这里的 α 是一个超参数，用于平衡两种知识来源的重要性。</p>
+<p>参数更新：只对学生模型进行反向传播，根据总损失更新学生模型的参数。教师模型的参数是冻结的、不更新的。</p>
+<p>Q：“温度参数T的作用是什么？”<br>
+答：T是一个超参数，用于控制输出概率分布的平滑程度。T越大，分布越平缓，错误类别蕴含的相对信息（暗知识）就越明显。T=1就是标准的Softmax。高的T有助于学生更好地学习类别间的关系，但通常推理时会设回T=1。</p>
+<p>Q：“为什么学生模型能学到比直接训练更好的效果？”<br>
+答：因为硬标签只提供了“是什么”的单一信息，而教师的软标签提供了“什么像什么”的丰富结构化信息。这相当于一个学生不仅知道了答案，还理解了整个知识体系的内在联系，因此泛化能力更强。</p>
+<p></p>
+</details> 
+<p><strong>剪枝</strong><br>
+宽度剪枝（Sparse/Width Pruning）：砍掉不重要的 Attention head、FFN 中间维度，效果是参数 ↓30-50%，精度掉 &lt;1%<br>
+深度剪枝：直接删掉冗余 Transformer 层，效果是6L 小模型可比 12L 大模型快 2×<br>
+主要思路是Attention head / FFN 宽度 → 用 梯度/激活/权重幅值 + 一次性重要性估计 给每个 head/neuron 打分，低于阈值直接置零，再微调恢复精度。<br>
+整层冗余 → 用 Block Influence / LayerDrop + 早期彩票 ticket 先“试删”再评估下游掉点，掉点&lt;ε 的层即可永久剔除。</p>
+<h1>LLM 推理场景化优化速查表 (Scenario-Based Optimization)</h1>
+<p>核心公式：<br>
+短输入 + 长输出 → 优化 TPOT (Time Per Output Token) → 关注 Decode 阶段带宽/计算比<br>
+长输入 + 短输出 → 优化 TTFT (Time To First Token) → 关注 Prefill 阶段 O(n²) 计算/显存<br>
+低并发低时延 → 优化 单请求延迟 → 小 Batch、内核融合、投机解码<br>
+高并发高吞吐 → 优化 系统吞吐量 → 大 Batch、连续批处理、量化、PD 分离</p>
+<details><summary>Details</summary>
+<p>
+</p><markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>场景类型</th>
+<th>核心矛盾</th>
+<th>关键指标</th>
+<th>优化方向</th>
+<th>典型技术方案</th>
+<th>预期收益</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🔹 短输入 + 长输出(多轮对话/写作)</td>
+<td>Decode 阶段占 90%+ 时间，自回归串行 + KV Cache 带宽瓶颈</td>
+<td>TPOT ↓(每 token 延迟)</td>
+<td>1. 减少每步计算量2. 降低 KV 访存带宽3. 增大 Decode 并行度</td>
+<td>• PD 分离 (Decode 专用卡)• 连续批处理 (Continuous Batching)• KV 量化 (INT8/4) + GQA/MLA• 投机解码 (Medusa/Eagle)• 前缀缓存 + 分段流水</td>
+<td>TPOT: 100ms → 30-50ms吞吐: ↑3-5×显存: ↓40-60%</td>
+</tr>
+<tr>
+<td>🔹 长输入 + 短输出(文档摘要/RAG)</td>
+<td>Prefill 阶段 O(n²) Attention，HBM 带宽 + 计算量双重瓶颈</td>
+<td>TTFT ↓(首 token 时间)</td>
+<td>1. 降低 Attention 复杂度2. 切分长序列并行计算3. 复用历史 KV Cache</td>
+<td>• Chunked-Prefill (必开)• FlashAttention-2/3 + FA-Decoding• MLA/GQA 减少 KV 头数• 多卡 TP+SP 并行• Prefix Cache 命中复用</td>
+<td>TTFT: 128K 输入 ↓40-60%OOM 率: 30% → 0%计算: O(n²) → O(k·n)</td>
+</tr>
+<tr>
+<td>🔹 低并发 + 低时延(交互式/实时应用)</td>
+<td>单请求延迟敏感，无法通过大 Batch 摊薄开销</td>
+<td>P99 延迟 ↓单请求端到端时间</td>
+<td>1. 内核级融合优化2. 减少 Kernel Launch 开销3. 投机/早停策略</td>
+<td>• 算子融合 (Fused QKV/RMSNorm)• 小 Batch (1-4) + 低精度 (FP16/INT8)• 投机解码 (1-2 步验证)• 静态形状编译 (避免动态开销)</td>
+<td>单请求延迟 ↓20-40%交互体验流畅 (＜100ms/step)</td>
+</tr>
+<tr>
+<td>🔹 高并发 + 高吞吐(批量推理/服务化)</td>
+<td>系统资源利用率优先，允许单请求延迟适度增加</td>
+<td>Throughput ↑(tokens/sec/card)</td>
+<td>1. 最大化 GPU 利用率2. 连续批处理 + 动态调度3. 量化 + 稀疏化</td>
+<td>• 连续批处理 (MAX_UTILIZATION)• KV Cache 量化 (INT4/8) + 显存复用• PD 分离 + 异构调度 (Prefill 卡/Decode 卡)• W4A16/W8A8 GEMM + Marlin Kernel</td>
+<td>吞吐: ↑5-10×显存效率: ↑2-3×单位成本: ↓50-70%</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p></p>
+</details> 
+<h1>大模型架构Qwen、GPT系列、llama系列，Deepseek系列</h1>
+<p>Transformer架构（Self-Attention（让每个词关注下句子里的其它词） + FFN（每个词独立处理） + 残差）</p>
+<ol>
+<li>GPT 系列<br>
+最纯正 Decoder-only + 原始 MHA，靠堆参数、堆数据、堆算力出奇迹；GPT-4 开始用 8×8 专家混合(MoE) 降成本，但官方细节未公开。</li>
+<li>Llama 系列<br>
+把 MHA 换成 GQA（分组查询，32→8 组），KV-cache 砍 4×；用 RoPE + SwiGLU + RMSNorm，成为后续开源模型的“标准模板”。</li>
+<li>Qwen 系列<br>
+像qwen3-80b-next，在 Llama 模板基础上再切 2/3 层做 Gated DeltaNet（GDN）线性 Attention，缓存 O(1)；长文本 1M token 外推靠 NTK-RoPE 动态基频。</li>
+<li>DeepSeek 系列<br>
+DeepSeek-V2 首推 MLA（Multi-head Latent Attention）：把 KV 先低秩投影到 128 维潜向量，再还原，缓存再降 5-8×，效果反超 MHA。<br>
+DeepSeek-MoE 用 共享+细粒度专家 分割，每 token 只激活 8.3% 参数，训练成本只有同规模 Dense 的 40%。<br>
+DualPipe 调度：Prefill/Decode 两条流水线 chunk 级并行，TTFT 降 30%。</li>
+</ol>
+<h2>Qwen模型架构与数据流动</h2>
+<p>核心改进总结：RMSNorm + SwiGLU + RoPE 已成为新一代LLM（如LLaMA, Qwen等）的标准配置。</p>
+<p>Qwen3.5: "用线性注意力处理大部分上下文，关键层用全注意力保精度，类似『粗筛 + 精算』策略"</p>
+<details><summary>Details</summary>
+<p>
+</p><markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>组件</th>
+<th>Qwen2</th>
+<th>Qwen3</th>
+<th>Qwen3.5</th>
+<th>面试关键点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>归一化</td>
+<td>RMSNorm</td>
+<td>RMSNorm</td>
+<td>Centered RMSNorm (1+weight, 零初始化)</td>
+<td>零初始化使初始行为接近恒等映射，提升深层训练稳定性 知乎</td>
+</tr>
+<tr>
+<td>激活函数</td>
+<td>SwiGLU</td>
+<td>SwiGLU</td>
+<td>SwiGLU (专家层标准配置)</td>
+<td>门控机制提升语言建模能力，梯度流动更稳定</td>
+</tr>
+<tr>
+<td>位置编码</td>
+<td>RoPE</td>
+<td>RoPE + YaRN</td>
+<td>M-RoPE (Multimodal RoPE) + Partial Rotary (25%)</td>
+<td>多模态位置编码，仅 25% head_dim 应用 RoPE 降低计算 知乎</td>
+</tr>
+<tr>
+<td>注意力</td>
+<td>GQA</td>
+<td>GQA</td>
+<td>Hybrid Attention: 75% Linear(GatedDeltaNet) + 25% Full GQA</td>
+<td>线性注意力降复杂度 O(n²)→O(n)，Full Attention 保精度 知乎</td>
+</tr>
+<tr>
+<td>KV 管理</td>
+<td>GQA (8:1)</td>
+<td>GQA</td>
+<td>极致 GQA: num_kv_heads=2, head_dim=256</td>
+<td>更激进的头数压缩，KV Cache 显存再降 30-50%</td>
+</tr>
+<tr>
+<td>专家结构</td>
+<td>-</td>
+<td>MoE (Top-K)</td>
+<td>MoE + Shared Expert + Zero-init Routing</td>
+<td>共享专家保通用能力，零初始化路由避免训练初期坍缩</td>
+</tr>
+<tr>
+<td>词表大小</td>
+<td>~152K</td>
+<td>~152K</td>
+<td>~248K (Qwen3.5-MoE)</td>
+<td>扩展多语言/代码支持，压缩率提升 huggingface.co</td>
+</tr>
+<tr>
+<td>上下文长度</td>
+<td>128K</td>
+<td>256K (YaRN→1M)</td>
+<td>256K Native (YaRN→1M+)</td>
+<td>原生长上下文 + RoPE 外推，支持超长文档/代码库</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<p>RoPE (Rotary Positional Embedding)：<br>
+原理：通过旋转矩阵将位置信息注入到 Query 和 Key 向量中。两个向量的相对位置决定了它们的注意力分数。<br>
+局限：RoPE 的训练长度是固定的（例如训练时只见过 4K 长度）。当推理时遇到远超训练长度的文本（如 32K），由于旋转角度超出了训练分布，模型性能会急剧下降（“外推能力”差）。<br>
+YaRN (Yet another RoPE for NLP)：<br>
+原理：一种位置插值（Interpolation）+ 缩放技术。它不需要重新训练模型，而是在推理阶段对 RoPE 的角度进行缩放（Scaling），并配合温度参数调整，强行让模型适应更长的序列。<br>
+作用：让原本只训练了 4K 的模型，能够无损或低损地处理 32K 甚至 128K 的上下文。<br>
+关系：RoPE 是基础机制，YaRN 是让 RoPE 具备长文本外推能力的“插件”或“技巧”。Qwen3 中的 YaRN→1M 指的就是利用该技术将上下文扩展到 100 万 token。</p>
+<p></p>
+</details> 
+<h3>RMSNorm（均方根归一化）以及LayerNorm公式</h3>
+<p>目前主流的都是rmsnorm<br>
+为什么 RMSNorm 更快？<br>
+少一次 reduce-mean：LayerNorm 要先算均值，再算方差；RMSNorm 只算一次 RMS。<br>
+通信量减半：并行场景下 reduce 次数从 2→1，GPU 空闲时间↓。<br>
+无 β 偏移：参数内存减半，加载/优化开销↓。</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>维度</th>
+<th>LayerNorm</th>
+<th>RMSNorm</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>计算内容</td>
+<td>减均值 → 除方差</td>
+<td>直接除 RMS（无减均值）</td>
+</tr>
+<tr>
+<td>参数量</td>
+<td>2 倍（γ, β）</td>
+<td>1 倍（仅 γ）</td>
+</tr>
+<tr>
+<td>零均值</td>
+<td>✅ 强制</td>
+<td>❌ 不强制</td>
+</tr>
+<tr>
+<td>速度</td>
+<td>基准</td>
+<td><strong>7 %–64 %↑</strong></td>
+</tr>
+<tr>
+<td>大模型表现</td>
+<td>持平</td>
+<td><strong>持平或略好</strong></td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<h1>推理框架</h1>
+<p>vLLM框架 &amp; 推理框架面试速查表 (2026)<br>
+核心结论：vLLM = PagedAttention(显存分页) + Continuous Batching(连续批处理) + Step-Level Scheduling(细粒度调度)。<br>
+v0 → v1：从"高效批处理系统"进化为"低延迟流式服务系统"。<br>
+选型：在线服务首选 vLLM/SGLang，极致吞吐选 TensorRT-LLM，国产化选 LMDeploy。</p>
+<p><strong>文本输入到vllm主要经过的一些变化：</strong></p>
+<details><summary>Details</summary>
+<p>
+</p><p>在 vLLM 中，文本输入首先经过 Tokenizer 编码，然后由 Scheduler 基于 PagedAttention 机制进行资源调度。调度器不再请求连续显存，而是按需分配离散的 Physical Blocks，并维护一张 Block Table 记录逻辑到物理的映射。<br>
+在执行阶段，vLLM 采用 Continuous Batching，一旦有请求完成立即释放 Block 并插入新请求，极大提升了吞吐量。对于长序列导致的显存不足，vLLM 支持将 KV Cache Swap 到 CPU 内存。<br>
+关于通信处理：<br>
+GPU 内部：通过 CUDA Kernel 内的间接寻址，利用 Block Table 访问非连续显存，并结合 Shared Memory 优化随机读取延迟。<br>
+多卡互联：底层依赖 NCCL 库，通过 NVLink 进行高效的 All-Reduce (TP 场景) 和 P2P (PP 场景) 通信，并利用 Compute-Communication Overlap 技术隐藏延迟。</p>
+<p></p>
+</details> 
+<h2>vllm核心架构与组件</h2>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th align="left">组件层级</th>
+<th align="left">核心模块</th>
+<th align="left">职责与机制</th>
+<th align="left">关键技术点</th>
+<th align="left">🔥 面试考点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>控制面</strong><br>(调度/管理)</td>
+<td align="left"><strong>Scheduler</strong></td>
+<td align="left">请求调度大脑，维护 <code class="notranslate">Waiting/Running/Swapped</code> 三队列</td>
+<td align="left">• <strong>Continuous Batching</strong>：Token 级调度，新请求随时插入<br>• <strong>Prefix-Aware</strong>：APC 匹配复用前缀 KV<br>• <strong>优先级</strong>：Swapped &gt; Waiting &gt; Running</td>
+<td align="left">Q: 为什么优先处理 Swapped？<br>A: 避免已换出请求的重复加载开销，保证进度公平性</td>
+</tr>
+<tr>
+<td align="left"><strong>控制面</strong><br>(显存管理)</td>
+<td align="left"><strong>BlockSpaceManager</strong></td>
+<td align="left">KV Cache 分页管理，逻辑块→物理块映射</td>
+<td align="left">• <strong>PagedAttention</strong>：block_size=16，类似 OS 页表<br>• <strong>Copy-on-Write</strong>：并行采样时共享物理块<br>• <strong>LRU Swap</strong>：显存不足时换出到 CPU</td>
+<td align="left">Q: PagedAttention 解决什么问题？<br>A: 消除显存碎片，支持动态序列长度，显存利用率↑30-50%</td>
+</tr>
+<tr>
+<td align="left"><strong>执行面</strong><br>(计算执行)</td>
+<td align="left"><strong>Worker/ModelRunner</strong></td>
+<td align="left">模型前向传播，Kernel 执行</td>
+<td align="left">• <strong>CUDA Graph</strong>：预编译执行图，减少 Kernel Launch 开销<br>• <strong>Fused Ops</strong>：QKV/RMSNorm/SwiGLU 融合算子</td>
+<td align="left">Q: CUDA Graph 收益？<br>A: 小 Batch 时减少 CPU 调度开销，延迟↓20-40%</td>
+</tr>
+<tr>
+<td align="left"><strong>执行面</strong><br>(KV 引擎)</td>
+<td align="left"><strong>CacheEngine</strong></td>
+<td align="left">KV Cache 生命周期管理</td>
+<td align="left">• <strong>BlockTable</strong>：维护逻辑→物理映射表<br>• <strong>Async Swap</strong>：cudaMemcpyAsync 预取/换出</td>
+<td align="left">Q: KV Cache 量化如何做？<br>A: INT8/FP8 在线量化，scale 在线 reduce，显存↓50%</td>
+</tr>
+<tr>
+<td align="left"><strong>通信层</strong></td>
+<td align="left"><strong>Pynccl / ZMQ</strong></td>
+<td align="left">分布式通信 &amp; 流式返回</td>
+<td align="left">• <strong>NCCL 封装</strong>：TP/PP 并行通信，支持 Graph 内嵌<br>• <strong>Zero-Copy</strong>：ZMQ 直接流式返回 Token</td>
+<td align="left">Q: 张量并行通信开销？<br>A: All-Reduce 在每层 FFN 后，H100 NVLink 下&lt;5% 总耗时</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<h2>vllm对应演进</h2>
+<p>一句话总结 v1："用 Step 级调度 + 状态简化 + 深度 Graph 编译，在保持高吞吐的同时，把尾延迟打到生产级可用"</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th align="left">维度</th>
+<th align="left">v0 (Iteration 模型)</th>
+<th align="left">v1 (Step 模型)</th>
+<th align="left">🎯 收益/改进</th>
+<th align="left">🔥 面试高频问答</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>调度粒度</strong></td>
+<td align="left"><strong>迭代级</strong>：一批请求完整生成多个 token 后才调度</td>
+<td align="left"><strong>时间步级</strong>：每步前向传播后重新调度</td>
+<td align="left">• 新请求插入延迟↓90%<br>• 尾延迟(P99)↓40%</td>
+<td align="left">Q: v1 为什么延迟更低？<br>A: Step 级调度避免长请求阻塞短请求，实现真正"流式"连续批处理</td>
+</tr>
+<tr>
+<td align="left"><strong>架构设计</strong></td>
+<td align="left"><strong>单体引擎</strong>：LLMEngine 耦合调度/执行/内存</td>
+<td align="left"><strong>职责分离</strong>：Scheduler/Worker/Executor 三模块解耦</td>
+<td align="left">• 代码可维护性↑<br>• 新调度策略易扩展</td>
+<td align="left">Q: v1 架构优势？<br>A: 模块化设计，Scheduler 可独立优化，Worker 可替换后端 (TRT-LLM/Ascend)</td>
+</tr>
+<tr>
+<td align="left"><strong>状态管理</strong></td>
+<td align="left"><strong>三队列</strong>：Waiting/Running/Swapped，逻辑复杂</td>
+<td align="left"><strong>双状态</strong>：<code class="notranslate">num_tokens</code> + <code class="notranslate">num_computed_tokens</code>，砍掉 Swapped</td>
+<td align="left">• 抢占恢复逻辑简化<br>• 被抢占请求直接回 Waiting 头部</td>
+<td align="left">Q: v1 如何简化抢占？<br>A: 用 <code class="notranslate">num_computed_tokens</code> 记录进度，抢占后直接重入队，无需复杂 Swap 状态机</td>
+</tr>
+<tr>
+<td align="left"><strong>执行优化</strong></td>
+<td align="left">CUDA Graph 支持有限，动态形状开销大</td>
+<td align="left"><strong>深度 Graph 集成</strong>：预处理/解码/采样全图编译</td>
+<td align="left">• Kernel Launch 开销↓70%<br>• GPU 利用率↑15%</td>
+<td align="left">Q: v1 的 CUDA Graph 优化？<br>A: 将动态形状参数化，预编译多形状 Graph，运行时零 Python 回跳</td>
+</tr>
+<tr>
+<td align="left"><strong>高级特性</strong></td>
+<td align="left">Chunked-Prefill 需手动配置</td>
+<td align="left"><strong>原生支持</strong>：Chunked-Prefill + Prefix Cache + Jump Decoding</td>
+<td align="left">• 长输入 TTFT↓30%<br>• 多轮对话 KV 复用↑3×</td>
+<td align="left">Q: Chunked-Prefill 原理？<br>A: 长 Prompt 切块与 Decode 交错执行，避免单请求独占 GPU，线性化 TTFT</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<h2>主流推理框架对比选型</h2>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th align="left">框架</th>
+<th align="left">核心定位</th>
+<th align="left">杀手锏特性</th>
+<th align="left">适用场景</th>
+<th align="left">局限性</th>
+<th align="left">🔥 面试选型题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>vLLM</strong></td>
+<td align="left"><strong>通用在线服务</strong></td>
+<td align="left">• PagedAttention + Continuous Batching<br>• v1 Step 调度 + CUDA Graph<br>• 社区活跃，插件丰富</td>
+<td align="left">• 多租户 API 服务<br>• 中长上下文对话<br>• 快速原型验证</td>
+<td align="left">• 极端低延迟 (&lt;20ms) 需调优<br>• 多模态支持较新</td>
+<td align="left">Q: 为什么选 vLLM？<br>A: "开箱即用"的分页内存+连续批处理，平衡吞吐/延迟/易用性，生态最成熟</td>
+</tr>
+<tr>
+<td align="left"><strong>SGLang</strong></td>
+<td align="left"><strong>结构化/长上下文</strong></td>
+<td align="left">• <strong>RadixAttention</strong>：前缀树自动复用 KV<br>• 原生结构化生成 (JSON/Regex)<br>• PD 分离 + Rust 异步调度</td>
+<td align="left">• 复杂 Prompt 模板/少样本学习<br>• JSON/代码等结构化输出<br>• 超长对话 (&gt;64K)</td>
+<td align="left">• 学习曲线稍陡 (前端 DSL)<br>• 多模型并发支持较新</td>
+<td align="left">Q: SGLang vs vLLM？<br>A: "长模板/结构化输出"选 SGLang (Radix 复用↑3×)，"通用服务"选 vLLM (生态更稳)</td>
+</tr>
+<tr>
+<td align="left"><strong>TensorRT-LLM</strong></td>
+<td align="left"><strong>极致吞吐/离线</strong></td>
+<td align="left">• <strong>预编译引擎</strong>：算子融合+FP8-TC 优化<br>• In-flight Batching：动态插入请求<br>• 多 GPU 通信深度优化</td>
+<td align="left">• 批量离线推理 (Batch Inference)<br>• 固定模型/固定形状的云服务</td>
+<td align="left">• 编译慢 (分钟级)<br>• 动态形状/多模型支持弱</td>
+<td align="left">Q: TRT-LLM 优势？<br>A: "编译时优化"吃满硬件，固定场景吞吐比 vLLM 高 20-30%，但灵活性牺牲</td>
+</tr>
+<tr>
+<td align="left"><strong>LMDeploy</strong></td>
+<td align="left"><strong>国产化/训推一体</strong></td>
+<td align="left">• <strong>Ascend/NPU 原生支持</strong><br>• 4-bit KV Cache + AWQ 量化<br>• 训练→推理无缝切换</td>
+<td align="left">• 华为昇腾/寒武纪等国产硬件<br>• 低资源端侧部署</td>
+<td align="left">• 社区规模较小<br>• 新特性跟进稍慢</td>
+<td align="left">Q: 国产化选型？<br>A: LMDeploy 对 Ascend 优化最深，量化+分页+连续批处理三件套齐全，迁移成本最低</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<details>
+<summary>🔍 展开：vLLM 高频考点速记</summary>
+<ol>
+<li><strong>PagedAttention 原理</strong>：类似 OS 分页，逻辑块→物理块映射，block_size=16，消除显存碎片</li>
+<li><strong>Continuous Batching</strong>：Token 级调度，新请求随时插入，避免传统 Batch 的队头阻塞</li>
+<li><strong>v1 状态简化</strong>：<code class="notranslate">num_tokens</code> + <code class="notranslate">num_computed_tokens</code> 替代三队列，抢占恢复逻辑↓50%</li>
+<li><strong>CUDA Graph 收益</strong>：预编译执行图，小 Batch 时 Kernel Launch 开销↓70%，延迟↓20-40%</li>
+<li><strong>Chunked-Prefill</strong>：长 Prompt 切块与 Decode 交错，128K 输入 TTFT↓40-60%</li>
+</ol>
+</details>
+<h1>HCCL</h1>
+<p>华为对应集合通信库，支持allreduce、broadcast、allgather、reduceScatter、AlltoAll等通信原语<br>
+broadcast：1到多，将数据从一个节点发送到所有节点<br>
+gather：多到1<br>
+scatter：1个npu数据切分到其它npu<br>
+reduce：多个npu获取数据并做规约运算</p>
+<p>allreduce：从多个npu获取数据到所有npu并做归约运算（求和平均最大最小乘积ANDOR），规约+广播：所有节点都有最终结果<br>
+reduce scatter：规约后结果分散到不同节点<br>
+allgather：收集每个npu所有的数据到每个npu上<br>
+alltoallv：所有npu互相scatter和gather数据</p>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>特性</th>
+<th>AllReduce</th>
+<th>AllGather</th>
+<th>AllToAllV</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>通俗比喻</strong></td>
+<td>大家凑份子钱，每人知道总额</td>
+<td>大家交换章节，每人拥有全书</td>
+<td>大家互换扑克牌，按需分配</td>
+</tr>
+<tr>
+<td><strong>数据变化</strong></td>
+<td>值变了 (求和)，形状不变</td>
+<td>形状变大 (拼接)，内容变全</td>
+<td>形状不变 (总量)，内容重排</td>
+</tr>
+<tr>
+<td><strong>主要用途</strong></td>
+<td>数据并行 (梯度同步)</td>
+<td>张量并行 / 序列并行</td>
+<td>MoE / 高级序列并行</td>
+</tr>
+<tr>
+<td><strong>通信量级</strong></td>
+<td>
+$O(M)$ (较小)</td>
+<td>
+$O(N \times M)$ (大)</td>
+<td>
+$O(N \times M)$ (大且乱)</td>
+</tr>
+<tr>
+<td><strong>性能杀手</strong></td>
+<td>⭐⭐</td>
+<td>⭐⭐⭐⭐</td>
+<td>⭐⭐⭐⭐⭐ (最难优化)</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<h1>前沿推理技术思想</h1>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th align="left">技术</th>
+<th align="left">核心思想 (One-Liner)</th>
+<th align="left">解决痛点</th>
+<th align="left">关键机制</th>
+<th align="left">🔥 面试一句话回答</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>DSA</strong><br>(DeepSeek Sparse Attn)</td>
+<td align="left">"先海选 Top-k，后精算 Attention"</td>
+<td align="left">长序列 O(L²) 计算/显存爆炸</td>
+<td align="left">• FP8 低维 Indexer 闪电筛选<br>• Attn-Score 蒸馏监督索引学习<br>• Token-level 稀疏 + 单分支 MQA</td>
+<td align="left">Q: DSA 比 NSA 好在哪？<br>A: "蒸馏 loss 选得更准 + 单分支零额外参数 + token 级稀疏"，同等精度下推理成本↓50%</td>
+</tr>
+<tr>
+<td align="left"><strong>AFD</strong><br>(Attn-FFN Decoupling)</td>
+<td align="left">"Attention 与 FFN 异构部署"</td>
+<td align="left">Attention 带宽瓶颈 vs FFN 计算瓶颈资源错配</td>
+<td align="left">• Attn 放高带宽 GPU，FFN/MoE 放高算力 NPU<br>• 高速网络 (NVLink/RDMA) 通信<br>• 构建在 PD 分离架构之上</td>
+<td align="left">Q: 为什么解耦能提效？<br>A: "让带宽密集型与计算密集型算子各得其所"，资源利用率↑30%，异构集群成本↓</td>
+</tr>
+<tr>
+<td align="left"><strong>TPA</strong><br>(Tensor Product Attention)</td>
+<td align="left">"张量分解压缩 KV + 即时重算"</td>
+<td align="left">MLA 难兼容 RoPE，长序列缓存仍大</td>
+<td align="left">• KV 分解为低秩因子 (U·Vᵀ)<br>• 推理时即时重算全维 K/Q<br>• 天然支持 RoPE 旋转</td>
+<td align="left">Q: TPA 如何兼顾压缩与 RoPE？<br>A: "压缩存因子，用时重算"，缓存↓10× 且 RoPE 直接作用在重算后的全维 key 上</td>
+</tr>
+<tr>
+<td align="left"><strong>SepLLM</strong><br>(Semantic KV Compression)</td>
+<td align="left">"骨干序列 + 滑动窗口" 混合缓存</td>
+<td align="left">语义冗余导致 KV Cache 浪费</td>
+<td align="left">• 余弦相似度动态选"骨干"代表语义<br>• 固定窗口保局部连贯<br>• 混合 Cache 计算注意力</td>
+<td align="left">Q: 如何保证压缩后精度不降？<br>A: "骨干抓全局语义 + 窗口保局部语法"，128K 上下文显存↓8×，PPL 损失&lt;0.5%</td>
+</tr>
+<tr>
+<td align="left"><strong>Mooncake</strong><br>(Distributed KV Pool)</td>
+<td align="left">"HBM+DRAM+SSD 三级零拷贝池化"</td>
+<td align="left">单卡显存受限，长上下文/多轮对话复用低</td>
+<td align="left">• 三级存储：L1 热(HBM)/L2 温(DRAM)/L3 冷(SSD)<br>• GPU↔DRAM↔SSD 零拷贝 (RDMA/SPDK)<br>• PrefixCache 命中≈50%</td>
+<td align="left">Q: 零拷贝为什么关键？<br>A: "绕过 CPU 内存拷贝"，跨层数据迁移延迟↓90%，50M token 池化 E2E 成本↓35%</td>
+</tr>
+<tr>
+<td align="left"><strong>混合稀疏路线</strong><br>(GQA+SWA/SSM)</td>
+<td align="left">"局部密集 + 全局稀疏" 分层建模</td>
+<td align="left">单一注意力难兼顾局部精度与全局依赖</td>
+<td align="left">• GQA: 分组共享 KV 省带宽<br>• SWA: 滑动窗口砍计算 O(nW)<br>• SSM: 线性状态空间建模长距</td>
+<td align="left">Q: 为什么混合比纯稀疏好？<br>A: "局部用 Attention 保精度，全局用 SSM/窗口省计算"，128K 序列 PPL↓12%，推理↑2×</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<h3>大模型推理显存占用与优化策略（面试高频考点表）</h3>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th align="left">显存组件</th>
+<th align="left">计算公式 / 影响因素</th>
+<th align="left">典型占用 (7B/FP16)</th>
+<th align="left">可优化手段</th>
+<th align="left">面试高频考点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><strong>模型权重</strong></td>
+<td align="left"><code class="notranslate">参数量 × 精度字节</code><br>• FP16: 2B/param, INT8: 1B, INT4: 0.5B</td>
+<td align="left">~14 GB (FP16)<br>~7 GB (INT8)<br>~3.5 GB (INT4)</td>
+<td align="left">• 量化 (AWQ/GPTQ)<br>• 权重分片 (Tensor Parallel)<br>• Offload 到 CPU/NVMe</td>
+<td align="left">• 7B 模型 FP16 为什么是 14GB？<br>• 量化后精度损失如何评估？<br>• TP 并行时权重如何切分？</td>
+</tr>
+<tr>
+<td align="left"><strong>KV Cache</strong></td>
+<td align="left"><code class="notranslate">2 × 层数 × 头数 × 头维 × batch × seq_len × 精度</code><br>• GQA/MQA 可显著降低</td>
+<td align="left">~9–10 GB<br>(batch=32, seq=2048)</td>
+<td align="left">• 调整 <code class="notranslate">gpu_memory_utilization</code><br>• PagedAttention (vLLM)<br>• KV Cache 量化 (FP8/INT8)<br>• GQA 替代 MHA</td>
+<td align="left">• KV Cache 为什么占这么大？<br>• PagedAttention 如何解决显存碎片？<br>• GQA vs MHA 显存差异？</td>
+</tr>
+<tr>
+<td align="left"><strong>激活值</strong></td>
+<td align="left"><code class="notranslate">层数 × hidden_dim × batch × seq_len × 精度</code><br>• 与 <code class="notranslate">max_num_seqs</code>、<code class="notranslate">max_model_len</code> 强相关</td>
+<td align="left">~4–5 GB<br>(动态变化)</td>
+<td align="left">• 降低 <code class="notranslate">max_batch_size</code><br>• 限制 <code class="notranslate">max_model_len</code><br>• 重计算 (Activation Recomputation)</td>
+<td align="left">• 为什么长序列容易 OOM？<br>• 重计算的时间 - 显存权衡？<br>• 如何估算最大支持 seq_len？</td>
+</tr>
+<tr>
+<td align="left"><strong>中间缓冲区</strong></td>
+<td align="left">• CUDA Graph 缓存<br>• 临时 Tensor/Workspace<br>• CuBLAS/CuDNN 工作区</td>
+<td align="left">~0.5–2 GB</td>
+<td align="left">• 复用 Buffer<br>• 调整 <code class="notranslate">workspace_size</code><br>• 框架级显存池 (如 PyTorch CachingAllocator)</td>
+<td align="left">• 显存碎片如何产生？<br>• PyTorch 显存复用机制？</td>
+</tr>
+<tr>
+<td align="left"><strong>非 Torch 显存</strong></td>
+<td align="left">• 驱动/上下文开销<br>• NCCL 通信缓冲区 (多卡)<br>• 监控/调试工具占用</td>
+<td align="left">~0.1–2 GB</td>
+<td align="left">• 关闭非必要调试功能<br>• 优化 NCCL 缓冲区大小</td>
+<td align="left">• 多卡推理为什么显存占用更高？<br>• <code class="notranslate">nvidia-smi</code> 显存 ≠ PyTorch 分配显存？</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+<hr>
+<h3>🔑 附：大模型推理显存估算速查公式</h3>
+<div class="highlight highlight-source-shell"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span> 1. 权重显存 (GB)</span>
+weights_gb = params_B × 2 × (precision_bytes / 2)
+<span class="pl-c"><span class="pl-c">#</span> 例：7B × 2B(FP16) = 14 GB</span>
+
+<span class="pl-c"><span class="pl-c">#</span> 2. KV Cache 显存 (GB) - MHA 版本</span>
+kv_gb = 2 × layers × heads × head_dim × batch × seq_len × 2 / 1e9
+<span class="pl-c"><span class="pl-c">#</span> 例：32×32×128×32×2048×2 ≈ 10.7 GB</span>
+<span class="pl-c"><span class="pl-c">#</span> GQA 优化：heads → kv_heads (如 32→8，显存降 4×)</span>
+
+<span class="pl-c"><span class="pl-c">#</span> 3. 激活值显存 (粗略估算)</span>
+activations_gb ≈ layers × hidden_dim × batch × seq_len × 2 / 1e9
+<span class="pl-c"><span class="pl-c">#</span> 例：32×4096×32×2048×2 ≈ 17.2 GB (实际因算子融合会减少)</span>
+
+<span class="pl-c"><span class="pl-c">#</span> 4. 总显存需求</span>
+total_gb ≈ weights + kv_cache + activations + buffer(20%)</pre></div>
+<hr>
+<h3>💡 面试加分回答模板</h3>
+<blockquote>
+<p><strong>问：7B 模型推理时显存爆了，如何排查和优化？</strong><br>
+1️⃣ <strong>定位瓶颈</strong>：用 <code class="notranslate">nvidia-smi</code> + PyTorch <code class="notranslate">torch.cuda.memory_summary()</code><br>
+区分是权重、KV Cache 还是激活值占用过高。<br>
+2️⃣ <strong>针对性优化</strong>：<br>
+• 权重高 → 启用 INT4 量化 (AWQ) 或 Tensor Parallel 分卡<br>
+• KV Cache 高 → 开启 PagedAttention (vLLM)、改用 GQA、降低 max_seq_len<br>
+• 激活值高 → 减小 batch_size、启用重计算、限制 max_model_len<br>
+3️⃣ <strong>系统级调优</strong>：<br>
+• 调整 <code class="notranslate">gpu_memory_utilization=0.9</code> 预留 buffer<br>
+• 关闭调试功能减少非 Torch 显存<br>
+• 多卡时优化 NCCL 通信缓冲区<br>
+4️⃣ <strong>兜底方案</strong>：CPU/GPU Offload 或 NVMe Swap (牺牲延迟换容量)</p>
+</blockquote>
+<blockquote>
+<p>✅ <strong>核心思路</strong>：先量化瓶颈组件，再用「空间换时间」或「时间换空间」策略权衡。</p>
+</blockquote>
+<hr></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://naphjohn.github.io">kaikai的博客</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if(""!=""){
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行 "+diffDay+" 天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z', 'copy': 'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z', 'check': 'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.disabled=true;
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","NaphJohn/naphjohn.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const createClipboardHTML = (codeContent, additionalClasses = '') => `
+        <pre class="notranslate"><code class="notranslate">${codeContent}</code></pre>
+        <div class="clipboard-container position-absolute right-0 top-0 ${additionalClasses}">
+            <clipboard-copy class="ClipboardButton btn m-2 p-0" role="button" style="display: inherit;">
+                <svg height="16" width="16" class="octicon octicon-copy m-2"><path d="${IconList["copy"]}"></path></svg>
+                <svg height="16" width="16" class="octicon octicon-check color-fg-success m-2 d-none"><path d="${IconList["check"]}"></path></svg>
+            </clipboard-copy>
+            <div class="copy-feedback">Copied!</div>
+        </div>
+    `;
+
+    const handleCodeElements = (selector = '') => {
+        document.querySelectorAll(selector).forEach(codeElement => {
+            const codeContent = codeElement.innerHTML;
+            const newStructure = document.createElement('div');
+            newStructure.className = 'snippet-clipboard-content position-relative overflow-auto';
+            newStructure.innerHTML = createClipboardHTML(codeContent);
+
+            const parentElement = codeElement.parentElement;
+            if (selector.includes('highlight')) {
+                parentElement.insertBefore(newStructure, codeElement.nextSibling);
+                parentElement.removeChild(codeElement);
+            } else {
+                parentElement.parentElement.replaceChild(newStructure, parentElement);
+            }
+        });
+    };
+
+    handleCodeElements('pre.notranslate > code.notranslate');
+    handleCodeElements('div.highlight > pre.notranslate');
+
+    let currentFeedback = null;
+    document.querySelectorAll('clipboard-copy').forEach(copyButton => {
+        copyButton.addEventListener('click', () => {
+            const codeContent = copyButton.closest('.snippet-clipboard-content').innerText;
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = codeContent;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempTextArea);
+
+            const copyIcon = copyButton.querySelector('.octicon-copy');
+            const checkIcon = copyButton.querySelector('.octicon-check');
+            const copyFeedback = copyButton.nextElementSibling;
+
+            if (currentFeedback && currentFeedback !== copyFeedback) {currentFeedback.style.display = 'none';}
+            currentFeedback = copyFeedback;
+
+            copyIcon.classList.add('d-none');
+            checkIcon.classList.remove('d-none');
+            copyFeedback.style.display = 'block';
+            copyButton.style.borderColor = 'var(--color-success-fg)';
+
+            setTimeout(() => {
+                copyIcon.classList.remove('d-none');
+                checkIcon.classList.add('d-none');
+                copyFeedback.style.display = 'none';
+                copyButton.style.borderColor = '';
+            }, 2000);
+        });
+    });
+});
+
+</script>
+<script>MathJax = {tex: {inlineMath: [["$", "$"]]}};</script><script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+</html>
